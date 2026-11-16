@@ -33,3 +33,11 @@ The server container built in release mode and ran as its non-root user. Its rea
 ## Repeat the checks
 
 [Development](../development.md#checks) lists formatting, Clippy, unit/fixture, integration, documentation, and contract checks. [CI](../../.github/workflows/ci.yml) runs them on changes. Production capacity, additional providers, and release-platform packaging require their own validation.
+
+## GitHub Actions startup status
+
+Local checks pass, but GitHub Actions has not executed the hosted jobs. Both push and manual dispatch returned `startup_failure` with zero jobs and no step logs on 2026-11-16. The workflow also passes `actionlint`, and its action references resolve.
+
+The active CI workflow is `420557309`. [A push run](https://github.com/mitchwolfe1/sessiondb/actions/runs/43948795214) instead references workflow `420557352`, whose API record has an empty name, path `BuildFailed`, and state `deleted`. GitHub rejects disabling that record because it is inactive. [Manual execution of the active workflow](https://github.com/mitchwolfe1/sessiondb/actions/runs/43948918264) also creates no jobs.
+
+This resembles [reported GitHub Actions registry/dispatch failures](https://github.com/orgs/community/discussions/206103); GitHub has not supplied a diagnosis for this repository. The local verification commands remain available while hosted execution is unresolved. These run/workflow IDs provide a diagnostic starting point for a private GitHub support request.
