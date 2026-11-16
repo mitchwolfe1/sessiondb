@@ -1,6 +1,6 @@
 # Harness adapters
 
-Adapters give native Codex, Claude Code, and Pi sessions a consistent SessionDB representation while preserving original files. They are Rust modules in `sessiondb-adapters` and do not require a running harness, model credentials, or database access.
+Adapters give native Codex, Claude Code, and Pi sessions a consistent SessionDB representation while preserving original files. They are implemented in `sessiondb-adapters` and do not require a running harness, model credentials, or database access.
 
 Status: proposed adapter contract. Native format support must be verified against versioned fixtures before release.
 

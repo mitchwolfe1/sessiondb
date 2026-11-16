@@ -1,4 +1,4 @@
-# Product direction and Rust
+# Product direction
 
 Status: accepted. Date: 2026-11-15.
 
@@ -6,7 +6,7 @@ Product framing is clarified by [0007 Capability focused documentation](0007-cap
 
 ## Decision
 
-Build SessionDB as a Rust database for coding-agent sessions, with automatic sync from Codex, Claude Code, and Pi. It supports direct CLI use and applications built on its APIs, including shared deployments with users and teams.
+Build SessionDB as a database for coding-agent sessions, with automatic sync from Codex, Claude Code, and Pi. It supports direct CLI use and applications built on its APIs, including shared deployments with users and teams.
 
 Develop specifications and documentation before application code. Use Conventional Commits for repository changes. The repository is private under the maintainer's personal GitHub account.
 

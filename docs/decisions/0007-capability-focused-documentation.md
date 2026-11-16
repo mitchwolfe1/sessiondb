@@ -4,9 +4,9 @@ Status: accepted. Date: 2026-11-15.
 
 ## Decision
 
-Describe SessionDB as a Rust database for coding-agent sessions. Lead with what it does: store native sessions, sync updates automatically, provide consistent queries and exports, and support search through a CLI, HTTP API, and SDK.
+Describe SessionDB as a database for coding-agent sessions. Lead with what it does: store native sessions, sync updates automatically, provide consistent queries and exports, and support search through a CLI, HTTP API, and SDK.
 
-Organize introductory documentation around these capabilities and tasks. Shared deployments, users, teams, and permissions belong in the relevant configuration and reference pages. Context about potential customers does not define an exclusive product audience.
+Organize introductory documentation around these capabilities and tasks. Shared deployments, users, teams, and permissions belong in the relevant configuration and reference pages. Context about potential customers does not define an exclusive product audience. Rust remains the implementation language; language-specific details belong in architecture, contributor, and SDK references.
 
 ## Rationale
 

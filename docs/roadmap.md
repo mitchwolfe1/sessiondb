@@ -4,13 +4,13 @@ Delivery proceeds through reviewable vertical slices. The current repository is 
 
 ## Phase zero
 
-Review session workflows, the Rust workspace, sync semantics, query/search interfaces, and server configuration. Resolve the relevant [open questions](open-questions.md) and review the [OpenAPI draft](openapi.yaml), with request/response examples checked against its schemas.
+Review session workflows, the workspace layout, sync semantics, query/search interfaces, and server configuration. Resolve the relevant [open questions](open-questions.md) and review the [OpenAPI draft](openapi.yaml), with request/response examples checked against its schemas.
 
 The result is an implementation plan for the first sync-to-query path.
 
 ## First vertical slice
 
-Create the Rust workspace and a local server with PostgreSQL and S3-compatible storage. Import one native session without a project label, list it, read its messages, and export its original data through the API and CLI. Include connection/authentication and session ownership for that path.
+Create the Cargo workspace and a local server with PostgreSQL and S3-compatible storage. Import one native session without a project label, list it, read its messages, and export its original data through the API and CLI. Include connection/authentication and session ownership for that path.
 
 Prove the API client boundary and import acceptance semantics before adding more retrieval capabilities. Readiness, migrations, durable jobs, and a basic restore drill are part of this slice.
 
@@ -28,7 +28,7 @@ Add the provider/profile interface and one configured endpoint implementation, b
 
 ## V1 release
 
-Complete CLI packaging, Rust SDK documentation, installation and upgrade procedures, native/JSONL/STS exports, backup/restore, resource limits, and the tested compatibility matrix. Run the acceptance scenarios below and publish remaining limitations. No hosted billing or browser UI is required for this release.
+Complete CLI packaging, client SDK documentation, installation and upgrade procedures, native/JSONL/STS exports, backup/restore, resource limits, and the tested compatibility matrix. Run the acceptance scenarios below and publish remaining limitations. No hosted billing or browser UI is required for this release.
 
 ## Acceptance scenarios
 
@@ -49,7 +49,7 @@ Complete CLI packaging, Rust SDK documentation, installation and upgrade procedu
 | A13 | Grant revoked or membership removed | Subsequent reads/search stop; preissued download URLs follow their documented maximum lifetime. |
 | A14 | Owner/admin deletes a session and client syncs again | Session stays removed through source suppression; local harness file is not deleted. |
 | A15 | Backup restored into a clean deployment | Memberships, grants, original reads/exports, and collection recovery work; derived indexes can be rebuilt. |
-| A16 | API result is consumed by CLI, Rust SDK, and hype-history | Same permissions, filters, error semantics, and session meanings apply. |
+| A16 | API result is consumed by CLI, SDK, and hype-history | Same permissions, filters, error semantics, and session meanings apply. |
 | A17 | Several accounts explicitly share sessions with a team | Team members find and read the shared sessions regardless of project association. |
 | A18 | A session starts in a home directory and has no matching rule | It syncs unassigned, remains readable, and participates in keyword and configured semantic/hybrid search. |
 | A19 | Assign two projects, replace them, then clear them | Only catalog associations and filter results change; native files and readers stay the same. |

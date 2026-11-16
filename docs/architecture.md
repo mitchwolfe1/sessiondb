@@ -1,6 +1,6 @@
 # Architecture
 
-SessionDB uses a Rust server, a Rust CLI with an automatic sync mode, and a reusable Rust client SDK. The server owns session access and indexing; clients use the same HTTP contract that other applications use.
+SessionDB consists of a server, a CLI with an automatic sync mode, and a reusable client SDK. The server owns session access and indexing; clients use the same HTTP contract that other applications use.
 
 Status: proposed implementation of the agreed [product requirements](product.md).
 
@@ -92,6 +92,6 @@ The [sync protocol](sync.md) specifies retries and rewrites. The [data model](da
 
 ## API and applications
 
-The HTTP API is the interoperability boundary. The CLI and Rust SDK use it; other SDKs can be generated from OpenAPI. hype-history becomes an application client. Its research packet and reviewed-memory rules do not become implicit server behavior.
+The HTTP API is the interoperability boundary. The CLI and SDK use it; other SDKs can be generated from OpenAPI. hype-history becomes an application client. Its research packet and reviewed-memory rules do not become implicit server behavior.
 
 S3 storage access, native transcript syntax, and standardized exports are different interfaces. Use [the format integration rules](integrations.md) when adding export support. Do not infer S3 compatibility from ordinary JSON endpoints.

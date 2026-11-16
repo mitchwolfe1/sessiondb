@@ -1,6 +1,6 @@
 # Open questions
 
-These decisions guide upcoming implementation work. Rust, Codex/Claude/Pi support, automatic sync, conventional interfaces, and extensible search define the project direction. Shared access is specified alongside the other server capabilities.
+These decisions guide upcoming implementation work. Codex/Claude/Pi support, automatic sync, conventional interfaces, and extensible search define the project direction. Shared access is specified alongside the other server capabilities.
 
 | ID | Decision | Concrete proposal and alternatives | Blocks |
 | --- | --- | --- | --- |

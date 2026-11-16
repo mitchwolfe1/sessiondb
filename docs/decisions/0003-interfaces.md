@@ -4,7 +4,7 @@ Status: accepted direction. Date: 2026-11-15.
 
 ## Decision
 
-Provide a `sessiondb` CLI, `sessiondb-server` service, versioned REST API, OpenAPI contract, and reusable Rust HTTP SDK. The CLI uses the public client boundary. Raw files use established object/HTTP access; session operations use domain resources.
+Provide a `sessiondb` CLI, `sessiondb-server` service, versioned REST API, OpenAPI contract, and reusable HTTP client SDK. The CLI uses the public client boundary. Raw files use established object/HTTP access; session operations use domain resources.
 
 ## Rationale
 

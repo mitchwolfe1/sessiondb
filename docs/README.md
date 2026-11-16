@@ -1,6 +1,6 @@
 # SessionDB documentation
 
-SessionDB stores, syncs, queries, and searches coding-agent sessions. These documents cover its planned CLI, API, data model, Rust implementation, and server configuration.
+SessionDB stores, syncs, queries, and searches coding-agent sessions. These documents cover its planned CLI, API, data model, architecture, and server configuration.
 
 ## Find a task
 
@@ -17,7 +17,7 @@ SessionDB stores, syncs, queries, and searches coding-agent sessions. These docu
 
 ## Design status
 
-The repository is in the documentation phase. Commands, endpoints, and configuration examples describe planned behavior. The implementation will use Rust, support Codex/Claude/Pi, preserve native files, and provide automatic sync and extensible search.
+The repository is in the documentation phase. Commands, endpoints, and configuration examples describe planned behavior. The design supports Codex/Claude/Pi, preserves native files, and provides automatic sync and extensible search.
 
 The [decision register](decisions/README.md) distinguishes accepted direction from proposed technical choices. [Open questions](open-questions.md) identify choices needed for upcoming milestones.
 
@@ -26,7 +26,7 @@ The [product specification](product.md) describes scope. Feature pages describe 
 ## Complete document map
 
 - [Product specification](product.md)
-- [CLI and Rust SDK](cli.md)
+- [CLI and client SDK](cli.md)
 - [Automatic sync](sync.md)
 - [Project associations](project-associations.md)
 - [Harness adapters](harness-adapters.md)
@@ -35,7 +35,7 @@ The [product specification](product.md) describes scope. Feature pages describe 
 - [OpenAPI schema](openapi.yaml)
 - [Search and embeddings](search-and-embeddings.md)
 - [Integrations and formats](integrations.md)
-- [Architecture and Rust workspace](architecture.md)
+- [Architecture](architecture.md)
 - [Operations](operations.md)
 - [Access control](access-control.md)
 - [Delivery and acceptance](roadmap.md)

@@ -2,7 +2,7 @@
 
 The sync client automatically collects sessions from configured native harness stores and keeps them updated in SessionDB. It supports initial backfill, one-shot synchronization, continuous watch mode, and collection from multiple machines. A project association or repository cwd is not required.
 
-Status: proposed v1 protocol. The client is part of the Rust CLI and uses the public import API and ordinary signed object uploads.
+Status: proposed v1 protocol. The client is part of the CLI and uses the public import API and ordinary signed object uploads.
 
 ## Discovery and configuration
 

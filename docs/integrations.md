@@ -8,7 +8,7 @@ Status: agreed integration direction with proposed export and migration contract
 
 | Consumer | Uses SessionDB for | Owns itself |
 | --- | --- | --- |
-| CLI and Rust SDK | Collection, browsing, import/export, query access | Local presentation and collection service installation |
+| CLI and SDK | Collection, browsing, import/export, query access | Local presentation and collection service installation |
 | hype-history | Accessible sessions/messages and search | Research packets, briefings, preference analysis, reviewed memory |
 | Session browser | Projects, session lists, messages, tools, artifacts | Navigation and UI |
 | Analytics application | Recorded usage and session activity | Reports and interpretation of estimated cost |
@@ -37,7 +37,7 @@ STS and ATIF are projections over selected conversation history. Define which br
 
 ## hype-history migration
 
-Reuse the prototype's requirements and test cases for incremental capture, tool links, branch endings, search diversity, and source-backed reads. Port appropriate behavior into Rust adapters rather than introducing a Python runtime dependency into SessionDB.
+Reuse the prototype's requirements and test cases for incremental capture, tool links, branch endings, search diversity, and source-backed reads. Port appropriate behavior into the native adapters.
 
 Keep hype-history-specific memory review and authorship judgments outside the server. A SessionDB role or uploader identifies a recorded source/contributor, not automatic proof that every user-role entry is a personal statement.
 
@@ -49,7 +49,7 @@ Use public HTTP/SDK methods, not direct PostgreSQL access. Start by migrating re
 
 ## SDK and API consumers
 
-The first native SDK is `sessiondb-client` for Rust. OpenAPI provides the contract for other languages; add a generated Python binding or a small HTTP integration when hype-history needs it. A Python application SDK does not change the Rust implementation requirement.
+The first native SDK is `sessiondb-client` for Rust. OpenAPI provides the contract for other languages; add a generated Python binding or a small HTTP integration when hype-history needs it. Language bindings use the same HTTP contract.
 
 Consumers use session/project filters and server-issued resource IDs. A headless application can use a `sessions:read` token limited by its issuer's current access and optional explicit session IDs; a sync-only source token does not implicitly authorize search. Raw downloads use authorized API endpoints or short-lived URLs. Saved citations use durable SessionDB resource URLs rather than expiring object URLs.
 

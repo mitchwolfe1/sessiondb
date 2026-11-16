@@ -2,7 +2,7 @@
 
 SessionDB is a database for coding-agent sessions. It collects sessions from Codex, Claude Code, and Pi, stores their native files, and exposes a consistent model for reading and querying their contents.
 
-A sync client collects new and updated sessions automatically. A server provides session access, keyword search, and optional semantic search through the CLI, HTTP API, and Rust SDK. Applications can use those interfaces to build session browsers, memory tools, analytics, and evaluation workflows.
+A sync client collects new and updated sessions automatically. A server provides session access, keyword search, and optional semantic search through the CLI, HTTP API, and SDK. Applications can use those interfaces to build session browsers, memory tools, analytics, and evaluation workflows.
 
 Status: product direction with proposed v1 behavior. See the [delivery plan](roadmap.md) for implementation milestones.
 
@@ -16,7 +16,7 @@ Status: product direction with proposed v1 behavior. See the [delivery plan](roa
 
 **Build on a common interface.** The CLI and SDK use a versioned HTTP API. Harness adapters normalize native differences while retaining the original data for export and future parsing improvements.
 
-**Run the service where it is needed.** The initial deployment uses a Rust server, PostgreSQL, and an S3-compatible object store. User/team session sharing supports shared servers independently of project labels.
+**Run the service where it is needed.** The initial deployment uses a server, PostgreSQL, and an S3-compatible object store. User/team session sharing supports shared servers independently of project labels.
 
 ## Main workflow
 
@@ -39,7 +39,7 @@ The first end-to-end demonstration is a session moving from a native file into S
 | P13 | Optional project associations | Collect home-directory and unassigned sessions; add, replace, or clear multiple project labels without changing sharing. |
 | P05 | Keyword search | Search sessions and messages with project, harness, author, and date filters. |
 | P06 | Optional embeddings | A configured provider supports semantic/hybrid search with visible coverage and job state. |
-| P07 | Conventional interfaces | Versioned REST/OpenAPI, predictable pagination/errors, CLI scripting, and a Rust SDK. |
+| P07 | Conventional interfaces | Versioned REST/OpenAPI, predictable pagination/errors, CLI scripting, and a client SDK. |
 | P08 | Native files | Retrieve collected originals even when normalization is incomplete. |
 | P10 | Harness adapters | Add another harness through the same discovery/normalization boundary. |
 | P12 | Application integration | Applications such as hype-history consume sessions and search through the public API. |
@@ -53,7 +53,7 @@ See [access control](access-control.md) for shared-server access settings.
 
 Preserve original session files and make the parsed model rebuildable. Native branches, compaction, and context edits remain available even when a normalized view cannot reproduce an exact harness request.
 
-Use familiar interfaces and components: Cargo, standard HTTP, PostgreSQL, S3-compatible storage, conventional CLI behavior, and operating-system service managers. Extend the service through focused adapter/provider interfaces.
+Use familiar interfaces and components: standard HTTP, PostgreSQL, S3-compatible storage, conventional CLI behavior, and operating-system service managers. Extend the service through focused adapter/provider interfaces.
 
 Keep embeddings optional. Session storage, sync, reading, and keyword search remain useful without a model endpoint. Expose collection and indexing state so a pending upload, partial parse, and embedding backlog are distinguishable.
 

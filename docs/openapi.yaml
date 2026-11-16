@@ -3,7 +3,7 @@ openapi: 3.1.1
 info:
   title: SessionDB API
   version: 0.2.0-draft
-  description: 'Proposed Rust SessionDB contract: source-based collection, optional
+  description: 'Proposed SessionDB contract: source-based collection, optional
     project associations, independent session sharing, and extensible search. Documentation
     only; see docs/api.md.'
 servers:

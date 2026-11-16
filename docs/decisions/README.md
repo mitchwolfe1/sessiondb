@@ -4,9 +4,9 @@ Decision records explain choices that affect several SessionDB components. Requi
 
 | Record | Status | Decision |
 | --- | --- | --- |
-| [0001 Product and Rust](0001-product-and-rust.md) | Accepted | Session database, Rust implementation, documentation first; framing clarified by 0007 |
+| [0001 Product direction](0001-product-and-rust.md) | Accepted | Session database and documentation-first development; implementation language recorded in 0001 |
 | [0002 Storage and formats](0002-storage-and-formats.md) | Accepted direction | Native originals, PostgreSQL application model, existing S3 storage, derived exports |
-| [0003 Interfaces](0003-interfaces.md) | Accepted direction | First-class CLI, HTTP API/OpenAPI, reusable Rust SDK |
+| [0003 Interfaces](0003-interfaces.md) | Accepted direction | First-class CLI, HTTP API/OpenAPI, reusable client SDK |
 | [0004 Rust architecture](0004-rust-architecture.md) | Proposed | Five-package workspace, async modular server, durable background jobs |
 | [0005 Search](0005-search.md) | Proposed | Keyword baseline and optional profiled embeddings with exact initial vector search |
 | [0006 Team access](0006-team-access.md) | Superseded by 0008 | Earlier project-bound access proposal; replaced by independent session sharing |

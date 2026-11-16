@@ -2,9 +2,9 @@
 
 SessionDB is a database for coding-agent sessions. It automatically syncs sessions from Codex, Claude Code, and Pi, stores their original files, and makes their contents accessible through a common interface.
 
-Use SessionDB to browse conversations and tool calls, search previous work, or build applications on session history. It provides a CLI, an HTTP API, and a Rust client SDK, with configurable embedding providers for semantic search.
+Use SessionDB to browse conversations and tool calls, search previous work, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK, with configurable embedding providers for semantic search.
 
-**Status: design phase.** SessionDB will be written in Rust. This repository currently contains specifications and documentation; the commands and API describe the planned interface.
+**Status: design phase.** This repository currently contains specifications and documentation; the commands and API describe the planned interface.
 
 ## Sync and query sessions
 
@@ -32,7 +32,7 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 - **Search:** filter by project, harness, author, or date; use keyword search or enable semantic and hybrid retrieval.
 - **Native storage:** keep original files alongside a consistent, queryable session model.
 - **Optional grouping:** associate a session with zero or more projects, independently of its starting directory and collection source.
-- **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a Rust SDK, PostgreSQL, and S3-compatible object storage.
+- **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a client SDK, PostgreSQL, and S3-compatible object storage.
 - **Extensibility:** add harness adapters, embedding providers, and applications without changing the collection workflow.
 
 SessionDB can also serve a shared collection, with users, teams, and explicit session access. Project labels organize history; sharing settings control visibility. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
@@ -54,7 +54,7 @@ Start with the [documentation guide](docs/README.md), then read:
 
 ## Development
 
-Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and planned Rust workspace checks.
+Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and planned development checks.
 
 Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add session import`, or `fix: retry interrupted uploads`.
 

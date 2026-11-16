@@ -1,6 +1,6 @@
 # Contributing
 
-SessionDB is currently a private, documentation-first Rust project. The first deliverable is a coherent specification that can guide implementation and review.
+SessionDB is currently in a private, documentation-first phase. The first deliverable is a coherent specification that can guide implementation and review.
 
 ## Documentation changes
 

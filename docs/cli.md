@@ -1,6 +1,6 @@
-# CLI and Rust SDK
+# CLI and client SDK
 
-The `sessiondb` executable syncs, lists, reads, searches, and exports sessions. `sessiondb-server` runs the service. The CLI uses the same Rust HTTP client crate available to applications.
+The `sessiondb` executable syncs, lists, reads, searches, and exports sessions. `sessiondb-server` runs the service. The CLI uses the same client SDK available to applications.
 
 Status: proposed interface. These commands are examples of the intended contract and are not executable in the current repository.
 

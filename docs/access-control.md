@@ -40,7 +40,7 @@ Raw source listing and unparsed originals require source-owner/admin access. A s
 
 ## Authentication and tokens
 
-Use a configured OIDC provider for human login and expiring revocable API tokens for automation. The Rust CLI proposal uses an external browser with Authorization Code/PKCE and a loopback redirect. The provider needs a registered public client and the SessionDB API audience. Validate access tokens rather than accepting an ID token as API authorization.
+Use a configured OIDC provider for human login and expiring revocable API tokens for automation. The CLI proposal uses an external browser with Authorization Code/PKCE and a loopback redirect. The provider needs a registered public client and the SessionDB API audience. Validate access tokens rather than accepting an ID token as API authorization.
 
 The server exposes public login configuration at `/v1/auth/config`. The CLI uses the OS credential store or explicit token input/environment. Empty-installation bootstrap configures one exact trusted issuer/subject as the initial owner; changing bootstrap settings later grants no new privileges.
 

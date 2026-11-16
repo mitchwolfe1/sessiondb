@@ -1,12 +1,12 @@
 # Operations
 
-SessionDB runs as a Rust service backed by PostgreSQL and an S3-compatible object store. This guide covers server configuration, background processing, health, upgrades, and backup/restore. Account and session-sharing setup are described in [access control](access-control.md).
+SessionDB runs as a service backed by PostgreSQL and an S3-compatible object store. This guide covers server configuration, background processing, health, upgrades, and backup/restore. Account and session-sharing setup are described in [access control](access-control.md).
 
 Status: proposed operating model. There are no Docker images, Compose files, migrations, or installers in this documentation-only repository.
 
 ## Deployment topology
 
-Run the Rust `sessiondb-server` service with PostgreSQL and an existing S3-compatible object store. Put TLS termination and the configured identity provider in the documented deployment environment. A future development Compose profile may supply local dependencies; production instructions must identify persistent volumes and external secret configuration explicitly.
+Run the `sessiondb-server` service with PostgreSQL and an existing S3-compatible object store. Put TLS termination and the configured identity provider in the documented deployment environment. A future development Compose profile may supply local dependencies; production instructions must identify persistent volumes and external secret configuration explicitly.
 
 The server starts API and bounded worker tasks in one deployment. Parsing and keyword jobs use different concurrency from embedding jobs. A PostgreSQL job table provides durable queue state and leases. An external broker or separate vector service is not a v1 deployment requirement.
 
@@ -32,7 +32,7 @@ Client background collection runs as a user service using systemd on Linux or la
 
 ## Migrations and upgrades
 
-Store ordered SQL migrations with the Rust server once code begins. Provide `sessiondb-server migrate` as an explicit operator command. Production startup checks the schema version and fails readiness with an actionable message if migrations are required; it does not unexpectedly apply destructive changes.
+Store ordered SQL migrations with the server once code begins. Provide `sessiondb-server migrate` as an explicit operator command. Production startup checks the schema version and fails readiness with an actionable message if migrations are required; it does not unexpectedly apply destructive changes.
 
 Use expand/contract changes when an upgrade must allow older clients or worker tasks to overlap. Publish supported server/client/API versions. Native harness version compatibility is independent of API compatibility and belongs in adapter release notes.
 

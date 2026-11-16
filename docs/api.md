@@ -1,6 +1,6 @@
 # HTTP API contract
 
-The SessionDB API provides session, message, import, and search resources for the CLI, Rust SDK, and other applications.
+The SessionDB API provides session, message, import, and search resources for the CLI, SDK, and other applications.
 
 Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. The session-first revision is `0.2.0-draft`, following [0008](decisions/0008-collection-and-project-associations.md). It remains a design contract before implementation.
 
@@ -129,7 +129,7 @@ Use `400` for invalid input, `401` for missing/invalid authentication, `403` for
 
 Problem details include `type`, `title`, `status`, `detail`, `instance`, stable `code`, and `request_id`; file/field errors are bounded extensions. Do not put transcripts, credentials, or signed URLs in errors. Use `Retry-After` when appropriate.
 
-Within `/v1`, additive optional response fields and new enum/content variants are allowed. Removing fields, changing meanings/default ordering, or altering access semantics requires an explicit compatibility decision. Rust DTO decoding must tolerate unknown response variants rather than making every new harness event a client-breaking release.
+Within `/v1`, additive optional response fields and new enum/content variants are allowed. Removing fields, changing meanings/default ordering, or altering access semantics requires an explicit compatibility decision. Clients must tolerate unknown response variants rather than making every new harness event a client-breaking release.
 
 ## Machine readable contract review
 
