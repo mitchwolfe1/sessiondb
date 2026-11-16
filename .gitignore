@@ -20,3 +20,6 @@ credentials*
 .idea/
 *.swp
 *.swo
+
+# Generated local identity configuration contains development passwords
+/dev/.generated-realm.json

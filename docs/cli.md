@@ -4,7 +4,7 @@ The `sessiondb` executable syncs, lists, reads, searches, and exports sessions. 
 
 The first implementation follows [the frozen build slice](first-build.md); later command groups use the same target-v1 contract.
 
-Status: proposed interface. These commands are examples of the intended contract and are not executable in the current repository.
+Status: target-v1 interface, with the initial command subset implemented. See [implementation status](implementation.md) and `sessiondb --help` for available commands; [development](development.md) provides a runnable setup.
 
 ## First use
 
@@ -18,7 +18,7 @@ sessiondb sync --watch
 
 Login authenticates the account; a context selects a server and organization. `--detect` registers selected native store roots for supported harnesses. Use `--harness` and `--root` for an explicit store, or configuration for unattended setup. Starting cwd and project membership do not determine whether a session can be collected. See [automatic sync](sync.md).
 
-`sessiondb sync install` installs the current context and selected source roots as a user-level service. It uses systemd on Linux and launchd on macOS. `sessiondb sync uninstall` removes that service without deleting local harness files or remote history.
+Planned `sessiondb sync install` installs the current context and selected source roots as a user-level service. It will use systemd on Linux and launchd on macOS. Planned `sessiondb sync uninstall` removes that service without deleting local harness files or remote history. The current `sync --watch` runs in the foreground using periodic reconciliation.
 
 ## Command groups
 

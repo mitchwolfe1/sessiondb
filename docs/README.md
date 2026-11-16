@@ -1,12 +1,13 @@
 # SessionDB documentation
 
-SessionDB stores, syncs, queries, and searches coding-agent sessions. These documents cover its planned CLI, API, data model, architecture, and server configuration.
+SessionDB stores and syncs coding-agent sessions. These documents cover the CLI, API, data model, architecture, server configuration, and planned search features.
 
 ## Find a task
 
 | Task | Start here |
 | --- | --- |
 | Understand SessionDB | [Product specification](product.md) |
+| Run the current implementation | [Build and run](development.md), [implementation status](implementation.md) |
 | Start implementation | [First-build scope](first-build.md), [reference validation](validation/reference-stack.md) |
 | Collect and browse sessions | [CLI](cli.md), [automatic sync](sync.md) |
 | Organize sessions by project | [Project associations](project-associations.md) |
@@ -19,7 +20,7 @@ SessionDB stores, syncs, queries, and searches coding-agent sessions. These docu
 
 ## Design status
 
-The repository is in the documentation phase. Commands, endpoints, and configuration examples describe planned behavior. The design supports Codex/Claude/Pi, preserves native files, and provides automatic sync and extensible search.
+The initial implementation supports authenticated sync, original storage, session reads, and native export across Codex/Claude/Pi. [Implementation status](implementation.md) identifies the working subset; the remaining target-v1 specification describes later milestones. CLI help and `/v1/info` report available commands/capabilities.
 
 The [decision register](decisions/README.md) distinguishes accepted direction from proposed technical choices. [Open questions](open-questions.md) identify choices needed for upcoming milestones.
 
@@ -40,6 +41,8 @@ The [product specification](product.md) describes scope. Feature pages describe 
 - [Search and embeddings](search-and-embeddings.md)
 - [Integrations and formats](integrations.md)
 - [Architecture](architecture.md)
+- [Build and run](development.md)
+- [Implementation status](implementation.md)
 - [First-build scope](first-build.md)
 - [Reference stack validation](validation/reference-stack.md)
 - [Operations](operations.md)

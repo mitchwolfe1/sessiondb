@@ -1,4 +1,4 @@
-# Proposed server configuration. No server exists yet.
+# Server configuration example; supply real service endpoints and environment secrets.
 listen = "0.0.0.0:8080"
 public_url = "https://sessions.example.com"
 

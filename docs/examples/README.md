@@ -1,6 +1,6 @@
 # Contract examples
 
-These are synthetic documentation examples of the proposed SessionDB interface. They are not executable application configuration today, and none contains a real credential or collected session.
+These are synthetic examples of the SessionDB interface, including later target-v1 features. None contains a real credential or collected session. The server example describes accepted configuration fields; [development](../development.md) supplies a local runnable profile. See [implementation status](../implementation.md) for available API operations.
 
 | File | Purpose |
 | --- | --- |

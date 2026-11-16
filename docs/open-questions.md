@@ -6,7 +6,7 @@ The decisions needed for the [first build](first-build.md) are settled. The refe
 
 | ID | Decision | Resolution |
 | --- | --- | --- |
-| Q01 | Dependency set and compiler baseline | [Tested library set and Rust 1.94.1](validation/reference-stack.md); commit the application lockfile when code begins. |
+| Q01 | Dependency set and compiler baseline | [Tested library set and Rust 1.94.1](validation/reference-stack.md); the application toolchain and lockfile are committed. |
 | Q02 | Authentication and CLI login | [Keycloak 26.8.2 reference with code/PKCE](authentication.md), API audience, verified bootstrap subject, and headless token input. |
 | Q03 | S3 implementation/client | [SeaweedFS 4.54 and aws-sdk-s3 1.159.0](decisions/0009-reference-storage-and-dependencies.md), with signed staging, immutable promotion, and verified bytes. |
 | Q04 | Initial HTTP surface | [23 first-build operations](first-build.md), typed API draft 0.3.0, and explicit capability reporting. |
@@ -23,4 +23,4 @@ The decisions needed for the [first build](first-build.md) are settled. The refe
 | Q07 | Verify binary targets, SDK publication, and license/distribution policy | Release preparation. Private implementation does not require an open-source licensing decision. |
 | Q10 | Benchmark and tune ranking, capacity, and optional ANN indexes | After a working query/index path; initial keyword/exact-vector/RRF defaults are already specified. |
 
-These follow-ups do not block the first storage-to-CLI path. Update the relevant contract and acceptance case when implementation feedback changes a decision. Application development still begins only when explicitly requested.
+These follow-ups do not block the implemented storage-to-CLI path. Update the relevant contract and acceptance case when implementation feedback changes a decision.

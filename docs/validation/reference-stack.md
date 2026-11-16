@@ -1,6 +1,6 @@
 # Reference stack validation
 
-The first-build storage and authentication choices were checked on 2026-11-16 using disposable local services and synthetic data. The experiments ran outside the application checkout; the repository remains documentation, schemas, and fixtures.
+The first-build storage and authentication choices were checked on 2026-11-16 using disposable local services and synthetic data. These initial experiments ran outside the application checkout during the documentation phase. The repository now also contains the [initial implementation](../implementation.md) and its integration suite.
 
 These results establish dependency and protocol compatibility. They do not claim that a SessionDB server, native adapter, or production performance benchmark has already run.
 

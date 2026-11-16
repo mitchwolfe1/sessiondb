@@ -2,7 +2,7 @@
 
 The SessionDB API provides session, message, import, and search resources for the CLI, SDK, and other applications.
 
-Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. The session-first revision is `0.3.0-draft`, with [typed content](normalized-content.md) and the [first-build subset](first-build.md). It remains a design contract before implementation.
+Status: target-v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations; `x-implemented` identifies the current server subset. The session-first revision is `0.3.0-draft`, with [typed content](normalized-content.md) and the [first-build subset](first-build.md). See [implementation status](implementation.md) before using later target-v1 routes.
 
 ## Conventions
 
@@ -97,7 +97,7 @@ Session detail contains title, tags, `project_ids`, owner/contributor, visibilit
 
 Message/event lists default to all historical records. `leaf_id` chooses a conversation ancestry where supported; incomplete ancestry is returned with a warning rather than silently represented as exact model context. Pagination cursors include a projection revision. If a rewrite/reparse invalidates that revision, return `409 cursor_stale` and instruct the client to restart the listing.
 
-Content follows the [typed block union](normalized-content.md). Bound previews at 64 KiB of UTF-8; oversized structured blocks become `content_reference` rather than broken JSON. `truncated` makes omissions explicit. Full-content responses exclude preview references. Message/content ETags carry the normalized revision; `If-Match` mismatch returns `412`. Artifact bytes remain separate.
+Content follows the [typed block union](normalized-content.md). Bound previews at 64 KiB of UTF-8; oversized structured blocks become `content_reference` rather than broken JSON. `truncated` makes omissions explicit. Full-content responses exclude preview references. Message responses have representation ETags. Full-content ETags quote the normalized `revision`; send that field from a preview in `If-Match`, with a mismatch returning `412`. Artifact bytes remain separate. Content URLs are generated for the current public server address.
 
 ## Assignment and sharing
 

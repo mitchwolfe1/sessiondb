@@ -1,0 +1,38 @@
+name: sessiondb-dev
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: sessiondb
+      POSTGRES_DB: sessiondb
+      POSTGRES_PASSWORD: ${SESSIONDB_DEV_DATABASE_PASSWORD:?Run dev/up first}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sessiondb -d sessiondb"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  s3:
+    image: chrislusf/seaweedfs:4.54
+    environment:
+      AWS_ACCESS_KEY_ID: ${SESSIONDB_DEV_S3_ACCESS_KEY:?Run dev/up first}
+      AWS_SECRET_ACCESS_KEY: ${SESSIONDB_DEV_S3_SECRET_KEY:?Run dev/up first}
+      S3_BUCKET: sessiondb
+    ports:
+      - "127.0.0.1:58333:8333"
+    volumes:
+      - objects:/data
+  identity:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "127.0.0.1:58180:8080"
+    volumes:
+      - identity:/opt/keycloak/data
+volumes:
+  postgres:
+  objects:
+  identity:

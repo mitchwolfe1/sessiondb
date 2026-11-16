@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+target
+data
+sessions
+tmp
+dev/.generated-realm.json
+*.sqlite*
+*.log

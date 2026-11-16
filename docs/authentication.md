@@ -2,7 +2,7 @@
 
 Human CLI login uses OpenID Connect Authorization Code with PKCE S256. The first reference provider is Keycloak 26.8.2. Session access after login follows [access control](access-control.md), independently of project labels.
 
-Status: accepted first-build protocol. [Reference validation](validation/reference-stack.md) records the actual browser/provider checks; SessionDB's own implementation tests follow during the first build.
+Status: implemented first-build protocol. [Reference validation](validation/reference-stack.md) records the initial browser/provider checks. The implementation suite exercises the SDK's PKCE callback/refresh and the API's JWT and membership checks.
 
 ## Provider setup
 
@@ -24,9 +24,9 @@ The reference validation used a disposable local issuer. Production issuer/disco
 6. Present the API-audience access token to `POST /v1/auth/session`. The server validates it, registers the user, and claims matching active invitations using verified identity information.
 7. Store access/refresh credentials in the OS credential store. The context configuration holds the server and organization selection, not the tokens.
 
-A cancelled/failed browser flow expires after five minutes and releases the loopback listener. Refresh follows the provider's token endpoint and lifetime policy. A failed refresh asks for sign-in rather than falling back to another identity or an API-key billing path.
+A cancelled/failed browser flow expires after five minutes and releases the loopback listener. Refresh follows the provider's token endpoint and lifetime policy. A returned ID token is verified and must retain the original subject; a repeated nonce must match the initial login. A failed refresh asks for sign-in rather than falling back to another identity or an API-key billing path.
 
-For a headless environment, `sessiondb auth login --token-stdin` or `SESSIONDB_TOKEN` accepts a member-issued scoped API token. Device authorization is a later optional flow, not required to implement this login.
+For a headless environment, `SESSIONDB_TOKEN` supplies an API-audience access token without OS credential storage. `sessiondb auth login --token-stdin` validates and saves a supplied token in that store. Member-issued scoped API tokens and device authorization are later flows.
 
 ## API token verification
 

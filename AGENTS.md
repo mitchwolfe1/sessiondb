@@ -16,7 +16,7 @@ Use Rust for the server, CLI, sync agent, and first client SDK. Document languag
 
 ## Current phase
 
-This repository is documentation first. Until the user explicitly requests implementation, change documentation and contract examples only. Do not add application code, Cargo manifests, migrations, executable deployment files, or generated SDKs. Documentation and example commands must not claim that software already runs.
+This project follows documentation-first development. The user has authorized implementation. Keep the working server, CLI, SDK, migrations, and tests consistent with the accepted first-build contract. Distinguish implemented behavior from the remaining target-v1 specification; update `docs/implementation.md` as capabilities ship.
 
 Read `docs/README.md`, the relevant feature documents, and applicable decision records before editing. Product decisions and implementation proposals have different statuses. Keep the decision register, API descriptions, CLI examples, and acceptance criteria consistent.
 
@@ -28,7 +28,7 @@ Do not treat a list of open questions as permission to stop documentation work. 
 - Keep commits focused and describe the final change. Do not include real session data, credentials, private source contents, or machine-specific state.
 - Use synthetic examples. Preserve native source bytes in the design and distinguish recorded user roles from human authorship.
 - Check relative links, document consistency, example syntax, and whitespace. Validate machine-readable contracts when introduced.
-- For future Rust work, use the workspace conventions in `docs/architecture.md` and `CONTRIBUTING.md`; select and lock dependency versions at implementation time.
+- Use the workspace conventions in `docs/architecture.md` and `CONTRIBUTING.md`. Keep the toolchain and dependency lockfile checked in and run the relevant checks for implementation changes.
 
 ## Boundaries
 

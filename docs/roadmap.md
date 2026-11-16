@@ -1,6 +1,6 @@
 # Delivery plan
 
-Delivery proceeds through reviewable vertical slices. The current repository is phase zero: specifications and documentation, without application code.
+Delivery proceeds through reviewable vertical slices. Phase zero and the first storage-to-CLI implementation are complete; [implementation status](implementation.md) tracks the current boundary.
 
 ## Phase zero
 

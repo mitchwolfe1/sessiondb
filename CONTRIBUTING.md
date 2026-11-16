@@ -1,6 +1,6 @@
 # Contributing
 
-SessionDB is currently in a private, documentation-first phase. The first deliverable is a coherent specification that can guide implementation and review.
+SessionDB is private and follows documentation-first development. The initial implementation follows the accepted specification; [implementation status](docs/implementation.md) separates working capabilities from the remaining plan.
 
 ## Documentation changes
 
@@ -26,11 +26,11 @@ test(sync): cover reconnect after server outage
 
 Use `!` or a `BREAKING CHANGE:` footer for a breaking public contract change. The scope is optional. Commits should contain one coherent change, and their descriptions should explain the resulting behavior.
 
-## Future Rust implementation
+## Building and testing
 
-The proposed workspace uses the Rust 2024 edition. Choose a tested minimum supported Rust version and commit `rust-toolchain.toml` and `Cargo.lock` when implementation begins. Do not infer a minimum version from one developer's installed toolchain.
+The workspace uses Rust 2024 with a tested Rust 1.94.1 baseline. Keep `rust-toolchain.toml` and `Cargo.lock` committed. See [development](docs/development.md) for native build dependencies, local services, and integration checks.
 
-Future checks include:
+Required checks include:
 
 ```sh
 cargo fmt --all -- --check
@@ -39,7 +39,7 @@ cargo test --workspace
 cargo doc --workspace --no-deps
 ```
 
-These commands do not run against the current documentation-only repository. Add integration tests for meaningful behavior: sync and recovery, provider normalization, organization isolation, session sharing, optional project labels, and search coverage. Use a real disposable PostgreSQL instance and an S3-compatible test service for storage integration tests; use synthetic transcripts and a deterministic embedding fixture without paid model calls.
+Add integration tests for meaningful behavior: sync and recovery, provider normalization, organization isolation, session sharing, optional project labels, and search coverage as those features ship. The Docker integration suite uses disposable PostgreSQL and S3-compatible services with synthetic transcripts. Keep embedding tests deterministic and avoid paid model calls.
 
 Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) for the public client crate. Keep network DTOs, internal database models, and native harness payloads distinct. Avoid publishing internal server types through the SDK.
 

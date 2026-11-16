@@ -1,0 +1,5 @@
+{
+  "globs": ["**/*.md"],
+  "ignores": ["target/**"],
+  "config": {"MD013": false}
+}

@@ -2,9 +2,11 @@
 
 SessionDB is a database for coding-agent sessions. It automatically syncs sessions from Codex, Claude Code, and Pi, stores their original files, and makes their contents accessible through a common interface.
 
-Use SessionDB to browse conversations and tool calls, search previous work, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK, with configurable embedding providers for semantic search.
+Use SessionDB to browse conversations and tool calls, export native history, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK. Keyword search and configurable embedding providers are planned.
 
-**Status: design phase.** This repository currently contains specifications and documentation; the commands and API describe the planned interface.
+**Status: initial implementation.** Authenticated sync, original storage, session reads, and native exports work across Codex, Claude Code, and Pi. See [implementation status](docs/implementation.md) for available features and remaining milestones.
+
+Build instructions and a local development setup are in [Build and run SessionDB](docs/development.md).
 
 ## Sync and query sessions
 
@@ -20,8 +22,7 @@ sessiondb sync --watch
 
 sessiondb sessions list --harness claude
 sessiondb sessions show SESSION_ID
-sessiondb sessions update SESSION_ID --project payments
-sessiondb search "payment retries" --project payments
+sessiondb sessions messages SESSION_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
 
@@ -29,13 +30,13 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 
 - **Automatic sync:** collect new and updated sessions from multiple harnesses and machines.
 - **Session access:** list conversations, read messages and tool activity, inspect relationships, and export sessions.
-- **Search:** filter by project, harness, author, or date; use keyword search or enable semantic and hybrid retrieval.
+- **Filtering:** browse sessions by harness, author, date, or optional project associations. Keyword and semantic search are planned.
 - **Native storage:** keep original files alongside a consistent, queryable session model.
-- **Optional grouping:** associate a session with zero or more projects, independently of its starting directory and collection source.
+- **Optional grouping:** sessions can have zero or more project associations, independently of starting directory and collection source. Project administration is planned.
 - **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a client SDK, PostgreSQL, and S3-compatible object storage.
-- **Extensibility:** add harness adapters, embedding providers, and applications without changing the collection workflow.
+- **Extensibility:** native adapters and the shared API support additional integrations; embedding-provider support is a later milestone.
 
-SessionDB can also serve a shared collection, with users, teams, and explicit session access. Project labels organize history; sharing settings control visibility. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
+SessionDB can also serve a shared collection, with private and organization-visible sessions. Team grants and additional sharing controls are planned. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
 
 The initial release targets a single server deployment and Linux/macOS sync clients.
 
@@ -54,7 +55,7 @@ Start with the [documentation guide](docs/README.md), then read:
 
 ## Development
 
-Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and planned development checks.
+Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and required checks.
 
 The [first-build plan](docs/first-build.md) selects the initial working path. [Reference checks](docs/validation/reference-stack.md) and [synthetic native fixtures](fixtures/README.md) support the storage, login, and message contracts.
 

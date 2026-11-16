@@ -2,7 +2,7 @@
 
 SessionDB normalizes native records into messages, typed content blocks, structural events, and session relationships. Original files remain available independently of that projection.
 
-Status: accepted implementation baseline for API draft `0.3.0`. The [OpenAPI schemas](openapi.yaml) and [synthetic fixtures](../fixtures/README.md) define the shapes before parser code is written.
+Status: implemented baseline for API draft `0.3.0`. The [OpenAPI schemas](openapi.yaml) and [synthetic fixtures](../fixtures/README.md) define the shapes and expected adapter output.
 
 ## Messages and content blocks
 
@@ -65,4 +65,4 @@ Unknown native content is data. Render it as escaped content or a reference, and
 
 ## Fixtures
 
-The [fixture manifest](../fixtures/manifest.json) supplies native paths and expected normalized fields without prescribing database-generated UUIDs. Its cases cover home-directory launches, JSON/text inputs, repeated fragments, subagents, inherited history, branches/context edits, compaction, artifacts, and malformed/incomplete capture. Schema checks validate these expectations; actual adapter conformance tests begin with implementation.
+The [fixture manifest](../fixtures/manifest.json) supplies native paths and expected normalized fields without prescribing database-generated UUIDs. Its cases cover home-directory launches, JSON/text inputs, repeated fragments, subagents, inherited history, branches/context edits, compaction, artifacts, and malformed/incomplete capture. Schema checks validate the expectations; [adapter tests](../crates/adapters/tests/fixtures.rs) compare actual normalized output with them.

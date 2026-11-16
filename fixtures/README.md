@@ -33,6 +33,6 @@ For inherited history, the byte boundary describes the exact serialized parent i
 
 [expectation.schema.json](expectation.schema.json) validates the expected wrapper and references [the OpenAPI content schemas](../docs/openapi.yaml). Validation loads that YAML document into the local JSON Schema registry before resolving the relative reference; it requires no network schema fetch.
 
-Static checks cover JSON/schema validity, native anchors, expected parent graphs, declared malformed lines, incomplete-tail byte counts, fork offsets, artifact bindings, and the embedded PNG's structure. They do not substitute for running a future adapter against the inputs. Actual Rust adapter tests must compare normalized output with these expectations and add new version-specific fixtures when behavior changes.
+Static checks cover JSON/schema validity, native anchors, expected parent graphs, declared malformed lines, incomplete-tail byte counts, fork offsets, artifact bindings, and the embedded PNG's structure. [Adapter tests](../crates/adapters/tests/fixtures.rs) compare actual normalization with these expectations. Add version-specific fixtures when behavior changes.
 
 Do not regenerate expected results silently from a parser under test. A behavior change should update its documented normalization rule and expected fixture in the same reviewed change.

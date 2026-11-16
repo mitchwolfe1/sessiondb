@@ -1,4 +1,3 @@
-# Design contract; no SessionDB application implementation exists yet.
 openapi: 3.1.1
 info:
   title: SessionDB API
@@ -47,6 +46,7 @@ paths:
                 $ref: '#/components/schemas/Health'
       security: []
       x-first-build: true
+      x-implemented: true
   /readyz:
     parameters: []
     get:
@@ -66,6 +66,7 @@ paths:
                 $ref: '#/components/schemas/Health'
       security: []
       x-first-build: true
+      x-implemented: true
   /v1/info:
     parameters: []
     get:
@@ -85,6 +86,7 @@ paths:
                 $ref: '#/components/schemas/ServerInfo'
       security: []
       x-first-build: true
+      x-implemented: true
   /v1/auth/config:
     parameters: []
     get:
@@ -104,6 +106,7 @@ paths:
                 $ref: '#/components/schemas/AuthConfig'
       security: []
       x-first-build: true
+      x-implemented: true
   /v1/auth/session:
     parameters: []
     post:
@@ -122,6 +125,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Me'
       x-first-build: true
+      x-implemented: true
   /v1/me:
     parameters: []
     get:
@@ -140,6 +144,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Me'
       x-first-build: true
+      x-implemented: true
   /v1/organizations:
     parameters: []
     get:
@@ -172,6 +177,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}:
     parameters:
     - name: org_id
@@ -196,6 +202,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Organization'
       x-first-build: false
+      x-implemented: false
     patch:
       operationId: updateOrganization
       tags:
@@ -218,6 +225,7 @@ paths:
             schema:
               $ref: '#/components/schemas/OrganizationPatch'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/invitations:
     parameters:
     - name: org_id
@@ -256,6 +264,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createInvitation
       tags:
@@ -283,6 +292,7 @@ paths:
             schema:
               $ref: '#/components/schemas/InvitationCreate'
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/invitations/{invitation_id}:
     parameters:
     - name: org_id
@@ -309,6 +319,7 @@ paths:
         '204':
           description: Success
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/members:
     parameters:
     - name: org_id
@@ -347,6 +358,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/members/{user_id}:
     parameters:
     - name: org_id
@@ -383,6 +395,7 @@ paths:
             schema:
               $ref: '#/components/schemas/MembershipPatch'
       x-first-build: false
+      x-implemented: false
     delete:
       operationId: removeMember
       tags:
@@ -395,6 +408,7 @@ paths:
         '204':
           description: Success
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/teams:
     parameters:
     - name: org_id
@@ -433,6 +447,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createTeam
       tags:
@@ -460,6 +475,7 @@ paths:
             schema:
               $ref: '#/components/schemas/TeamCreate'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/teams/{team_id}:
     parameters:
     - name: org_id
@@ -490,6 +506,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Team'
       x-first-build: false
+      x-implemented: false
     patch:
       operationId: updateTeam
       tags:
@@ -512,6 +529,7 @@ paths:
             schema:
               $ref: '#/components/schemas/TeamPatch'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/teams/{team_id}/members:
     parameters:
     - name: org_id
@@ -556,6 +574,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/teams/{team_id}/members/{user_id}:
     parameters:
     - name: org_id
@@ -592,6 +611,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/TeamMember'
       x-first-build: false
+      x-implemented: false
     delete:
       operationId: removeTeamMember
       tags:
@@ -604,6 +624,7 @@ paths:
         '204':
           description: Success
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/projects:
     parameters:
     - name: org_id
@@ -643,6 +664,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createProject
       tags:
@@ -671,6 +693,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ProjectCreate'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/projects/{project_id}:
     parameters:
     - name: org_id
@@ -701,6 +724,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Project'
       x-first-build: false
+      x-implemented: false
     patch:
       operationId: updateProject
       tags:
@@ -724,6 +748,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ProjectPatch'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/tokens:
     parameters:
     - name: org_id
@@ -762,6 +787,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createToken
       tags:
@@ -791,6 +817,7 @@ paths:
             schema:
               $ref: '#/components/schemas/TokenCreate'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/tokens/{token_id}:
     parameters:
     - name: org_id
@@ -817,6 +844,7 @@ paths:
         '204':
           description: Success
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sources:
     parameters:
     - name: org_id
@@ -859,6 +887,7 @@ paths:
         schema:
           $ref: '#/components/schemas/Harness'
       x-first-build: true
+      x-implemented: true
     post:
       operationId: createSource
       tags:
@@ -887,6 +916,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SourceCreate'
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/sources/{source_id}:
     parameters:
     - name: org_id
@@ -917,6 +947,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Source'
       x-first-build: true
+      x-implemented: true
     patch:
       operationId: updateSource
       tags:
@@ -941,6 +972,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SourcePatch'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sources/{source_id}/files:
     parameters:
     - name: org_id
@@ -985,6 +1017,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/generations:
     parameters:
     - name: org_id
@@ -1035,6 +1068,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/content:
     parameters:
     - name: org_id
@@ -1099,6 +1133,7 @@ paths:
         schema:
           type: string
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/imports:
     parameters:
     - name: org_id
@@ -1143,6 +1178,7 @@ paths:
           format: uuid
         description: ''
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createImport
       tags:
@@ -1181,6 +1217,7 @@ paths:
             schema:
               $ref: '#/components/schemas/ImportManifest'
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/imports/{import_id}:
     parameters:
     - name: org_id
@@ -1212,6 +1249,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Import'
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/imports/{import_id}/complete:
     parameters:
     - name: org_id
@@ -1255,6 +1293,7 @@ paths:
           and effects with current status. Repeated completion reuses the verification
           job. Retained for 30 days.
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/sessions:
     parameters:
     - name: org_id
@@ -1347,6 +1386,7 @@ paths:
           type: boolean
           default: false
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/sessions/{session_id}:
     parameters:
     - name: org_id
@@ -1377,6 +1417,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Session'
       x-first-build: true
+      x-implemented: true
     patch:
       operationId: updateSession
       tags:
@@ -1401,6 +1442,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SessionPatch'
       x-first-build: false
+      x-implemented: false
     delete:
       operationId: deleteSession
       tags:
@@ -1418,6 +1460,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Job'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sessions/{session_id}/messages:
     parameters:
     - name: org_id
@@ -1468,6 +1511,7 @@ paths:
           format: uuid
         description: ''
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/sessions/{session_id}/events:
     parameters:
     - name: org_id
@@ -1512,6 +1556,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sessions/{session_id}/export:
     parameters:
     - name: org_id
@@ -1565,6 +1610,7 @@ paths:
           format: uuid
         description: ''
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/messages/{message_id}:
     parameters:
     - name: org_id
@@ -1596,10 +1642,12 @@ paths:
                 $ref: '#/components/schemas/Message'
           headers:
             ETag:
-              description: Strong quoted normalized message revision.
+              description: Strong ETag for this preview representation. Use the revision
+                field for full-content If-Match.
               schema:
                 type: string
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/messages/{message_id}/content:
     parameters:
     - name: org_id
@@ -1644,6 +1692,7 @@ paths:
         description: Optional quoted revision from a message/content reference; mismatch
           returns 412.
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/search:
     parameters:
     - name: org_id
@@ -1676,6 +1725,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SearchRequest'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/embedding-profiles:
     parameters:
     - name: org_id
@@ -1714,6 +1764,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createEmbeddingProfile
       tags:
@@ -1742,6 +1793,7 @@ paths:
             schema:
               $ref: '#/components/schemas/EmbeddingProfileCreate'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/embedding-profiles/{profile_id}:
     parameters:
     - name: org_id
@@ -1772,6 +1824,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmbeddingProfile'
       x-first-build: false
+      x-implemented: false
     patch:
       operationId: updateEmbeddingProfile
       tags:
@@ -1795,6 +1848,7 @@ paths:
             schema:
               $ref: '#/components/schemas/EmbeddingProfilePatch'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/index-jobs:
     parameters:
     - name: org_id
@@ -1826,6 +1880,7 @@ paths:
             schema:
               $ref: '#/components/schemas/IndexJobCreate'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/jobs/{job_id}:
     parameters:
     - name: org_id
@@ -1856,6 +1911,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Job'
       x-first-build: true
+      x-implemented: true
   /v1/organizations/{org_id}/changes:
     parameters:
     - name: org_id
@@ -1902,6 +1958,7 @@ paths:
           format: uuid
         description: ''
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sessions/{session_id}/grants:
     parameters:
     - name: org_id
@@ -1947,6 +2004,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
+      x-implemented: false
     post:
       operationId: createSessionGrant
       tags:
@@ -1975,6 +2033,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SessionGrantCreate'
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/sessions/{session_id}/grants/{grant_id}:
     parameters:
     - name: org_id
@@ -2008,6 +2067,7 @@ paths:
         '204':
           description: Success
       x-first-build: false
+      x-implemented: false
   /v1/organizations/{org_id}/artifacts/{artifact_id}:
     parameters:
     - name: org_id
@@ -2039,6 +2099,7 @@ paths:
         default:
           $ref: '#/components/responses/Problem'
       x-first-build: false
+      x-implemented: true
   /v1/organizations/{org_id}/artifacts/{artifact_id}/content:
     parameters:
     - name: org_id
@@ -2083,6 +2144,7 @@ paths:
         schema:
           type: string
       x-first-build: false
+      x-implemented: true
 components:
   securitySchemes:
     bearerAuth:
@@ -2837,7 +2899,8 @@ components:
             format: uuid
           - type: 'null'
           description: Stable verification job ID after completion is scheduled. Later
-            parsing/indexing jobs do not replace it; import status tracks overall processing.
+            parsing/indexing jobs do not replace it; import status tracks overall
+            processing.
         accepted_at:
           anyOf:
           - type: string

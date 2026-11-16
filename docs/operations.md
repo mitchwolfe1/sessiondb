@@ -2,7 +2,7 @@
 
 SessionDB runs as a service backed by PostgreSQL and an S3-compatible object store. This guide covers server configuration, background processing, health, upgrades, and backup/restore. Account and session-sharing setup are described in [access control](access-control.md).
 
-Status: proposed operating model. There are no Docker images, Compose files, migrations, or installers in this documentation-only repository.
+Status: initial operating model with later target-v1 features called out in [implementation status](implementation.md). The repository contains migrations, a server Dockerfile, and a local Compose profile. Published images, binary releases, and client-service installers remain later work.
 
 ## Deployment topology
 
@@ -32,11 +32,11 @@ Client background collection runs as a user service using systemd on Linux or la
 
 ## Migrations and upgrades
 
-Store ordered SQL migrations with the server once code begins. Provide `sessiondb-server migrate` as an explicit operator command. Production startup checks the schema version and fails readiness with an actionable message if migrations are required; it does not unexpectedly apply destructive changes.
+Ordered SQL migrations live with the server. Run `sessiondb-server migrate` explicitly before serving. Startup checks migration versions/checksums and fails with an actionable message if migrations are required; it does not unexpectedly apply destructive changes.
 
 Use expand/contract changes when an upgrade must allow older clients or worker tasks to overlap. Publish supported server/client/API versions. Native harness version compatibility is independent of API compatibility and belongs in adapter release notes.
 
-Choose Rust dependency versions, TLS backend, MSRV, and supported binary targets after the first integration spike, then lock them in Cargo. Release checks include formatting, Clippy, unit/integration tests, API compatibility, and migration tests. PostgreSQL/pgvector/object-store versions belong in the tested deployment matrix rather than being inferred from `latest` tags.
+The toolchain and dependencies are locked in Cargo. Release checks include formatting, Clippy, unit/integration tests, API compatibility, and migration tests. PostgreSQL/pgvector/object-store versions belong in the tested deployment matrix rather than being inferred from `latest` tags. Supported release targets still require packaging checks.
 
 ## Backup and restore
 

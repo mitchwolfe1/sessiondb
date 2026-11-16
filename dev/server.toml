@@ -1,0 +1,27 @@
+# Local development only. Production uses HTTPS and an existing OIDC provider.
+listen = "127.0.0.1:58080"
+public_url = "http://127.0.0.1:58080"
+
+[database]
+url_env = "SESSIONDB_DATABASE_URL"
+
+[objects]
+provider = "s3"
+endpoint = "http://127.0.0.1:58333"
+bucket = "sessiondb"
+region = "us-east-1"
+path_style = true
+access_key_env = "SESSIONDB_DEV_S3_ACCESS_KEY"
+secret_key_env = "SESSIONDB_DEV_S3_SECRET_KEY"
+
+[auth]
+issuer = "http://127.0.0.1:58180/realms/sessiondb"
+audience = "sessiondb-api"
+cli_client_id = "sessiondb-cli"
+allow_insecure_http = true
+
+[bootstrap]
+organization_slug = "local"
+organization_name = "Local"
+owner_issuer = "http://127.0.0.1:58180/realms/sessiondb"
+owner_subject = "44444444-4444-4444-8444-444444444444"
