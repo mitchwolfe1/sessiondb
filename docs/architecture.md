@@ -21,7 +21,7 @@ flowchart LR
     X[hype-history and other applications] --> A
 ```
 
-PostgreSQL holds session data, search indexes, project metadata, access settings, and job state. Original files and large artifacts live in an existing S3-compatible object store. SessionDB uses its object API for storage and its own session API for queries.
+PostgreSQL holds session data, search indexes, optional project metadata, session access settings, and job state. Original files and large artifacts live in an existing S3-compatible object store. SessionDB uses its object API for storage and its own session API for queries.
 
 ## Rust workspace
 
@@ -88,7 +88,7 @@ An object upload alone is not an accepted import. An accepted import can exist b
 
 Catalog and membership reads use PostgreSQL. Session parsing, keyword indexing, and embedding are asynchronous. Responses include processing state so users can distinguish collection lag from search lag. Keyword results cover indexed accepted content; embedding coverage is a separate measure.
 
-The [sync protocol](sync.md) specifies retries and rewrites. The [data model](data-model.md) separates conversation branches from nested execution. All read paths apply [project authorization](access-control.md) before returning content, including search candidates and raw export access.
+The [sync protocol](sync.md) specifies retries and rewrites. The [data model](data-model.md) separates conversation branches from nested execution. All read paths apply [session authorization](access-control.md) before returning content, including search candidates and raw export access.
 
 ## API and applications
 

@@ -5,13 +5,16 @@ These are synthetic documentation examples of the proposed SessionDB interface. 
 | File | Purpose |
 | --- | --- |
 | [server.toml](server.toml) | Single-server storage, authentication, worker, and limit settings |
-| [client.toml](client.toml) | Named organization connection and approved workspace collection |
-| [session.json](session.json) | A shared project session returned by the API |
+| [client.toml](client.toml) | Native store roots and an optional initial classification rule |
+| [source-create.json](source-create.json) | A native store source with no project binding |
+| [session.json](session.json) | A home-launched session associated with a project elsewhere |
+| [session-unassigned.json](session-unassigned.json) | A valid session with an empty project association array |
+| [session-update.json](session-update.json) | Project association edits without a sharing change |
 | [search-request.json](search-request.json) | A filtered shared keyword query |
 | [search-response.json](search-response.json) | Bounded matches with retrieval and coverage information |
 | [import-request.json](import-request.json) | Source file snapshot manifest |
 | [import-response.json](import-response.json) | Signed upload target returned before durable acceptance |
-| [embedding-profile.json](embedding-profile.json) | An explicitly configured project embedding provider |
+| [embedding-profile.json](embedding-profile.json) | A common embedding profile that also covers unassigned sessions |
 | [problem.json](problem.json) | RFC 9457 error with a stable application code |
 
 The synthetic IDs consistently use `1111…` for organization Acme, `2222…` for project Payments, `4444…` for engineer Ada, `5555…` for a source, `6666…` for a session, `7777…` for a message, and `8888…` for an import. Paths under `example.com` and all digest/URL values are illustrative.

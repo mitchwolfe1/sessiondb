@@ -1,66 +1,64 @@
 # Access control
 
-Access control determines who can sync, read, search, and manage sessions on a shared server. Sessions belong to projects; memberships and grants determine project access.
+Session access is independent of project labels and directory matching. A session's owner, visibility, and explicit grants control reading and editing. Sources remain tied to the account and native store they collect.
 
-Status: proposed v1 role and authentication contract. Identity-provider interoperability and bootstrap are review gates before implementation.
+Status: proposed role/authentication contract, replacing the earlier project-bound proposal through [0008](decisions/0008-collection-and-project-associations.md).
 
-## Roles
+## Session access
 
-Organization roles are `owner`, `admin`, and `member`. Owners control organization settings and owner membership. Admins manage teams, projects, non-owner memberships, grants, sources, and jobs. Members receive access through direct or team project grants. The last active owner cannot be removed or demoted.
+New sources default to `private` visibility. A session with private visibility is readable by its owner, organization owners/admins, and explicitly granted users/teams. `organization` visibility additionally allows all active organization members to read it.
 
-Project roles are ordered `viewer`, `contributor`, and `maintainer`. The strongest applicable direct/team grant wins. Organization owners and admins have maintainer access to every project in their organization; this is an explicit company-managed workspace policy.
+A viewer grant permits reading, searching, and exporting. An editor grant also permits changing title, tags, and project associations. Only the session owner or an organization administrator can change visibility/grants or delete the session. Linking a parent/child session does not grant access to the linked session.
 
-| Action | Viewer | Contributor | Maintainer | Organization admin or owner |
+| Action | Reader | Editor | Session owner | Organization admin or owner |
 | --- | --- | --- | --- | --- |
-| List, read, search, export project sessions | Yes | Yes | Yes | Yes |
-| Register own source and upload sessions | No | Yes | Yes | Yes |
-| Update own session title/tags | No | Yes | Yes | Yes |
-| Update any project session title/tags | No | No | Yes | Yes |
-| Pause/revoke another member's project source | No | No | Yes | Yes |
-| Delete project sessions or request reindex | No | No | Yes | Yes |
-| Manage project access grants | No | No | Yes | Yes |
-| Create projects or manage teams/members | No | No | No | Yes |
-| Configure embedding provider credentials | No | No | No | Yes |
-| Grant owner role or remove an owner | No | No | No | Owner only |
+| Read, search, export accessible sessions | Yes | Yes | Yes | Yes |
+| Update title, tags, project associations | No | Yes | Yes | Yes |
+| Change visibility or user/team grants | No | No | Yes | Yes |
+| Delete a session | No | No | Yes | Yes |
+| Register a source | Active member | Active member | Active member | Yes |
+| Pause a source or read its unparsed originals | No | No | Source owner | Yes |
+| Configure embedding providers or organization-wide indexing | No | No | No | Yes |
 
-An engineer can pause their own collection source. A source token has narrower project/source permissions than an interactive account and cannot inherit organization administration implicitly.
+Every active member can create a logical project label. Its creator or an administrator can change/archive it. Project labels are organization metadata; viewing a project's name does not authorize reading any of its sessions. Project archive has no effect on native collection.
 
-## Membership
+## Membership and teams
 
-An account is identified by a validated identity-provider issuer and subject. An administrator invites an email through the configured provider; a `POST /v1/auth/session` login with a matching verified email claims the pending invitation and becomes a membership. Store the subject at acceptance. Read-only `GET /v1/me` does not create memberships. Removing a membership immediately removes its team participation and effective access, and disables collection credentials issued for that membership.
+Organization roles are `owner`, `admin`, and `member`. Owners manage organization settings and owner membership. Admins manage teams and non-owner memberships and can manage/read all sessions in their organization. The last active owner cannot be removed or demoted.
 
-V1 has no private user workspace inside a company organization. Personal work belongs in a separate organization or outside configured collection roots. The client shows the destination project before enabling a mapping.
+An account is identified by a validated issuer/subject. An administrator invites an email, and a `POST /v1/auth/session` login with a matching verified email claims the invitation. Read-only `GET /v1/me` creates no memberships. Removing membership invalidates its grants and credentials; already accepted data remains stored until explicitly deleted.
 
-## Authentication proposal
+Teams group memberships for explicit session grants. Project association is never an implicit grant to a team. Private and shared sessions can coexist in the same organization and reference the same project label.
 
-Use a configured OpenID Connect provider for human authentication and expiring, revocable project-scoped API tokens for applications and automation. The Rust CLI uses the external browser with Authorization Code and PKCE and a loopback redirect. The provider must support a registered public client and an access-token audience for SessionDB. Validate access tokens; do not accept an ID token as an API bearer token merely because it is signed.
+## Sources and sync
 
-The server publishes public authentication configuration at `/v1/auth/config`. The CLI stores credentials in the operating-system credential store, or reads a scoped token from `SESSIONDB_TOKEN`/standard input for headless use. No client secret belongs in a distributed CLI binary.
+A source belongs to an account, device, harness, and native store root. It has no project binding. Its default visibility applies only when a new session is created; later sync preserves per-session access and classification edits.
 
-For first startup, the operator configures the initial organization and an exact trusted issuer/subject to become its first owner. The initialization transaction runs only against an empty installation. Later changes to this bootstrap configuration do not grant new owner privileges. See [open questions](open-questions.md) for the interoperability test required before accepting this proposal.
+The user selects which native stores to collect and can add include/exclude filters. A starting directory outside a repository is not an exclusion by itself. Supporting-file allowlists avoid collecting credentials/configuration simply because they sit beside transcripts.
 
-An interactive member can issue a project token up to their current project rights. `sessions:read` permits project reading/search/export, `sessions:write` permits allowed session metadata/deletion operations, and `sources:sync` permits collection for one bound own source. Collection-only tokens can inspect their own sync state but cannot read arbitrary conversations. A token never grants organization administration, and its rights are rechecked against the issuing membership's current project access. Dedicated service-account provisioning is later work; v1 automation uses a member-issued scoped token.
+Raw source listing and unparsed originals require source-owner/admin access. A session reader's native export includes only fully authorized files and artifacts. A file containing another inaccessible session is omitted; unrelated paths/content are not leaked through the warning.
 
-## Authorization enforcement
+## Authentication and tokens
 
-The authenticated principal's organization membership and project grants are checked on list, detail, content, artifact, export, changes, and search routes. Apply filters before lexical/vector ranking and pagination. A session ID or native path supplied by a client never bypasses membership checks.
+Use a configured OIDC provider for human login and expiring revocable API tokens for automation. The Rust CLI proposal uses an external browser with Authorization Code/PKCE and a loopback redirect. The provider needs a registered public client and the SessionDB API audience. Validate access tokens rather than accepting an ID token as API authorization.
 
-For an authenticated caller, inaccessible project/session resources return `404` to avoid revealing their existence. Known resources with a denied management action return `403`. Unauthenticated requests return `401` with the standard authentication challenge. Rate limiting uses `429` and `Retry-After`.
+The server exposes public login configuration at `/v1/auth/config`. The CLI uses the OS credential store or explicit token input/environment. Empty-installation bootstrap configures one exact trusted issuer/subject as the initial owner; changing bootstrap settings later grants no new privileges.
 
-Background jobs carry their organization/project scope. Job result endpoints recheck the caller's current permissions. Revoking a grant changes access immediately; caches must not authorize from stale search or embedding results.
+A member-issued token can carry `sessions:read`, `sessions:write`, or `sources:sync`. Read/write rights are limited by the issuer's current session access and optional explicit `session_ids` restrictions. A sync token also binds one owned source and can inspect its own import/file state; a sync-only token cannot change source defaults or sharing. Source configuration uses the interactive owner/admin identity. Project filters are not token permission scopes. Tokens never grant organization administration.
 
-Use short-lived object download URLs only after authorization. Previously issued URLs may remain usable until their expiry; the proposed maximum is 60 seconds. If immediate revocation is required, proxy downloads through SessionDB instead. This deployment policy also applies to exports.
+## Enforcement
 
-## Collection and content handling
+Apply organization membership and session authorization before list pagination, snippets, counts, keyword/vector retrieval, changes, exports, and artifact downloads. Jobs recheck the current caller before returning results. Indexes and result caches cannot authorize from stale grants.
 
-Collect only configured workspaces, selected sessions, and allowlisted supporting artifacts. Never recursively upload a harness home containing credentials and unrelated configuration. Transcript text is data: ingestion never executes recorded commands or follows arbitrary remote links found inside content.
+Use `401` for unauthenticated requests, `404` for inaccessible data, and `403` for a denied known management operation. Previously issued signed URLs can remain usable for their documented maximum lifetime of 60 seconds; proxy through SessionDB if immediate download revocation is required.
 
-Original files can contain sensitive content already recorded by the harness. Use authenticated private storage and project permissions. Any client-side redaction mode must explicitly identify its output as a transformed copy; it must not claim byte-identical archival preservation. A mandatory redaction policy is a deployment/product decision, not an undocumented parser side effect.
+Original transcripts can contain sensitive recorded content. Storage is private and authenticated. Ingestion treats text as data and never executes recorded commands or follows arbitrary remote content URLs. Any redaction mode explicitly identifies its output as a transformed copy.
 
-## Required access scenarios
+## Access scenarios
 
-- A member in team A can search and export a granted project, but cannot discover team B's ungranted project through results, counts, jobs, or object links.
-- A source token can sync only its bound source and cannot grant itself access.
-- Membership removal stops new imports and interactive reads while already accepted team history remains owned by the project.
-- A revoked grant affects keyword search, semantic search, raw downloads, and queued exports consistently.
-- Administrator and owner capabilities follow the role table, including the last-owner constraint.
+- An unassigned private session is collected from a home-directory launch and is readable by its owner.
+- Assigning/removing project labels leaves its readers unchanged.
+- A session granted to a team appears in that team's authorized queries, including keyword and semantic search.
+- An editor can reclassify a session but cannot change sharing or delete it.
+- Revocation/membership removal affects all read paths and invalidates applicable tokens; new sync cannot reset the revoked grant.
+- A source token updates only its source and cannot grant itself session-read or organization rights.

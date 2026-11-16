@@ -7,9 +7,26 @@ organization = "acme"
 
 [[sources]]
 context = "acme"
+harness = "codex"
+root = "~/.codex/sessions"
+default_visibility = "private"
+
+[[sources]]
+context = "acme"
+harness = "claude"
+root = "~/.claude/projects"
+default_visibility = "private"
+
+[[sources]]
+context = "acme"
+harness = "pi"
+root = "~/.pi/agent/sessions"
+default_visibility = "private"
+
+# Optional initial classification. Nonmatching sessions still sync unassigned.
+[[project_rules]]
 project = "payments"
-workspace = "~/work/payments"
-harnesses = ["codex", "claude", "pi"]
+cwd_under = "~/work/payments"
 
 [sync]
 reconcile_interval_seconds = 60

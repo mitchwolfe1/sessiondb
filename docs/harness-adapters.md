@@ -6,11 +6,11 @@ Status: proposed adapter contract. Native format support must be verified agains
 
 ## Adapter responsibilities
 
-Each adapter can discover default/configured roots, inspect session/workspace metadata, select supporting artifacts, normalize a bounded native record stream, and report native session relationships. Discovery is usable by the CLI; normalization runs on the server using accepted bytes.
+Each adapter can discover default/configured roots, inspect recorded cwd and repository metadata, select supporting artifacts, normalize a bounded native record stream, and report native session relationships. Discovery is usable by the CLI; normalization runs on the server using accepted bytes.
 
 Outputs include session metadata, messages/content blocks, tool calls/results, structural events, relationships, and parsing diagnostics. Keep source-relative references for artifacts. Return unsupported/unknown records explicitly rather than rejecting an entire file because a new optional type appears.
 
-The adapter must not choose an organization/project from transcript text, perform HTTP requests to native content URLs, execute recorded commands, or apply hype-history's application-specific memory filters.
+The adapter reports observed metadata without choosing sharing or making project assignment a collection requirement. It must not perform HTTP requests to native content URLs, execute recorded commands, or apply hype-history's application-specific memory filters.
 
 ## Native support matrix
 
@@ -28,7 +28,7 @@ Read metadata from `session_meta`, per-turn settings from `turn_context`, model-
 
 Resolve call/results by native call IDs where available. Preserve opaque encrypted reasoning/replay fields as original data, without presenting them as readable hidden reasoning. Keep model/phase information when recorded.
 
-Newer metadata can distinguish thread ID, root session ID, fork ancestry, and `history_base` references to a bounded parent rollout. Resolve references through authorized source bindings; preserve unresolved references when a parent is missing or belongs to an inaccessible project. Rollback and compaction are recorded events, not permission to erase original source bytes.
+Newer metadata can distinguish thread ID, root session ID, fork ancestry, and `history_base` references to a bounded parent rollout. Resolve references through authorized source bindings; preserve unresolved references when a parent is missing or inaccessible. Rollback and compaction are recorded events, not permission to erase original source bytes.
 
 Codex's local SQLite history projections and prompt-recall file are not substitutes for the native rollout. V1 collection uses rollout files and explicitly selected artifacts rather than synchronizing the provider's live SQLite databases.
 
@@ -46,7 +46,7 @@ Read the session header and retain its format version and optional parent sessio
 
 `custom` extension state is not a message. `custom_message` contributes recorded context. `compaction`, `branch_summary`, and `context_edit` alter model-context interpretation without removing the older recorded history. Keep them as structural events and distinguish conversation ancestry from operation nesting.
 
-Entry timestamps are ISO strings; nested message timestamps use epoch milliseconds. Preserve the distinction when normalizing times. Native image blocks can be extracted into project-authorized artifacts while originals remain intact.
+Entry timestamps are ISO strings; nested message timestamps use epoch milliseconds. Preserve the distinction when normalizing times. Native image blocks can be extracted into session-authorized artifacts while originals remain intact.
 
 ## Compatibility and fixtures
 

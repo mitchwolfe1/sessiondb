@@ -1,6 +1,6 @@
 # Automatic sync
 
-The sync client automatically collects sessions from configured workspaces and keeps them updated in SessionDB. It supports initial backfill, one-shot synchronization, continuous watch mode, and collection from multiple machines.
+The sync client automatically collects sessions from configured native harness stores and keeps them updated in SessionDB. It supports initial backfill, one-shot synchronization, continuous watch mode, and collection from multiple machines. A project association or repository cwd is not required.
 
 Status: proposed v1 protocol. The client is part of the Rust CLI and uses the public import API and ordinary signed object uploads.
 
@@ -8,9 +8,11 @@ Status: proposed v1 protocol. The client is part of the Rust CLI and uses the pu
 
 Discover Codex under `CODEX_HOME` or `~/.codex`, including `sessions` and `archived_sessions`; Claude Code under its configured home or `~/.claude/projects`; and Pi under its configured session directory or `~/.pi/agent/sessions`. Explicit roots override automatic discovery.
 
-Discovery identifies available sources; it does not enable uploading all of them. A mapping binds a local workspace and harness to a server project. Use the recorded cwd and configured workspace containment to select sessions. If a session matches several mappings, stop that session with an actionable ambiguity rather than choosing a destination by order. Sessions outside all mappings remain local.
+Discovery identifies native stores. Enabling selected roots determines which sessions are uploaded; optional include/exclude filters operate on native file paths or session identifiers. With no such filter, eligible sessions in those stores are collected regardless of their recorded starting cwd, including sessions launched from a home directory.
 
-Register one server source per project/harness/device mapping. The CLI creates sources through the API after checking contributor access. The source stores a device label, not a requirement to expose arbitrary host identifiers.
+Register one source per account/device/harness/store root. The source has no project binding. A single source can contain unassigned sessions and sessions associated with different or multiple projects. Its default visibility initializes new sessions; later source updates never reset per-session sharing or catalog labels.
+
+Optional project rules supply initial `project_ids` as grouping metadata. No match produces an unassigned session, and several matches can produce several associations. A descriptor can carry those initial associations. Unavailable/archived labels are omitted with a classification warning instead of blocking valid original bytes; a malformed manifest is still a validation error. Labels are not permission grants, and later sync preserves existing associations.
 
 Supporting artifacts are allowlisted through the adapter. Preserve their relative layout. A reference outside the configured source is reported as missing, unless the user separately allows that location. No credential/configuration directory is included merely because it sits beside a transcript.
 
@@ -26,8 +28,8 @@ For active JSONL, read a bounded snapshot through the last complete newline. Def
 
 ## Import lifecycle
 
-1. `POST /v1/organizations/{org_id}/imports` creates a batch manifest with a registered source and file descriptors. Each descriptor supplies a source-relative path, complete byte length, media type, digest, and previously accepted version when available.
-2. The server checks project/source permission, expected versions, path validity, and configured limits. It returns an import ID and upload targets for content it does not already have.
+1. `POST /v1/organizations/{org_id}/imports` creates a batch manifest with a registered source and file descriptors. Each descriptor supplies a source-relative path, complete byte length, media type, digest, and previously accepted version when available. Optional initial `project_ids` do not gate capture.
+2. The server checks source ownership/token permission, expected versions, path validity, and configured limits. It returns an import ID and upload targets for content it does not already have.
 3. The client uploads through the provided S3-compatible targets, preserving original bytes. Already available objects require no transfer.
 4. `POST /v1/organizations/{org_id}/imports/{import_id}/complete` verifies that every required object is durable and matches the descriptor. It transactionally accepts updates and enqueues processing.
 5. Finalization is atomic for the manifest. The receipt lists accepted, unchanged, and suppressed files. A missing object, digest mismatch, version conflict, or newly denied source prevents all new catalog acceptance in that batch. Correct the upload and retry, or create a corrected manifest with a new idempotency key. The client advances checkpoints only after the completion receipt.
@@ -46,6 +48,8 @@ Publish the new object/catalog reference atomically in PostgreSQL after object v
 An expected-version conflict returns `409`. The client refreshes source state and reconciles before creating a new request; it does not overwrite the server's newer state blindly. Identical bytes collected from another source may share physical blob storage while retaining separate source bindings.
 
 Native archive moves and copied files may create another source path. Keep their collected session relation explicit and avoid creating a second visible session when the adapter can prove an identical copy. Divergent copies remain visible as separate source variants; v1 does not merge competing conversation edits.
+
+Sync changes recorded native content only. It preserves manual project assignments, tags/title changes, and per-session visibility or grants. Classification therefore remains stable as a home-launched session continues to work in another repository.
 
 ## Missing files and deletion
 

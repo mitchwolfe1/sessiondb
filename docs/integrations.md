@@ -31,7 +31,7 @@ Do not turn an external viewer/export format into a requirement that every provi
 | OpenTelemetry/OpenInference | Execution spans where operations/timing are actually recorded; observability export. Later. |
 | Agent Trace | Code ranges/revisions linked to conversation URLs. Later. |
 
-Native bundle export includes source-relative paths and a manifest instead of rewriting references inside archived JSONL. It identifies absent or inaccessible linked files without leaking another project's paths or content. A bundle is an archival export, not a promise that a native harness can resume it on another machine.
+Native bundle export includes source-relative paths and a manifest instead of rewriting references inside archived JSONL. It identifies absent or inaccessible linked files without leaking another inaccessible session's paths or content. A bundle is an archival export, not a promise that a native harness can resume it on another machine.
 
 STS and ATIF are projections over selected conversation history. Define which branch and which structural events were included. Incomplete timing remains unknown; the exporter cannot reconstruct unrecorded operations. Agent Trace code attribution is a different schema from an execution trace or transcript.
 
@@ -43,14 +43,16 @@ Keep hype-history-specific memory review and authorship judgments outside the se
 
 The existing prototype's message IDs incorporate absolute source paths. Its client integration needs a migration map from existing session/message references to server resources before local data is retired. Verify content and relationships and preserve existing reviewed-memory state; moving to remote storage is not a reason to reapprove evidence automatically.
 
+Map existing repository labels to optional project associations. Do not carry over an initial-cwd containment filter as the definition of what SessionDB can store. Home-launched and unassigned sessions are valid source data.
+
 Use public HTTP/SDK methods, not direct PostgreSQL access. Start by migrating read/search access in parallel with the local implementation, compare selected results and branch endings, and then switch collection. Keep a documented fallback while the pilot is being evaluated.
 
 ## SDK and API consumers
 
 The first native SDK is `sessiondb-client` for Rust. OpenAPI provides the contract for other languages; add a generated Python binding or a small HTTP integration when hype-history needs it. A Python application SDK does not change the Rust implementation requirement.
 
-Consumers use organization/project filters and server-issued resource IDs. A headless application can use a project-scoped `sessions:read` token; a sync-only source token does not implicitly authorize search. Raw downloads use authorized API endpoints or short-lived URLs. Saved citations use durable SessionDB resource URLs rather than expiring object URLs.
+Consumers use session/project filters and server-issued resource IDs. A headless application can use a `sessions:read` token limited by its issuer's current access and optional explicit session IDs; a sync-only source token does not implicitly authorize search. Raw downloads use authorized API endpoints or short-lived URLs. Saved citations use durable SessionDB resource URLs rather than expiring object URLs.
 
 ## Extensibility boundaries
 
-Harness adapters, object storage access, and embedding providers are explicit Rust interfaces. Keep internal SQL models and job internals private. Add exporters and consumers through the API/normalized model when possible. Every new integration must retain the same organization/project access boundaries.
+Harness adapters, object storage access, and embedding providers are explicit Rust interfaces. Keep internal SQL models and job internals private. Add exporters and consumers through the API/normalized model when possible. Every new integration must retain the same organization membership and session access boundaries.

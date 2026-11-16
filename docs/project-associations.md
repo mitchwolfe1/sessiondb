@@ -1,0 +1,52 @@
+# Project associations
+
+A project groups related sessions. It is optional metadata, independent of the native session store, the directory where a session started, and its sharing settings.
+
+A session started in a home directory can be associated with a project elsewhere:
+
+```text
+source root:        /home/ada/.claude/projects
+starting directory: /home/ada
+project:            payments
+repository:         /home/ada/work/payments
+```
+
+The starting directory remains as recorded. Assigning a project updates the SessionDB catalog, without moving or rewriting the native session file.
+
+## Collection and grouping
+
+| Concept | Purpose |
+| --- | --- |
+| Source | A configured harness session store on a device, such as `~/.codex/sessions`. |
+| Starting directory | The cwd recorded by the harness. Useful for browsing and optional matching rules. |
+| Project | A logical group of sessions, optionally linked to repository URLs. |
+| Sharing | Session visibility and explicit user/team grants. Independent of project labels. |
+
+The sync client collects selected native stores even when no project matches. An unassigned session has `project_ids: []`; a session covering several projects can have several associations. A project need not correspond to one filesystem directory.
+
+## Assignment
+
+```sh
+sessiondb sources add --detect
+sessiondb sync --watch
+sessiondb sessions list --unassigned
+sessiondb sessions update SESSION_ID --project payments
+sessiondb sessions update SESSION_ID --project payments --project api-client
+sessiondb sessions update SESSION_ID --clear-projects
+```
+
+The proposed update API accepts a replacement `project_ids` array. Omission leaves associations unchanged; an empty array clears them. It does not change `recorded_cwd`, owner, source bindings, or visibility. Ordinary sync updates native content and preserves catalog edits.
+
+V1 supports explicit assignment and optional configured directory matching rules. Rules can supply initial associations for a newly collected session; unmatched sessions are still imported. Several matches add several associations instead of blocking collection. Rules do not overwrite later manual edits or reclassify an already imported session on every sync.
+
+Recorded repository metadata and paths mentioned in tool activity can inform suggestions. A textual mention of a repository is not conclusive evidence that the session belongs to that project. Automatic content-based classification is later work and is not required to collect or search history.
+
+## Search and access
+
+Project filters narrow already accessible sessions. Removing a label makes a session unassigned; it does not delete it. Adding a label does not grant project followers or team members access to its content. Use session sharing controls when access should change.
+
+Keyword and configured semantic search include accessible unassigned sessions by default. The `unassigned` filter selects sessions with no project associations. A session associated with several matching projects appears once in the results.
+
+Archiving a project stops new associations to that label, while existing associations remain readable and sync continues. Removing a project is not a session-deletion operation.
+
+See [the data model](data-model.md), [automatic sync](sync.md), and [access control](access-control.md).

@@ -22,15 +22,15 @@ See the [embedding profile example](examples/embedding-profile.json). Runtime pr
 
 ## Profiles and indexing jobs
 
-An embedding profile belongs to a project and defines one vector space: provider/model revision, dimensions, normalization, chunking version, and query/document transforms. These values are immutable after vectors are produced. Changing them creates another profile and a backfill; vectors from different spaces never share a similarity comparison. At most one profile is enabled per project in v1.
+An embedding profile belongs to the organization and defines one vector space: provider/model revision, dimensions, normalization, chunking version, and query/document transforms. These values are immutable after vectors are produced. Changing them creates another profile and a backfill; vectors from different spaces never share a similarity comparison. At most one profile is enabled per organization in v1. It covers eligible sessions independently of project assignment.
 
-Background workers batch eligible passages, persist progress, and retry transient provider failures independently of sync. Exclude deleted and unauthorized project content before making provider requests. Deletion removes derived vectors along with message passages.
+Background workers batch eligible passages, persist progress, and retry transient provider failures independently of sync. Exclude deleted content and apply the configured indexing eligibility policy before making provider requests. Deletion removes derived vectors along with message passages.
 
-Enabling a profile permits embedding future accepted project content. Historical backfill is an explicit job with project scope and progress counters. Organization administrators configure providers; project maintainers may request backfill using an available allowed profile. Defaults must expose the extent of data sent and the operational workload.
+Enabling a profile permits embedding eligible future accepted content, including unassigned sessions. Historical backfill is an explicit administrator job with optional source, session, or project-label filters and progress counters. The selected labels filter work rather than define a vector space or permission boundary.
 
 ## Vector storage
 
-PostgreSQL with pgvector is the proposed first vector backend. Begin with exact cosine search over filtered project passages. Approximate nearest-neighbor indexing is an optimization to benchmark, not a prerequisite for the provider interface.
+PostgreSQL with pgvector is the proposed first vector backend. Begin with exact cosine search over authorized, filtered session passages. Approximate nearest-neighbor indexing is an optimization to benchmark, not a prerequisite for the provider interface.
 
 The selected model's dimensions must be supported by the chosen storage and index type. Current pgvector documentation distinguishes storage limits from ANN index limits: `vector` storage supports up to 16,000 dimensions, while common HNSW/IVFFlat vector indexes support 2,000 and half-vector indexes 4,000. A 4,096-dimensional model therefore cannot simply use those default ANN layouts. Keep exact search available; any reduction/quantization must be explicit in a separate profile and evaluated. See [pgvector](https://github.com/pgvector/pgvector).
 
@@ -42,18 +42,18 @@ The selected model's dimensions must be supported by the chosen storage and inde
 | `semantic` | Embed the query and search compatible vectors from one enabled profile. Report eligible and embedded counts. |
 | `hybrid` | Combine keyword and semantic candidates, deduplicate messages, and use a documented rank-fusion policy. Fresh unembedded messages remain eligible through keyword retrieval. |
 
-Semantic and hybrid requests in v1 select exactly one project. Keyword search can span multiple authorized projects. This keeps profile selection and vector-space comparison explicit; cross-project semantic retrieval needs a separate contract when projects use different models.
+Keyword, semantic, and hybrid requests can include no project filter, one project, several projects, or only unassigned sessions. Semantic modes use the single enabled organization profile. A session matching several selected labels appears once. Classification changes update query filters and preserve vectors unless the configured embedding text itself changes.
 
 The proposed fusion policy is reciprocal rank fusion with rank constant 60 and up to 200 candidates from each retriever before deduplication and the per-session result cap. Treat its scores as ranking values, not confidence or factual correctness. Benchmark these proposed settings during the search milestone. Newest sorting uses keyword mode only in v1; semantic/hybrid requests with that sort are rejected rather than silently switching modes.
 
-If semantic/hybrid is requested without an enabled profile, return `409 embedding_not_configured`. If the required provider is temporarily unavailable, return a specific retryable `503`; clients can explicitly retry in keyword mode. Never relabel a keyword fallback as semantic success.
+If semantic/hybrid is requested without an enabled organization profile, return `409 embedding_not_configured`. If the required provider is temporarily unavailable, return a specific retryable `503`; clients can explicitly retry in keyword mode. Never relabel a keyword fallback as semantic success.
 
 ## Access and privacy
 
-Apply organization/project authorization before candidate selection, vector distance calculation, result counts, snippets, and artifact links. A shared vector table does not create shared organization access. Retrieval jobs and caches include organization/profile scope; an identical query string from two organizations does not authorize shared results.
+Apply organization membership and session access before candidate selection, vector distance calculation, counts, snippets, and artifact links. Project associations only narrow those authorized candidates. Retrieval jobs and caches include organization/profile and applicable access scope. A project label or shared vector table never grants access.
 
 Only normalized configured content is sent to the embedding endpoint. Available model reasoning, large tools, and attachments need explicit eligibility rules; the proposed v1 default indexes user/assistant text and keeps tool payload embedding opt-in. Wire role does not establish authorship or quality.
 
 ## Required checks
 
-Verify keyword search while embedding is disabled/down; profile changes without mixed spaces; deletion and permission revocation across all modes; interrupted backfill recovery; partial coverage reporting; and retrieval of recent unembedded messages in hybrid mode. Use deterministic local embedding fixtures for tests, then an explicitly authorized runtime integration test for the configured provider.
+Verify unassigned and multi-project sessions in every mode; verify keyword search while embedding is disabled/down; profile changes without mixed spaces; deletion and permission revocation across all modes; interrupted backfill recovery; partial coverage reporting; and retrieval of recent unembedded messages in hybrid mode. Use deterministic local embedding fixtures for tests, then an explicitly authorized runtime integration test for the configured provider.

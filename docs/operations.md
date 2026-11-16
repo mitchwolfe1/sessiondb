@@ -1,6 +1,6 @@
 # Operations
 
-SessionDB runs as a Rust service backed by PostgreSQL and an S3-compatible object store. This guide covers server configuration, background processing, health, upgrades, and backup/restore. Account and project setup are described in [access control](access-control.md).
+SessionDB runs as a Rust service backed by PostgreSQL and an S3-compatible object store. This guide covers server configuration, background processing, health, upgrades, and backup/restore. Account and session-sharing setup are described in [access control](access-control.md).
 
 Status: proposed operating model. There are no Docker images, Compose files, migrations, or installers in this documentation-only repository.
 
@@ -18,7 +18,7 @@ Use TOML configuration, a `--config` flag, and environment overrides. Secrets ar
 
 The operator configures the initial organization and exact OIDC issuer/subject for its first owner. Bootstrap runs once against an empty catalog and records completion. The operator then signs in through that subject, verifies organization membership, and removes the bootstrap subject from routine configuration. Configuration changes never grant owners after initialization.
 
-Provision a public CLI OAuth client with Authorization Code/PKCE and a loopback redirect, plus an API audience accepted by the identity provider. Test the chosen provider against the [authentication contract](access-control.md); do not treat an ID token as an API access token. Collection uses revocable project/source tokens; applications can use read-scoped project tokens issued by permitted members.
+Provision a public CLI OAuth client with Authorization Code/PKCE and a loopback redirect, plus an API audience accepted by the identity provider. Test the chosen provider against the [authentication contract](access-control.md); do not treat an ID token as an API access token. Collection uses revocable source-bound tokens; applications can use read-scoped session tokens issued by permitted members.
 
 ## Service behavior
 
@@ -44,7 +44,7 @@ Back up both PostgreSQL and referenced original objects. A database-only backup 
 
 For the first documented procedure, pause import finalization and destructive cleanup, finish in-flight catalog writes, take a consistent catalog backup and object inventory/copy, then resume. Objects already uploaded but not accepted may be ignored as staging. Record the restore point and validate that every referenced original exists. A later online backup procedure requires equivalent consistency guarantees.
 
-A restore drill must recover organization memberships, project grants, session reads, raw exports, client resynchronization, and pending jobs. Treat embedding vectors and keyword projections as rebuildable, while preserving the configuration needed to reproduce them. Keep credentials external and rotate/revalidate them during restore.
+A restore drill must recover organization memberships, session grants, session reads, raw exports, client resynchronization, and pending jobs. Treat embedding vectors and keyword projections as rebuildable, while preserving the configuration needed to reproduce them. Keep credentials external and rotate/revalidate them during restore.
 
 ## Retention and deletion
 
@@ -58,4 +58,4 @@ Session deletion hides data from all query paths immediately and queues cleanup 
 
 Measure import bytes/rate, accepted-to-searchable delay, failed parses, pending jobs, provider latency, storage use, and query latency. Do not put raw high-cardinality session IDs or message text into aggregate metric labels.
 
-Indexing capacity and query targets must be established with a representative synthetic/masked corpus, including 4,096-dimensional embeddings if that profile is selected. The benchmark must include permission filters and active sync; an isolated vector benchmark is not the whole product.
+Indexing capacity and query targets must be established with a representative synthetic/masked corpus, including 4,096-dimensional embeddings if that profile is selected. The benchmark must include session access filters and active sync; an isolated vector benchmark is not the whole product.

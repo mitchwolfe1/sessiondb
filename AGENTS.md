@@ -8,6 +8,8 @@ Lead with capabilities and usage, as database and developer-tool documentation d
 
 Use established Rust, HTTP, CLI, PostgreSQL, and S3 conventions. SessionDB exposes session resources through its API and uses an existing object storage implementation for raw files. Do not implement a new S3 server or invent a SQL language for the CLI.
 
+Collection follows configured native session stores, not repository/workspace containment. Starting cwd is metadata. Sessions can have zero or more logical project associations, and changing these labels does not change sharing. Keep collection, project association, and authorization separate in the docs and contracts.
+
 ## Current phase
 
 This repository is documentation first. Until the user explicitly requests implementation, change documentation and contract examples only. Do not add application code, Cargo manifests, migrations, executable deployment files, or generated SDKs. Documentation and example commands must not claim that software already runs.
@@ -28,4 +30,4 @@ Do not treat a list of open questions as permission to stop documentation work. 
 
 SessionDB owns collection, storage, session access, and retrieval. Applications such as hype-history own their additional briefing, research, and reviewed-memory workflows. Existing application policy must not silently become SessionDB policy.
 
-Organization and project authorization applies consistently to raw content, parsed content, changes, exports, keyword search, and vector retrieval.
+Organization membership and explicit session authorization apply consistently to raw content, parsed content, changes, exports, keyword search, and vector retrieval. Project filters do not grant access.

@@ -2,7 +2,7 @@
 
 The SessionDB API provides session, message, import, and search resources for the CLI, Rust SDK, and other applications.
 
-Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. Both need design review before implementation.
+Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. The session-first revision is `0.2.0-draft`, following [0008](decisions/0008-collection-and-project-associations.md). It remains a design contract before implementation.
 
 ## Conventions
 
@@ -24,7 +24,9 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 | Method | Path | Meaning |
 | --- | --- | --- |
 | GET | `/sessions` | Filter and paginate accessible sessions. |
-| GET, PATCH, DELETE | `/sessions/{session_id}` | Read, change title/tags, or schedule authorized deletion. |
+| GET, PATCH, DELETE | `/sessions/{session_id}` | Read, change title/tags/project associations or explicit visibility, or schedule authorized deletion. |
+| GET, POST | `/sessions/{session_id}/grants` | List/add explicit user/team viewer or editor grants; owner/admin management. |
+| DELETE | `/sessions/{session_id}/grants/{grant_id}` | Revoke an explicit session grant. |
 | GET | `/sessions/{session_id}/messages` | Read historical messages, optionally filtered by conversation leaf. |
 | GET | `/sessions/{session_id}/events` | Read recorded structural events and native event metadata. |
 | GET | `/sessions/{session_id}/export` | Stream a native bundle or normalized JSONL/STS projection. |
@@ -37,7 +39,7 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 | Method | Path | Meaning |
 | --- | --- | --- |
 | GET, POST | `/sources` | List/register collection sources. |
-| GET, PATCH | `/sources/{source_id}` | Inspect or pause a source; project assignment is immutable in v1. |
+| GET, PATCH | `/sources/{source_id}` | Inspect/pause a native store source or change its default visibility for future sessions. |
 | GET | `/sources/{source_id}/files` | List accepted original files, including files that failed parsing. |
 | GET | `/sources/{source_id}/files/{file_id}/generations` | List preserved original generations. |
 | GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
@@ -51,7 +53,7 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 | --- | --- | --- |
 | GET, POST | `/embedding-profiles` | Inspect profiles or configure a new immutable embedding space. |
 | GET, PATCH | `/embedding-profiles/{profile_id}` | Inspect or enable/disable a profile; model/dimensions cannot be edited in place. |
-| POST | `/index-jobs` | Request parse, keyword, or embedding backfill for an authorized project. |
+| POST | `/index-jobs` | Request indexing with optional source/session/project-label filters; administrator operation. |
 | GET | `/jobs/{job_id}` | Read parsing, indexing, or deletion job state. |
 | GET | `/changes` | Read an authorized, cursor-based change feed. |
 
@@ -59,10 +61,8 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 
 | Method | Path | Meaning |
 | --- | --- | --- |
-| GET, POST | `/projects` | List authorized projects or create one. |
+| GET, POST | `/projects` | List/create logical project labels within the organization. |
 | GET, PATCH | `/projects/{project_id}` | Inspect, rename, or archive a project. |
-| GET, POST | `/projects/{project_id}/grants` | List/create direct or team grants. |
-| DELETE | `/projects/{project_id}/grants/{grant_id}` | Revoke a grant. |
 
 ### Connections and administration
 
@@ -84,32 +84,38 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 | GET, PATCH | `/teams/{team_id}` | Inspect/update a team. |
 | GET | `/teams/{team_id}/members` | List team members. |
 | PUT, DELETE | `/teams/{team_id}/members/{user_id}` | Add/remove an existing organization member. |
-| GET, POST | `/tokens` | List/create permitted project-scoped application or collection tokens; secret returned only on creation. |
+| GET, POST | `/tokens` | List/create member-scoped application or source-bound sync tokens; secret returned only on creation. |
 | DELETE | `/tokens/{token_id}` | Revoke a token. |
 
 ## Session and message queries
 
-Session lists support `project_id`, `author_id`, `team_id`, `harness`, `tag`, `after`, `before`, `sort`, `cursor`, and `limit`. `team_id` filters projects granted to that team; it does not infer which team an author was acting for. Read access still follows the current caller's grants.
+Session lists support `project_id`, `unassigned`, `author_id`, `team_id`, `harness`, `tag`, `after`, `before`, `sort`, `cursor`, and `limit`. `project_id` matches optional associations; `unassigned=true` selects an empty association set and cannot be combined with a project filter. `team_id` selects sessions explicitly granted to that team. All filters narrow sessions already readable by the caller.
 
-Session detail contains title, tags, project, attributed contributor, harness/native IDs, activity times, session relationships, counts, and processing state. It does not include all message bodies. An archived project remains readable.
+Session detail contains title, tags, `project_ids`, owner/contributor, visibility, recorded starting cwd, harness/native IDs, activity times, relationships, counts, and processing state. An empty project array is valid. It does not include all message bodies. The starting cwd need not be inside any associated project directory.
 
 Message/event lists default to all historical records. `leaf_id` chooses a conversation ancestry where supported; incomplete ancestry is returned with a warning rather than silently represented as exact model context. Pagination cursors include a projection revision. If a rewrite/reparse invalidates that revision, return `409 cursor_stale` and instruct the client to restart the listing.
 
 Bound individual previews at 64 KiB and set `truncated=true` and a full-content URL when needed. This limit is UTF-8 bytes, not characters. A truncation boundary must be valid UTF-8. Large artifact blocks are references rather than embedded base64 in list responses.
 
+## Assignment and sharing
+
+`PATCH /sessions/{id}` can replace `project_ids`; omission preserves the set and `[]` clears it. An editor can change labels, while only the owner/admin can change visibility. Session grants live under `/sessions/{id}/grants` and are independent of project metadata. Sync never resets these catalog edits. A label change updates filters without moving native files or changing readers.
+
+Sources register one owned native store root and harness. They have no project/workspace binding. Per-file import descriptors may optionally provide initial `project_ids` for newly recognized sessions. Absent/nonmatching associations never prevent ingestion; unavailable/archived labels are omitted with a classification warning. Invalid manual PATCH associations are rejected without changing the session.
+
 ## Imports and jobs
 
 Import creation returns `201` with a `Location` header and upload targets. Completion returns `202` once objects and the catalog are durable; indexing proceeds asynchronously. Finalization is atomic for a manifest: an invalid/missing object or version conflict prevents new catalog acceptance for the whole batch. Repeated completion with the same idempotency key returns the same receipt. A failed parse does not revoke durable archival acceptance.
 
-Jobs expose `queued`, `running`, `succeeded`, `partial`, `failed`, or `cancelled`, with counters and bounded errors. Retry semantics are determined by job kind. Embedding outage never changes an accepted source upload into a failed sync.
+Jobs expose `queued`, `running`, `succeeded`, `partial`, `failed`, or `cancelled`, with counters and bounded errors. Retry semantics are determined by job kind. Embedding outage never changes an accepted source upload into a failed sync. Changes to labels emit previous/current associations so filtered change consumers can remove as well as add a session; they do not emit a sharing change unless visibility/grants actually change.
 
 ## Search
 
-Search requests contain `query`, `mode`, `filters`, `limit`, and optional `cursor`. Filters include project, author, team, harness, message role, tool name, tags, and date range. A team filter selects projects granted to that team. Default mode is `keyword`. `semantic` and `hybrid` require exactly one selected project with one enabled profile; keyword queries can span projects.
+Search requests contain `query`, `mode`, `filters`, `limit`, and optional `cursor`. Filters include optional project associations, `unassigned`, author, explicit team grants, harness, role, tool name, tags, and date. Default mode is `keyword`. Semantic/hybrid use one enabled organization profile and work with no project filter, several projects, or unassigned sessions. Project labels never authorize a result.
 
 Search defaults to 20 matching messages, with a maximum of 50. Return at most three matching messages from one session; the wire result is a flat list of message matches that clients can group for display. `sort=newest` is supported with keyword mode in v1; reject semantic/hybrid plus newest ordering as an incompatible request.
 
-Return matching message/session summaries, bounded excerpts, retrieval methods, profile ID if used, and index coverage. Apply project access before retrieval and result counts. No mode silently calls an unconfigured model provider or substitutes another embedding space. See [search behavior](search-and-embeddings.md).
+Return matching message/session summaries, bounded excerpts, retrieval methods, profile ID if used, and index coverage. Apply session access before retrieval and result counts. No mode silently calls an unconfigured model provider or substitutes another embedding space. See [search behavior](search-and-embeddings.md).
 
 ## Exports and objects
 

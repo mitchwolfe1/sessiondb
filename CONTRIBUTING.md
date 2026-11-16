@@ -19,7 +19,7 @@ Use Conventional Commits:
 ```text
 docs: describe session queries
 feat(sync): collect updates to existing sessions
-fix(api): apply project access to exports
+fix(api): apply session access to exports
 refactor(adapters): share content block conversion
 test(sync): cover reconnect after server outage
 ```
@@ -39,7 +39,7 @@ cargo test --workspace
 cargo doc --workspace --no-deps
 ```
 
-These commands do not run against the current documentation-only repository. Add integration tests for meaningful behavior: sync and recovery, provider normalization, organization isolation, project access, and search coverage. Use a real disposable PostgreSQL instance and an S3-compatible test service for storage integration tests; use synthetic transcripts and a deterministic embedding fixture without paid model calls.
+These commands do not run against the current documentation-only repository. Add integration tests for meaningful behavior: sync and recovery, provider normalization, organization isolation, session sharing, optional project labels, and search coverage. Use a real disposable PostgreSQL instance and an S3-compatible test service for storage integration tests; use synthetic transcripts and a deterministic embedding fixture without paid model calls.
 
 Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) for the public client crate. Keep network DTOs, internal database models, and native harness payloads distinct. Avoid publishing internal server types through the SDK.
 

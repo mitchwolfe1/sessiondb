@@ -5,7 +5,7 @@
   "status": "awaiting_upload",
   "uploads": [
     {
-      "path": "-home-ada-work-payments/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl",
+      "path": "-home-ada/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl",
       "method": "PUT",
       "url": "https://objects.example.com/sessiondb/staging/example-upload",
       "headers": {

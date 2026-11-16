@@ -10,7 +10,7 @@ The result is an implementation plan for the first sync-to-query path.
 
 ## First vertical slice
 
-Create the Rust workspace and a local server with PostgreSQL and S3-compatible storage. Import one native session, list it, read its messages, and export its original data through the API and CLI. Include the connection/authentication setup and project access needed to exercise that path.
+Create the Rust workspace and a local server with PostgreSQL and S3-compatible storage. Import one native session without a project label, list it, read its messages, and export its original data through the API and CLI. Include connection/authentication and session ownership for that path.
 
 Prove the API client boundary and import acceptance semantics before adding more retrieval capabilities. Readiness, migrations, durable jobs, and a basic restore drill are part of this slice.
 
@@ -35,7 +35,7 @@ Complete CLI packaging, Rust SDK documentation, installation and upgrade procedu
 | ID | Scenario | Required result |
 | --- | --- | --- |
 | A01 | Sync Codex, Claude, and Pi sessions into SessionDB | All three are discoverable and readable through the CLI and API. |
-| A02 | Another team lacks that project's grant | No session, snippet, count, artifact, job result, export, or vector result reveals its content. |
+| A02 | A private session has the same project label as shared sessions | The label does not expose private content, snippets, counts, artifacts, jobs, exports, or vector results to another account. |
 | A03 | Repeated upload and lost completion response | Retrying returns the accepted result without duplicate visible sessions/messages. |
 | A04 | Server/network outage and client restart | Local originals remain intact; pending work catches up from persisted state. |
 | A05 | Active transcript has an unfinished final line | The complete prefix is accepted; the tail appears after completion on a later sync. |
@@ -47,10 +47,14 @@ Complete CLI packaging, Rust SDK documentation, installation and upgrade procedu
 | A11 | No embedding provider or provider outage | Core sync/read and keyword search work; explicit semantic requests report their capability/dependency error. |
 | A12 | Embedding model/profile changes | Old and new vector spaces are never compared; backfill progress and coverage are visible. |
 | A13 | Grant revoked or membership removed | Subsequent reads/search stop; preissued download URLs follow their documented maximum lifetime. |
-| A14 | Maintainer deletes a session and client syncs again | Session stays removed through source suppression; local harness file is not deleted. |
+| A14 | Owner/admin deletes a session and client syncs again | Session stays removed through source suppression; local harness file is not deleted. |
 | A15 | Backup restored into a clean deployment | Memberships, grants, original reads/exports, and collection recovery work; derived indexes can be rebuilt. |
 | A16 | API result is consumed by CLI, Rust SDK, and hype-history | Same permissions, filters, error semantics, and session meanings apply. |
-| A17 | Several accounts contribute to a shared project | Project members can find and read one another's sessions according to their grants. |
+| A17 | Several accounts explicitly share sessions with a team | Team members find and read the shared sessions regardless of project association. |
+| A18 | A session starts in a home directory and has no matching rule | It syncs unassigned, remains readable, and participates in keyword and configured semantic/hybrid search. |
+| A19 | Assign two projects, replace them, then clear them | Only catalog associations and filter results change; native files and readers stay the same. |
+| A20 | A manually labeled/shared session receives another native append | Content updates while project labels and sharing remain unchanged. |
+| A21 | A session moves between project labels during change-feed consumption | Authorized consumers receive the reclassification, including previous/current associations, without duplicate session records. |
 
 ## Later work
 

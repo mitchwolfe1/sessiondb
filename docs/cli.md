@@ -10,27 +10,26 @@ Status: proposed interface. These commands are examples of the intended contract
 sessiondb auth login --server https://sessions.example.com
 sessiondb context create acme --organization acme
 sessiondb context use acme
-sessiondb projects list
-sessiondb sources add --project payments --workspace ~/work/payments --detect
+sessiondb sources add --detect
 sessiondb sync --watch
 ```
 
-Login authenticates the account; a context selects a server and collection scope. `--detect` discovers harnesses for the selected workspace and creates their collection sources. Configuration files provide the same mappings for unattended setup. See [automatic sync](sync.md) for source selection and discovery details.
+Login authenticates the account; a context selects a server and organization. `--detect` registers selected native store roots for supported harnesses. Use `--harness` and `--root` for an explicit store, or configuration for unattended setup. Starting cwd and project membership do not determine whether a session can be collected. See [automatic sync](sync.md).
 
-`sessiondb sync install` installs the current context and approved mappings as a user-level service. It uses systemd on Linux and launchd on macOS. `sessiondb sync uninstall` removes that service without deleting local harness files or remote history.
+`sessiondb sync install` installs the current context and selected source roots as a user-level service. It uses systemd on Linux and launchd on macOS. `sessiondb sync uninstall` removes that service without deleting local harness files or remote history.
 
 ## Command groups
 
 | Group | Commands |
 | --- | --- |
-| `sessions` | `list`, `show`, `messages`, `events`, `update`, `export`, `delete` |
+| `sessions` | `list`, `show`, `messages`, `events`, `update`, `export`, `delete`, `grants list`, `grants add`, `grants remove` |
 | `search` | Query with a keyword, semantic, or hybrid mode and filters |
 | `sources` | `list`, `add`, `show`, `pause`, `resume` |
 | `sync` | One pass; `--watch`; `status`, `install`, `uninstall` |
 | `embeddings` | `profiles list`, `profiles create`, `profiles show`, `profiles enable`, `profiles disable`, `backfill` |
 | `jobs` | `show`, `wait` |
 | `context` | `create`, `list`, `show`, `use`, `remove` |
-| `projects` | `list`, `create`, `show`, `update`, `archive`, `grants list`, `grants add`, `grants remove` |
+| `projects` | `list`, `create`, `show`, `update`, `archive` |
 | `auth` | `login`, `logout`, `status`, `token create`, `token list`, `token revoke` |
 | `organizations` | `list` |
 | `members` | `list`, `invite`, `update`, `remove` |
@@ -43,18 +42,23 @@ Session and search commands cover everyday use. Connection, project, and account
 
 ```sh
 sessiondb sessions list --project payments --harness codex --limit 20
+sessiondb sessions list --unassigned
 sessiondb sessions show SESSION_ID
 sessiondb sessions messages SESSION_ID --leaf MESSAGE_ID --json
 sessiondb search "retry migration" --project payments --after 2026-11-01
 sessiondb search "previous retry designs" --project payments --mode hybrid
 sessiondb sessions update SESSION_ID --title "Payment retry investigation" --tag retries
+sessiondb sessions update SESSION_ID --project payments --project api-client
+sessiondb sessions update SESSION_ID --clear-projects
 sessiondb sessions export SESSION_ID --format native --output session.zip
 sessiondb embeddings backfill --project payments --profile PROFILE_ID
 sessiondb jobs wait JOB_ID
-sessiondb auth token create --project payments --scope sessions:read --expires-in 7d
+sessiondb auth token create --scope sessions:read --expires-in 7d
 ```
 
-`sessions show` presents a readable overview and a bounded conversation preview. Explicit message/content/export commands retrieve more data. On `sessions update`, repeated `--tag` options supply the replacement tag set; omitted tag options leave tags unchanged, and `--clear-tags` supplies an empty set. `sessions delete` explains that server history is removed and future ordinary sync from existing bindings is suppressed; an interactive terminal requires confirmation unless `--yes` is supplied.
+`sessions show` presents a readable overview and bounded preview. Message/content/export commands retrieve more data. On `sessions update`, repeated `--tag` and `--project` options supply replacement sets; omission preserves a set, and `--clear-tags` or `--clear-projects` clears it. `--visibility private|organization` is an explicit owner/admin action separate from labels. Session grants can share with a user/team as viewer or editor. `sessions delete` explains server deletion and source suppression; interactive deletion requires confirmation unless `--yes` is supplied.
+
+For example, `sessiondb sessions update SESSION_ID --project payments` can label a session whose recorded cwd is `/home/ada`. Its file stays in the harness store, subsequent sync keeps updating it, and its readers remain unchanged. See [project associations](project-associations.md).
 
 ## Familiar behavior
 

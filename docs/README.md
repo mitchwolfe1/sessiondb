@@ -8,6 +8,7 @@ SessionDB stores, syncs, queries, and searches coding-agent sessions. These docu
 | --- | --- |
 | Understand SessionDB | [Product specification](product.md) |
 | Collect and browse sessions | [CLI](cli.md), [automatic sync](sync.md) |
+| Organize sessions by project | [Project associations](project-associations.md) |
 | Query sessions from an application | [API](api.md), [OpenAPI](openapi.yaml), [data model](data-model.md) |
 | Configure search | [Search and embeddings](search-and-embeddings.md) |
 | Add a harness or integration | [Adapters](harness-adapters.md), [integrations](integrations.md) |
@@ -27,6 +28,7 @@ The [product specification](product.md) describes scope. Feature pages describe 
 - [Product specification](product.md)
 - [CLI and Rust SDK](cli.md)
 - [Automatic sync](sync.md)
+- [Project associations](project-associations.md)
 - [Harness adapters](harness-adapters.md)
 - [Data model](data-model.md)
 - [HTTP API](api.md)

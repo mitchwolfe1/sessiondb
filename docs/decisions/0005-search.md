@@ -2,6 +2,8 @@
 
 Status: proposed. Date: 2026-11-15.
 
+Profile scope is clarified by [0008](0008-collection-and-project-associations.md): a common enabled organization profile supports unassigned sessions and optional project filters.
+
 ## Decision
 
 Provide keyword search by default. Add semantic and hybrid modes through an explicitly configured immutable embedding profile and background jobs. Propose PostgreSQL full-text search plus pgvector exact cosine search as the first storage backend.

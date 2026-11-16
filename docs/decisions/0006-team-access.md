@@ -1,6 +1,8 @@
 # Organization and project access
 
-Status: proposed. Date: 2026-11-15.
+Status: superseded by [0008](0008-collection-and-project-associations.md). Date: 2026-11-15.
+
+This record preserves the earlier proposal. Current session-based access is specified in [access control](../access-control.md).
 
 ## Decision
 

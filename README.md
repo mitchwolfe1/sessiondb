@@ -8,18 +8,19 @@ Use SessionDB to browse conversations and tool calls, search previous work, or b
 
 ## Sync and query sessions
 
-Connect to a server, select local workspaces, and enable automatic sync. Sessions remain searchable as they grow and as new sessions are created.
+Connect to a server, select native session stores, and enable automatic sync. Sessions are collected regardless of their starting directory. Project associations can be added or changed separately.
 
 ```sh
 sessiondb-server --config /etc/sessiondb/config.toml
 sessiondb auth login --server https://sessions.example.com
 sessiondb context create acme --organization acme
 sessiondb context use acme
-sessiondb sources add --project payments --workspace ~/work/payments --detect
+sessiondb sources add --detect
 sessiondb sync --watch
 
-sessiondb sessions list --project payments --harness claude
+sessiondb sessions list --harness claude
 sessiondb sessions show SESSION_ID
+sessiondb sessions update SESSION_ID --project payments
 sessiondb search "payment retries" --project payments
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
@@ -30,10 +31,11 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 - **Session access:** list conversations, read messages and tool activity, inspect relationships, and export sessions.
 - **Search:** filter by project, harness, author, or date; use keyword search or enable semantic and hybrid retrieval.
 - **Native storage:** keep original files alongside a consistent, queryable session model.
+- **Optional grouping:** associate a session with zero or more projects, independently of its starting directory and collection source.
 - **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a Rust SDK, PostgreSQL, and S3-compatible object storage.
 - **Extensibility:** add harness adapters, embedding providers, and applications without changing the collection workflow.
 
-SessionDB can also serve a shared collection, with users, teams, and project access. See [access control](docs/access-control.md) for that configuration.
+SessionDB can also serve a shared collection, with users, teams, and explicit session access. Project labels organize history; sharing settings control visibility. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
 
 The initial release targets a single server deployment and Linux/macOS sync clients. A hosted SaaS service, billing, a browser application, and native harness resume are outside the first release.
 
