@@ -1,0 +1,18 @@
+# Proposed client configuration. Tokens belong in the keychain or environment.
+current_context = "acme"
+
+[contexts.acme]
+server = "https://sessions.example.com"
+organization = "acme"
+
+[[sources]]
+context = "acme"
+project = "payments"
+workspace = "~/work/payments"
+harnesses = ["codex", "claude", "pi"]
+
+[sync]
+reconcile_interval_seconds = 60
+debounce_seconds = 2
+upload_concurrency = 4
+batch_files = 32

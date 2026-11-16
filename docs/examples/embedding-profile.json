@@ -1,0 +1,15 @@
+{
+  "project_id": "22222222-2222-4222-8222-222222222222",
+  "name": "Payments semantic search",
+  "provider": "openai_compatible",
+  "base_url": "https://embeddings.example.com/v1",
+  "model": "organization-embedding-model",
+  "model_revision": "example-revision",
+  "dimensions": 4096,
+  "credential_ref": "env:PAYMENTS_EMBEDDING_API_KEY",
+  "document_prefix": "",
+  "query_prefix": "",
+  "batch_size": 24,
+  "timeout_seconds": 60,
+  "enabled": false
+}

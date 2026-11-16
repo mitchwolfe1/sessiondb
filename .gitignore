@@ -1,0 +1,22 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+config.local.toml
+credentials*
+
+# Runtime and developer state
+/target/
+/data/
+/sessions/
+/tmp/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+.DS_Store
+
+# Editor files
+.idea/
+*.swp
+*.swo

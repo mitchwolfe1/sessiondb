@@ -1,0 +1,3714 @@
+# Proposed API contract. Documentation only; no service exists yet.
+openapi: 3.1.1
+info:
+  title: SessionDB API
+  version: 0.1.0-draft
+  description: Proposed documentation-first contract for the Rust SessionDB service.
+    No implementation exists. Read docs/api.md and access-control.md for authorization
+    and processing semantics.
+servers:
+- url: https://sessions.example.com
+  description: Illustrative deployment URL
+security:
+- bearerAuth: []
+tags:
+- name: authentication
+- name: changes
+- name: embeddings
+- name: imports
+- name: jobs
+- name: members
+- name: messages
+- name: operations
+- name: organizations
+- name: projects
+- name: search
+- name: sessions
+- name: sources
+- name: teams
+- name: tokens
+paths:
+  /healthz:
+    parameters: []
+    get:
+      operationId: getLiveness
+      tags:
+      - operations
+      summary: Read process liveness
+      description: Read process liveness
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+      security: []
+  /readyz:
+    parameters: []
+    get:
+      operationId: getReadiness
+      tags:
+      - operations
+      summary: Read core dependency readiness
+      description: Read core dependency readiness
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+      security: []
+  /v1/info:
+    parameters: []
+    get:
+      operationId: getServerInfo
+      tags:
+      - operations
+      summary: Read public version, capabilities, and limits
+      description: Read public version, capabilities, and limits
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerInfo'
+      security: []
+  /v1/auth/config:
+    parameters: []
+    get:
+      operationId: getAuthConfig
+      tags:
+      - authentication
+      summary: Read public authentication configuration
+      description: Read public authentication configuration
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthConfig'
+      security: []
+  /v1/auth/session:
+    parameters: []
+    post:
+      operationId: registerLogin
+      tags:
+      - authentication
+      summary: Register an authenticated login and claim matching invitations
+      description: Register an authenticated login and claim matching invitations
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+  /v1/me:
+    parameters: []
+    get:
+      operationId: getMe
+      tags:
+      - authentication
+      summary: Read current account and memberships
+      description: Read current account and memberships
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+  /v1/organizations:
+    parameters: []
+    get:
+      operationId: listOrganizations
+      tags:
+      - organizations
+      summary: List accessible organizations
+      description: List accessible organizations
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+  /v1/organizations/{org_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getOrganization
+      tags:
+      - organizations
+      summary: Read current organization
+      description: Read current organization
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+    patch:
+      operationId: updateOrganization
+      tags:
+      - organizations
+      summary: Update organization display settings
+      description: Organization owner only.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationPatch'
+  /v1/organizations/{org_id}/invitations:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listInvitations
+      tags:
+      - members
+      summary: List organization invitations
+      description: List organization invitations
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+    post:
+      operationId: createInvitation
+      tags:
+      - members
+      summary: Invite an organization member
+      description: Invite an organization member
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreate'
+  /v1/organizations/{org_id}/invitations/{invitation_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: invitation_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      operationId: revokeInvitation
+      tags:
+      - members
+      summary: Revoke pending invitation
+      description: Revoke pending invitation
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '204':
+          description: Success
+  /v1/organizations/{org_id}/members:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listMembers
+      tags:
+      - members
+      summary: List organization memberships
+      description: List organization memberships
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+  /v1/organizations/{org_id}/members/{user_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    patch:
+      operationId: updateMember
+      tags:
+      - members
+      summary: Update member role subject to owner rules
+      description: Update member role subject to owner rules
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipPatch'
+    delete:
+      operationId: removeMember
+      tags:
+      - members
+      summary: Remove membership and invalidate its access
+      description: Remove membership and invalidate its access
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '204':
+          description: Success
+  /v1/organizations/{org_id}/teams:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listTeams
+      tags:
+      - teams
+      summary: List teams
+      description: List teams
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+    post:
+      operationId: createTeam
+      tags:
+      - teams
+      summary: Create a team
+      description: Create a team
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCreate'
+  /v1/organizations/{org_id}/teams/{team_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: team_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getTeam
+      tags:
+      - teams
+      summary: Read a team
+      description: Read a team
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+    patch:
+      operationId: updateTeam
+      tags:
+      - teams
+      summary: Update a team
+      description: Update a team
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamPatch'
+  /v1/organizations/{org_id}/teams/{team_id}/members:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: team_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listTeamMembers
+      tags:
+      - teams
+      summary: List team members
+      description: List team members
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+  /v1/organizations/{org_id}/teams/{team_id}/members/{user_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: team_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    put:
+      operationId: addTeamMember
+      tags:
+      - teams
+      summary: Add an existing organization member to a team
+      description: Add an existing organization member to a team
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+    delete:
+      operationId: removeTeamMember
+      tags:
+      - teams
+      summary: Remove a team membership
+      description: Remove a team membership
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '204':
+          description: Success
+  /v1/organizations/{org_id}/projects:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listProjects
+      tags:
+      - projects
+      summary: List authorized projects
+      description: List authorized projects
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: team_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+    post:
+      operationId: createProject
+      tags:
+      - projects
+      summary: Create a project
+      description: Create a project
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+  /v1/organizations/{org_id}/projects/{project_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getProject
+      tags:
+      - projects
+      summary: Read a project
+      description: Read a project
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+    patch:
+      operationId: updateProject
+      tags:
+      - projects
+      summary: Update or archive a project
+      description: Update or archive a project
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectPatch'
+  /v1/organizations/{org_id}/projects/{project_id}/grants:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listProjectGrants
+      tags:
+      - projects
+      summary: List project grants
+      description: List project grants
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectGrantPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+    post:
+      operationId: createProjectGrant
+      tags:
+      - projects
+      summary: Grant project access to a user or team
+      description: Grant project access to a user or team
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectGrant'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectGrantCreate'
+  /v1/organizations/{org_id}/projects/{project_id}/grants/{grant_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: grant_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      operationId: revokeProjectGrant
+      tags:
+      - projects
+      summary: Revoke a project grant
+      description: Revoke a project grant
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '204':
+          description: Success
+  /v1/organizations/{org_id}/tokens:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listTokens
+      tags:
+      - tokens
+      summary: List permitted collection tokens without secret values
+      description: List permitted collection tokens without secret values
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+    post:
+      operationId: createToken
+      tags:
+      - tokens
+      summary: Create an expiring project-scoped application or collection token
+      description: Scopes cannot exceed current project rights. sources:sync additionally
+        requires a bound own source. Tokens cannot administer memberships or grants.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedToken'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenCreate'
+  /v1/organizations/{org_id}/tokens/{token_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: token_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      operationId: revokeToken
+      tags:
+      - tokens
+      summary: Revoke a collection token
+      description: Revoke a collection token
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '204':
+          description: Success
+  /v1/organizations/{org_id}/sources:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listSources
+      tags:
+      - sources
+      summary: List permitted sources
+      description: List permitted sources
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcePage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: project_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+    post:
+      operationId: createSource
+      tags:
+      - sources
+      summary: Register an own collection source
+      description: Register an own collection source
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceCreate'
+  /v1/organizations/{org_id}/sources/{source_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: source_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getSource
+      tags:
+      - sources
+      summary: Read source state
+      description: Read source state
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+    patch:
+      operationId: updateSource
+      tags:
+      - sources
+      summary: Pause a source or update its device label
+      description: Pause a source or update its device label
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourcePatch'
+  /v1/organizations/{org_id}/sources/{source_id}/files:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: source_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listSourceFiles
+      tags:
+      - sources
+      summary: List accepted originals including parse failures
+      description: List accepted originals including parse failures
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceFilePage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+  /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/generations:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: source_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: file_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listFileGenerations
+      tags:
+      - sources
+      summary: List preserved file generations
+      description: List preserved file generations
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileGenerationPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+  /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/content:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: source_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: file_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getOriginalContent
+      tags:
+      - sources
+      summary: Download original uncompressed bytes
+      description: Project read access or the bound source token is required. Omit
+        generation_id for current. Range offsets address original bytes. A short-lived
+        authorized object redirect is permitted.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Original bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Original bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '307':
+          description: Authorized short-lived download URL
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+      parameters:
+      - name: generation_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+      - name: Range
+        in: header
+        schema:
+          type: string
+  /v1/organizations/{org_id}/imports:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listImports
+      tags:
+      - imports
+      summary: List permitted import batches
+      description: List permitted import batches
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: source_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+    post:
+      operationId: createImport
+      tags:
+      - imports
+      summary: Reserve an import and signed upload targets
+      description: Reserve an import and signed upload targets
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Import'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description: Persist with the request; same body returns the original result,
+          conflicting body returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportManifest'
+  /v1/organizations/{org_id}/imports/{import_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: import_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getImport
+      tags:
+      - imports
+      summary: Read archival acceptance and processing state
+      description: Read archival acceptance and processing state
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Import'
+  /v1/organizations/{org_id}/imports/{import_id}/complete:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: import_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      operationId: completeImport
+      tags:
+      - imports
+      summary: Verify objects and durably accept the batch
+      description: Verify objects and durably accept the batch
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '202':
+          description: Accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Import'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description: Persist with the request; same body returns the original result,
+          conflicting body returns 409.
+  /v1/organizations/{org_id}/sessions:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listSessions
+      tags:
+      - sessions
+      summary: List authorized sessions
+      description: List authorized sessions
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: project_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+      - name: author_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+      - name: team_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+      - name: harness
+        in: query
+        schema:
+          $ref: '#/components/schemas/Harness'
+        description: ''
+      - name: tag
+        in: query
+        schema:
+          type: string
+        description: ''
+      - name: after
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: ''
+      - name: before
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: ''
+      - name: sort
+        in: query
+        schema:
+          type: string
+          enum:
+          - updated_at
+          - -updated_at
+          default: -updated_at
+        description: ''
+  /v1/organizations/{org_id}/sessions/{session_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getSession
+      tags:
+      - sessions
+      summary: Read session metadata and readiness
+      description: Read session metadata and readiness
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+    patch:
+      operationId: updateSession
+      tags:
+      - sessions
+      summary: Replace supplied title or complete tag set
+      description: Contributor may update own sessions; maintainers may update any
+        project session. A tags field replaces the complete set; omitted fields stay
+        unchanged.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionPatch'
+    delete:
+      operationId: deleteSession
+      tags:
+      - sessions
+      summary: Hide a session and queue deletion with source suppression
+      description: Hide a session and queue deletion with source suppression
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '202':
+          description: Accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /v1/organizations/{org_id}/sessions/{session_id}/messages:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listSessionMessages
+      tags:
+      - sessions
+      summary: List recorded messages and optional ancestry
+      description: List recorded messages and optional ancestry
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagePage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: leaf_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+  /v1/organizations/{org_id}/sessions/{session_id}/events:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listSessionEvents
+      tags:
+      - sessions
+      summary: List structural and native events
+      description: List structural and native events
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionEventPage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+  /v1/organizations/{org_id}/sessions/{session_id}/export:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: exportSession
+      tags:
+      - sessions
+      summary: Export native files or a normalized projection
+      description: native yields a ZIP of original files and an authorized manifest;
+        leaf_id is valid only for normalized formats. Reject leaf_id with native as
+        400.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+            application/x-ndjson:
+              schema:
+                type: string
+      parameters:
+      - name: format
+        in: query
+        schema:
+          type: string
+          enum:
+          - native
+          - jsonl
+          - sts
+          default: native
+        description: ''
+      - name: leaf_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+  /v1/organizations/{org_id}/messages/{message_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: message_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getMessage
+      tags:
+      - messages
+      summary: Read one bounded normalized message
+      description: Read one bounded normalized message
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+  /v1/organizations/{org_id}/messages/{message_id}/content:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: message_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getMessageContent
+      tags:
+      - messages
+      summary: Read full normalized message content
+      description: Read full normalized message content
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FullContent'
+  /v1/organizations/{org_id}/search:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      operationId: searchMessages
+      tags:
+      - search
+      summary: Search authorized messages using an explicit retrieval mode
+      description: Keyword is the default. Semantic/hybrid require exactly one project
+        with an enabled embedding profile. No silent provider or mode fallback. Newest
+        sorting uses keyword mode only in v1.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+  /v1/organizations/{org_id}/embedding-profiles:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listEmbeddingProfiles
+      tags:
+      - embeddings
+      summary: List permitted profile metadata without credentials
+      description: List permitted profile metadata without credentials
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingProfilePage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: project_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+    post:
+      operationId: createEmbeddingProfile
+      tags:
+      - embeddings
+      summary: Configure an immutable project embedding space
+      description: Configure an immutable project embedding space
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingProfile'
+          headers:
+            Location:
+              description: Created resource URL
+              schema:
+                type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingProfileCreate'
+  /v1/organizations/{org_id}/embedding-profiles/{profile_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: profile_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getEmbeddingProfile
+      tags:
+      - embeddings
+      summary: Read a profile without secret configuration
+      description: Read a profile without secret configuration
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingProfile'
+    patch:
+      operationId: updateEmbeddingProfile
+      tags:
+      - embeddings
+      summary: Enable or disable a profile
+      description: At most one profile is enabled for a project; a conflicting enable
+        returns 409. Profile identity fields are immutable.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingProfile'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingProfilePatch'
+  /v1/organizations/{org_id}/index-jobs:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    post:
+      operationId: createIndexJob
+      tags:
+      - jobs
+      summary: Request a project parse or indexing backfill
+      description: Request a project parse or indexing backfill
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '202':
+          description: Accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexJobCreate'
+  /v1/organizations/{org_id}/jobs/{job_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getJob
+      tags:
+      - jobs
+      summary: Read an authorized job result
+      description: Read an authorized job result
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /v1/organizations/{org_id}/changes:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: listChanges
+      tags:
+      - changes
+      summary: Read currently authorized changes with an opaque cursor
+      description: At-least-once delivery; consumers deduplicate sequence values.
+        Membership/grant changes require relisting newly accessible projects. No transcript
+        bodies are included.
+      responses:
+        default:
+          $ref: '#/components/responses/Problem'
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangePage'
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        description: ''
+      - name: cursor
+        in: query
+        schema:
+          type: string
+        description: Opaque cursor bound to filters, ordering, and projection revision.
+      - name: project_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: ''
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Validated API audience access token or project-scoped SessionDB
+        API token; never an ID token.
+  responses:
+    Problem:
+      description: HTTP problem details; see stable code and request_id. 401 authentication,
+        403 denied management, 404 absent/inaccessible, 409 conflict/capability, 413
+        limit, 429 throttle, 503 dependency.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - unavailable
+      additionalProperties: true
+      required:
+      - status
+    ServerInfo:
+      type: object
+      properties:
+        api_version:
+          type: string
+        server_version:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        limits:
+          type: object
+          properties:
+            max_files_per_import:
+              type: integer
+            max_manifest_bytes:
+              type: integer
+            max_file_bytes:
+              type: integer
+          additionalProperties: true
+      additionalProperties: true
+      required:
+      - api_version
+      - capabilities
+      - limits
+    AuthConfig:
+      type: object
+      properties:
+        issuer:
+          type: string
+          format: uri
+        audience:
+          type: string
+        cli_client_id:
+          type: string
+        flows:
+          type: array
+          items:
+            type: string
+            enum:
+            - authorization_code_pkce
+      additionalProperties: true
+      required:
+      - issuer
+      - audience
+      - cli_client_id
+      - flows
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+      additionalProperties: true
+      required:
+      - id
+      - slug
+      - name
+    OrganizationPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+      additionalProperties: false
+      required:
+      - name
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        email:
+          anyOf:
+          - type: string
+            format: email
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - id
+      - display_name
+    Membership:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        organization_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - member
+        status:
+          type: string
+          enum:
+          - active
+          - disabled
+      additionalProperties: true
+      required:
+      - user
+      - organization_id
+      - role
+      - status
+    Me:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        memberships:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+      additionalProperties: true
+      required:
+      - user
+      - memberships
+    MembershipPatch:
+      type: object
+      properties:
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - member
+      additionalProperties: false
+      required:
+      - role
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+        expires_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - accepted
+          - revoked
+          - expired
+      additionalProperties: true
+      required:
+      - id
+      - email
+      - role
+      - status
+    InvitationCreate:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+          default: member
+      additionalProperties: false
+      required:
+      - email
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+      additionalProperties: true
+      required:
+      - id
+      - organization_id
+      - slug
+      - name
+    TeamCreate:
+      type: object
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
+        name:
+          type: string
+      additionalProperties: false
+      required:
+      - slug
+      - name
+    TeamPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+      additionalProperties: false
+      required:
+      - name
+    TeamMember:
+      type: object
+      properties:
+        team_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+      additionalProperties: true
+      required:
+      - team_id
+      - user_id
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        repository_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+        status:
+          type: string
+          enum:
+          - active
+          - archived
+      additionalProperties: true
+      required:
+      - id
+      - organization_id
+      - slug
+      - name
+      - status
+    ProjectCreate:
+      type: object
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
+        name:
+          type: string
+        repository_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+      additionalProperties: false
+      required:
+      - slug
+      - name
+    ProjectPatch:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - active
+          - archived
+        repository_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+      additionalProperties: false
+    ProjectGrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        principal_type:
+          type: string
+          enum:
+          - user
+          - team
+        principal_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+          - viewer
+          - contributor
+          - maintainer
+      additionalProperties: true
+      required:
+      - id
+      - project_id
+      - principal_type
+      - principal_id
+      - role
+    ProjectGrantCreate:
+      type: object
+      properties:
+        principal_type:
+          type: string
+          enum:
+          - user
+          - team
+        principal_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+          - viewer
+          - contributor
+          - maintainer
+      additionalProperties: false
+      required:
+      - principal_type
+      - principal_id
+      - role
+    Token:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        source_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - sessions:read
+            - sessions:write
+            - sources:sync
+        expires_at:
+          type: string
+          format: date-time
+        revoked:
+          type: boolean
+      additionalProperties: true
+      required:
+      - id
+      - name
+      - project_id
+      - source_id
+      - scopes
+      - expires_at
+      - revoked
+    TokenCreate:
+      type: object
+      properties:
+        name:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        source_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - sessions:read
+            - sessions:write
+            - sources:sync
+        expires_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      required:
+      - name
+      - project_id
+      - scopes
+      - expires_at
+      allOf:
+      - if:
+          properties:
+            scopes:
+              contains:
+                const: sources:sync
+          required:
+          - scopes
+        then:
+          required:
+          - source_id
+          properties:
+            source_id:
+              type: string
+              format: uuid
+    CreatedToken:
+      allOf:
+      - $ref: '#/components/schemas/Token'
+      - type: object
+        properties:
+          token:
+            type: string
+        additionalProperties: true
+        required:
+        - token
+    Harness:
+      type: string
+      enum:
+      - codex
+      - claude
+      - pi
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        author_id:
+          type: string
+          format: uuid
+        harness:
+          $ref: '#/components/schemas/Harness'
+        device_label:
+          type: string
+        workspace:
+          type: string
+        paused:
+          type: boolean
+        last_synced_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - id
+      - organization_id
+      - project_id
+      - author_id
+      - harness
+      - paused
+    SourceCreate:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        harness:
+          $ref: '#/components/schemas/Harness'
+        device_label:
+          type: string
+        workspace:
+          type: string
+      additionalProperties: false
+      required:
+      - project_id
+      - harness
+      - device_label
+      - workspace
+    SourcePatch:
+      type: object
+      properties:
+        paused:
+          type: boolean
+        device_label:
+          type: string
+      additionalProperties: false
+    SourceFile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_id:
+          type: string
+          format: uuid
+        path:
+          type: string
+        generation_id:
+          type: string
+          format: uuid
+        byte_length:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+        version:
+          type: string
+      additionalProperties: true
+      required:
+      - id
+      - source_id
+      - path
+      - generation_id
+      - byte_length
+      - sha256
+      - version
+    FileGeneration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        file_id:
+          type: string
+          format: uuid
+        byte_length:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+      additionalProperties: true
+      required:
+      - id
+      - file_id
+      - byte_length
+      - created_at
+      - current
+    FileDescriptor:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        byte_length:
+          type: integer
+          minimum: 0
+          maximum: 268435456
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        media_type:
+          type: string
+        expected_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: false
+      required:
+      - path
+      - byte_length
+      - sha256
+      - media_type
+      - expected_version
+    ImportManifest:
+      type: object
+      properties:
+        source_id:
+          type: string
+          format: uuid
+        files:
+          type: array
+          minItems: 1
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/FileDescriptor'
+      additionalProperties: false
+      required:
+      - source_id
+      - files
+      examples:
+      - source_id: 55555555-5555-4555-8555-555555555555
+        files:
+        - path: -home-ada-work-payments/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl
+          byte_length: 4096
+          sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          media_type: application/octet-stream
+          expected_version: null
+    UploadTarget:
+      type: object
+      properties:
+        path:
+          type: string
+        method:
+          type: string
+          enum:
+          - PUT
+        url:
+          type: string
+          format: uri
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+      additionalProperties: true
+      required:
+      - path
+      - method
+      - url
+      - headers
+      - expires_at
+    ImportFileResult:
+      type: object
+      properties:
+        path:
+          type: string
+        status:
+          type: string
+          enum:
+          - accepted
+          - unchanged
+          - suppressed
+        version:
+          anyOf:
+          - type: string
+          - type: 'null'
+        session_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - path
+      - status
+    Import:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        source_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - awaiting_upload
+          - queued
+          - processing
+          - ready
+          - partial
+          - failed
+          - expired
+        uploads:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadTarget'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportFileResult'
+        created_at:
+          type: string
+          format: date-time
+        job_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - id
+      - organization_id
+      - source_id
+      - status
+      - uploads
+      - results
+      - created_at
+      examples:
+      - id: 88888888-8888-4888-8888-888888888888
+        organization_id: 11111111-1111-4111-8111-111111111111
+        source_id: 55555555-5555-4555-8555-555555555555
+        status: awaiting_upload
+        uploads:
+        - path: -home-ada-work-payments/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl
+          method: PUT
+          url: https://objects.example.com/sessiondb/staging/example-upload
+          headers:
+            Content-Type: application/octet-stream
+          expires_at: '2026-11-15T12:15:00Z'
+        results: []
+        created_at: '2026-11-15T12:00:00Z'
+    ProcessingState:
+      type: object
+      properties:
+        parse:
+          type: string
+          enum:
+          - pending
+          - ready
+          - partial
+          - failed
+        keyword:
+          type: string
+          enum:
+          - pending
+          - ready
+          - failed
+        embedding:
+          type: string
+          enum:
+          - disabled
+          - pending
+          - partial
+          - ready
+          - failed
+      additionalProperties: true
+      required:
+      - parse
+      - keyword
+      - embedding
+    SessionRelation:
+      type: object
+      properties:
+        type:
+          type: string
+        session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        native_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+        resolved:
+          type: boolean
+      additionalProperties: true
+      required:
+      - type
+      - resolved
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        author_id:
+          type: string
+          format: uuid
+        harness:
+          $ref: '#/components/schemas/Harness'
+        native_session_id:
+          type: string
+        title:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        recorded_cwd:
+          anyOf:
+          - type: string
+          - type: 'null'
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        updated_at:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+          minimum: 0
+        processing:
+          $ref: '#/components/schemas/ProcessingState'
+        relations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionRelation'
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+      required:
+      - id
+      - organization_id
+      - project_id
+      - author_id
+      - harness
+      - native_session_id
+      - title
+      - tags
+      - updated_at
+      - message_count
+      - processing
+      - relations
+      - warnings
+      examples:
+      - id: 66666666-6666-4666-8666-666666666666
+        organization_id: 11111111-1111-4111-8111-111111111111
+        project_id: 22222222-2222-4222-8222-222222222222
+        author_id: 44444444-4444-4444-8444-444444444444
+        harness: claude
+        native_session_id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+        title: Payment retry investigation
+        tags:
+        - retries
+        recorded_cwd: /home/ada/work/payments
+        started_at: '2026-11-15T12:00:00Z'
+        updated_at: '2026-11-15T12:05:00Z'
+        message_count: 8
+        processing:
+          parse: ready
+          keyword: ready
+          embedding: disabled
+        relations: []
+        warnings: []
+    SessionPatch:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 500
+        tags:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 100
+      additionalProperties: false
+    ContentBlock:
+      type: object
+      properties:
+        type:
+          type: string
+        text:
+          anyOf:
+          - type: string
+          - type: 'null'
+        call_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+        arguments: {}
+        result: {}
+        artifact_url:
+          anyOf:
+          - type: string
+            format: uri
+          - type: 'null'
+        native_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - type
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+          - system
+          - tool
+          - unknown
+        native_role:
+          anyOf:
+          - type: string
+          - type: 'null'
+        sequence:
+          type: integer
+          minimum: 0
+        timestamp:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        conversation_parent_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentBlock'
+        truncated:
+          type: boolean
+        content_url:
+          anyOf:
+          - type: string
+            format: uri
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - id
+      - session_id
+      - role
+      - sequence
+      - timestamp
+      - conversation_parent_id
+      - content
+      - truncated
+      - content_url
+    FullContent:
+      type: object
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentBlock'
+      additionalProperties: true
+      required:
+      - message_id
+      - content
+    SessionEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+        type:
+          type: string
+        timestamp:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        native_type:
+          type: string
+        data: {}
+      additionalProperties: true
+      required:
+      - id
+      - session_id
+      - sequence
+      - type
+      - data
+    SearchFilters:
+      type: object
+      properties:
+        project_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        author_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        team_id:
+          type: string
+          format: uuid
+        harnesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Harness'
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - user
+            - assistant
+            - system
+            - tool
+        tags:
+          type: array
+          items:
+            type: string
+        tool_name:
+          type: string
+        after:
+          type: string
+          format: date-time
+        before:
+          type: string
+          format: date-time
+      additionalProperties: false
+    SearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        mode:
+          type: string
+          enum:
+          - keyword
+          - semantic
+          - hybrid
+          default: keyword
+        filters:
+          $ref: '#/components/schemas/SearchFilters'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+        cursor:
+          type: string
+        sort:
+          type: string
+          enum:
+          - relevance
+          - newest
+          default: relevance
+      additionalProperties: false
+      required:
+      - query
+      allOf:
+      - if:
+          properties:
+            mode:
+              enum:
+              - semantic
+              - hybrid
+          required:
+          - mode
+        then:
+          required:
+          - filters
+          properties:
+            filters:
+              required:
+              - project_ids
+              properties:
+                project_ids:
+                  minItems: 1
+                  maxItems: 1
+      examples:
+      - query: payment retries
+        mode: keyword
+        filters:
+          project_ids:
+          - 22222222-2222-4222-8222-222222222222
+          harnesses:
+          - codex
+          - claude
+          - pi
+          after: '2026-11-01T00:00:00Z'
+        limit: 20
+    SearchMatch:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        message_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        harness:
+          $ref: '#/components/schemas/Harness'
+        role:
+          type: string
+        timestamp:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        excerpt:
+          type: string
+        retrieved_by:
+          type: array
+          items:
+            type: string
+            enum:
+            - keyword
+            - semantic
+        url:
+          type: string
+          format: uri
+      additionalProperties: true
+      required:
+      - session_id
+      - message_id
+      - project_id
+      - title
+      - harness
+      - role
+      - timestamp
+      - excerpt
+      - retrieved_by
+      - url
+    SearchCoverage:
+      type: object
+      properties:
+        keyword_ready_messages:
+          type: integer
+          minimum: 0
+        embedding_eligible_passages:
+          type: integer
+          minimum: 0
+        embedded_passages:
+          type: integer
+          minimum: 0
+        embedding_profile_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - keyword_ready_messages
+      - embedding_eligible_passages
+      - embedded_passages
+      - embedding_profile_id
+    SearchResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchMatch'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+        mode:
+          type: string
+          enum:
+          - keyword
+          - semantic
+          - hybrid
+        coverage:
+          $ref: '#/components/schemas/SearchCoverage'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+      - mode
+      - coverage
+      examples:
+      - data:
+        - session_id: 66666666-6666-4666-8666-666666666666
+          message_id: 77777777-7777-4777-8777-777777777777
+          project_id: 22222222-2222-4222-8222-222222222222
+          title: Payment retry investigation
+          harness: claude
+          role: assistant
+          timestamp: '2026-11-15T12:04:00Z'
+          excerpt: The retry test covers a temporary payment failure.
+          retrieved_by:
+          - keyword
+          url: https://sessions.example.com/v1/organizations/11111111-1111-4111-8111-111111111111/messages/77777777-7777-4777-8777-777777777777
+        next_cursor: null
+        mode: keyword
+        coverage:
+          keyword_ready_messages: 8
+          embedding_eligible_passages: 0
+          embedded_passages: 0
+          embedding_profile_id: null
+    EmbeddingProfileCreate:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        provider:
+          type: string
+          enum:
+          - openai_compatible
+        base_url:
+          type: string
+          format: uri
+        model:
+          type: string
+        model_revision:
+          type: string
+        dimensions:
+          type: integer
+          minimum: 1
+          maximum: 16000
+        credential_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+        document_prefix:
+          type: string
+        query_prefix:
+          type: string
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 256
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+        enabled:
+          type: boolean
+          default: false
+      additionalProperties: false
+      required:
+      - project_id
+      - name
+      - provider
+      - base_url
+      - model
+      - model_revision
+      - dimensions
+      examples:
+      - project_id: 22222222-2222-4222-8222-222222222222
+        name: Payments semantic search
+        provider: openai_compatible
+        base_url: https://embeddings.example.com/v1
+        model: organization-embedding-model
+        model_revision: example-revision
+        dimensions: 4096
+        credential_ref: env:PAYMENTS_EMBEDDING_API_KEY
+        document_prefix: ''
+        query_prefix: ''
+        batch_size: 24
+        timeout_seconds: 60
+        enabled: false
+    EmbeddingProfile:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        provider:
+          type: string
+          enum:
+          - openai_compatible
+        base_url:
+          type: string
+          format: uri
+        model:
+          type: string
+        model_revision:
+          type: string
+        dimensions:
+          type: integer
+          minimum: 1
+          maximum: 16000
+        document_prefix:
+          type: string
+        query_prefix:
+          type: string
+        batch_size:
+          type: integer
+          minimum: 1
+          maximum: 256
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+        enabled:
+          type: boolean
+          default: false
+        id:
+          type: string
+          format: uuid
+        credential_configured:
+          type: boolean
+      additionalProperties: true
+      required:
+      - id
+      - project_id
+      - name
+      - provider
+      - base_url
+      - model
+      - model_revision
+      - dimensions
+      - enabled
+      - credential_configured
+    EmbeddingProfilePatch:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+      additionalProperties: false
+      required:
+      - enabled
+    IndexJobCreate:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - parse
+          - keyword
+          - embedding
+        profile_id:
+          type: string
+          format: uuid
+      additionalProperties: false
+      required:
+      - project_id
+      - kind
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - parse
+          - keyword
+          - embedding
+          - deletion
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - partial
+          - failed
+          - cancelled
+        completed_items:
+          type: integer
+          minimum: 0
+        total_items:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: true
+      required:
+      - id
+      - project_id
+      - kind
+      - status
+      - completed_items
+      - total_items
+      - created_at
+      - updated_at
+    Change:
+      type: object
+      properties:
+        sequence:
+          type: string
+        type:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+          format: uuid
+        recorded_at:
+          type: string
+          format: date-time
+      additionalProperties: true
+      required:
+      - sequence
+      - type
+      - project_id
+      - resource_id
+      - recorded_at
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+        request_id:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              code:
+                type: string
+              detail:
+                type: string
+            additionalProperties: true
+      additionalProperties: true
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - code
+      - request_id
+      examples:
+      - type: about:blank
+        title: Embedding search is not configured
+        status: 409
+        detail: Configure and enable an embedding profile for the selected project,
+          or request keyword search.
+        instance: /v1/organizations/11111111-1111-4111-8111-111111111111/search
+        code: embedding_not_configured
+        request_id: example-request-id
+    OrganizationPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organization'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    InvitationPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    MembershipPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    TeamPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    TeamMemberPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    ProjectPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    ProjectGrantPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectGrant'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    TokenPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Token'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    SourcePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    SourceFilePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceFile'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    FileGenerationPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileGeneration'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    ImportPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Import'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    SessionPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    MessagePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    SessionEventPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionEvent'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    EmbeddingProfilePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingProfile'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor
+    ChangePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Change'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: true
+      required:
+      - data
+      - next_cursor

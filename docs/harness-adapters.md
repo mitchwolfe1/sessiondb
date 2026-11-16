@@ -1,0 +1,57 @@
+# Harness adapters
+
+Adapters give native Codex, Claude Code, and Pi sessions a consistent SessionDB representation while preserving original files. They are Rust modules in `sessiondb-adapters` and do not require a running harness, model credentials, or database access.
+
+Status: proposed adapter contract. Native format support must be verified against versioned fixtures before release.
+
+## Adapter responsibilities
+
+Each adapter can discover default/configured roots, inspect session/workspace metadata, select supporting artifacts, normalize a bounded native record stream, and report native session relationships. Discovery is usable by the CLI; normalization runs on the server using accepted bytes.
+
+Outputs include session metadata, messages/content blocks, tool calls/results, structural events, relationships, and parsing diagnostics. Keep source-relative references for artifacts. Return unsupported/unknown records explicitly rather than rejecting an entire file because a new optional type appears.
+
+The adapter must not choose an organization/project from transcript text, perform HTTP requests to native content URLs, execute recorded commands, or apply hype-history's application-specific memory filters.
+
+## Native support matrix
+
+| Harness | Primary transcript locations | Important behavior |
+| --- | --- | --- |
+| Codex | `CODEX_HOME/sessions`, `CODEX_HOME/archived_sessions` | Typed rollout records; model items and UI events can overlap; newer forks inherit another rollout prefix. |
+| Claude Code | Configured home or `~/.claude/projects` | Parent-linked records, per-session subagent files, tool results in user-role blocks, external tool outputs. |
+| Pi | Configured session directory or `~/.pi/agent/sessions` | Versioned header, entry tree, system prompt updates, compaction, context edits, and extension entries. |
+
+Paths are defaults, not a requirement that data lives under a particular username or OS home. Honor provider configuration and explicit overrides. Windows collection is a later platform target; do not mistake path encoding for a portable source ID.
+
+## Codex
+
+Read metadata from `session_meta`, per-turn settings from `turn_context`, model-facing messages/tools from `response_item`, and relevant lifecycle/structural events from `event_msg` and other typed records. Avoid returning a second visible message merely because the same action is also projected as a completed UI item.
+
+Resolve call/results by native call IDs where available. Preserve opaque encrypted reasoning/replay fields as original data, without presenting them as readable hidden reasoning. Keep model/phase information when recorded.
+
+Newer metadata can distinguish thread ID, root session ID, fork ancestry, and `history_base` references to a bounded parent rollout. Resolve references through authorized source bindings; preserve unresolved references when a parent is missing or belongs to an inaccessible project. Rollback and compaction are recorded events, not permission to erase original source bytes.
+
+Codex's local SQLite history projections and prompt-recall file are not substitutes for the native rollout. V1 collection uses rollout files and explicitly selected artifacts rather than synchronizing the provider's live SQLite databases.
+
+## Claude Code
+
+Do not require a fixed first-line header. Session metadata can appear on repeated records. Distinguish transcript record UUIDs from provider response IDs; several assistant rows can share one model response and repeated usage data. Usage aggregation must count the recorded response correctly rather than summing every repeated block row.
+
+Tool calls are assistant `tool_use` blocks; results can be `tool_result` blocks in user messages. Preserve meta/summary markers and distinguish them from a direct human input. Include parent-linked non-message nodes needed to connect conversation branches.
+
+Subagent files may share their parent's session ID; agent identity and source file scope keep them separate. Nested workflow directories and `fork-context-ref` records must not merge a child into its parent. Resolve external tool outputs only through the adapter's artifact allowlist.
+
+## Pi
+
+Read the session header and retain its format version and optional parent session reference. Entries link through `id` and `parentId`; the header is not an entry node. Preserve typed system/user/assistant/tool-result messages, model/thinking changes, and extension metadata.
+
+`custom` extension state is not a message. `custom_message` contributes recorded context. `compaction`, `branch_summary`, and `context_edit` alter model-context interpretation without removing the older recorded history. Keep them as structural events and distinguish conversation ancestry from operation nesting.
+
+Entry timestamps are ISO strings; nested message timestamps use epoch milliseconds. Preserve the distinction when normalizing times. Native image blocks can be extracted into project-authorized artifacts while originals remain intact.
+
+## Compatibility and fixtures
+
+Record harness name, native client version when available, format version, and adapter version. Publish a tested compatibility matrix at release time instead of claiming all future versions work. Missing fields have explicit unknown states; unknown types retain native references.
+
+Create synthetic fixtures for ordinary conversations, tool calls, repeated usage, branches, compaction, inherited context, subagents, artifacts, malformed records, and incomplete tails. Keep expected normalized results small enough for review. Tests must verify source references and the complete user-visible session behavior, including warnings for missing relationships.
+
+The existing hype-history prototype is a design reference for incremental reading and branch-aware evidence. Its Python implementation is not copied into a Rust server, and its narrower text projection is not treated as a complete native replay model.

@@ -1,0 +1,12 @@
+{
+  "source_id": "55555555-5555-4555-8555-555555555555",
+  "files": [
+    {
+      "path": "-home-ada-work-payments/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl",
+      "byte_length": 4096,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "media_type": "application/octet-stream",
+      "expected_version": null
+    }
+  ]
+}
