@@ -37,7 +37,7 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 
 SessionDB can also serve a shared collection, with users, teams, and explicit session access. Project labels organize history; sharing settings control visibility. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
 
-The initial release targets a single server deployment and Linux/macOS sync clients. A hosted SaaS service, billing, a browser application, and native harness resume are outside the first release.
+The initial release targets a single server deployment and Linux/macOS sync clients.
 
 ## Documentation
 
