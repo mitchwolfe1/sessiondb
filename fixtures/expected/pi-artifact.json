@@ -1,0 +1,61 @@
+{
+  "case": "pi-artifact",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "e0000000-0000-4000-8000-000000000003",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "call",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "f0000001"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "tool_call",
+              "call_id": "image-call",
+              "name": "read",
+              "input": {
+                "encoding": "json",
+                "value": {
+                  "path": "/work/payments/diagram.png"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "key": "result",
+          "role": "tool",
+          "origin": "tool",
+          "native_ids": [
+            "f0000002"
+          ],
+          "parent_key": "call",
+          "content": [
+            {
+              "type": "tool_result",
+              "call_id": "image-call",
+              "status": "success",
+              "content": [
+                {
+                  "type": "artifact",
+                  "artifact_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01",
+                  "kind": "image",
+                  "media_type": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": []
+    }
+  ]
+}

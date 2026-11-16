@@ -7,9 +7,11 @@ SessionDB stores, syncs, queries, and searches coding-agent sessions. These docu
 | Task | Start here |
 | --- | --- |
 | Understand SessionDB | [Product specification](product.md) |
+| Start implementation | [First-build scope](first-build.md), [reference validation](validation/reference-stack.md) |
 | Collect and browse sessions | [CLI](cli.md), [automatic sync](sync.md) |
 | Organize sessions by project | [Project associations](project-associations.md) |
 | Query sessions from an application | [API](api.md), [OpenAPI](openapi.yaml), [data model](data-model.md) |
+| Understand message blocks | [Normalized content](normalized-content.md), [native fixtures](../fixtures/README.md) |
 | Configure search | [Search and embeddings](search-and-embeddings.md) |
 | Add a harness or integration | [Adapters](harness-adapters.md), [integrations](integrations.md) |
 | Run a server or configure shared access | [Operations](operations.md), [access control](access-control.md) |
@@ -31,13 +33,18 @@ The [product specification](product.md) describes scope. Feature pages describe 
 - [Project associations](project-associations.md)
 - [Harness adapters](harness-adapters.md)
 - [Data model](data-model.md)
+- [Normalized content](normalized-content.md)
+- [Native fixture pack](../fixtures/README.md)
 - [HTTP API](api.md)
 - [OpenAPI schema](openapi.yaml)
 - [Search and embeddings](search-and-embeddings.md)
 - [Integrations and formats](integrations.md)
 - [Architecture](architecture.md)
+- [First-build scope](first-build.md)
+- [Reference stack validation](validation/reference-stack.md)
 - [Operations](operations.md)
 - [Access control](access-control.md)
+- [Authentication](authentication.md)
 - [Delivery and acceptance](roadmap.md)
 - [Open questions](open-questions.md)
 - [Design decisions](decisions/README.md)

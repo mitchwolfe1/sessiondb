@@ -1,0 +1,95 @@
+{
+  "case": "claude-compaction",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "d0000000-0000-4000-8000-000000000003",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "old-u",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "0fccbc8a-b9c3-4a96-ae7d-3c037fd6a054"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Earlier task."
+            }
+          ]
+        },
+        {
+          "key": "old-a",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "538745d3-7fef-488e-abde-9d7ee9c491c5"
+          ],
+          "parent_key": "old-u",
+          "content": [
+            {
+              "type": "text",
+              "text": "Earlier answer."
+            }
+          ]
+        },
+        {
+          "key": "summary",
+          "role": "user",
+          "origin": "harness",
+          "native_ids": [
+            "ff033efb-7b0f-4748-b5df-a8d20b5f64f8"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Synthetic compaction summary."
+            }
+          ]
+        },
+        {
+          "key": "meta",
+          "role": "user",
+          "origin": "harness",
+          "native_ids": [
+            "624844a9-3687-4235-b6c0-d4650d8162e9"
+          ],
+          "parent_key": "summary",
+          "content": [
+            {
+              "type": "text",
+              "text": "Synthetic harness context."
+            }
+          ]
+        },
+        {
+          "key": "new-u",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "025820a1-e3cd-4d93-b7ec-f899d1fc3a4c"
+          ],
+          "parent_key": "meta",
+          "content": [
+            {
+              "type": "text",
+              "text": "Continue."
+            }
+          ]
+        }
+      ],
+      "events": [
+        {
+          "type": "compact_boundary",
+          "logical_parent_native_id": "538745d3-7fef-488e-abde-9d7ee9c491c5"
+        }
+      ],
+      "relations": []
+    }
+  ]
+}

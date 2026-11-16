@@ -10,15 +10,15 @@ Run the `sessiondb-server` service with PostgreSQL and an existing S3-compatible
 
 The server starts API and bounded worker tasks in one deployment. Parsing and keyword jobs use different concurrency from embedding jobs. A PostgreSQL job table provides durable queue state and leases. An external broker or separate vector service is not a v1 deployment requirement.
 
-S3 upload URLs must resolve to an endpoint reachable by authorized sync clients and be signed for that endpoint. An internal-only object endpoint cannot be handed to a remote laptop. Validate internal/public endpoint configuration during deployment; do not claim that every S3-compatible provider has identical presign/checksum behavior.
+S3 upload URLs must resolve to an endpoint reachable by authorized sync clients and be signed for that endpoint. An internal-only object endpoint cannot be handed to a remote laptop. SeaweedFS 4.54 and its tested client configuration are the first reference; see [reference validation](validation/reference-stack.md). Validate internal/public endpoint configuration during deployment; do not claim that every S3-compatible provider has identical presign/checksum behavior.
 
 ## Configuration and bootstrap
 
 Use TOML configuration, a `--config` flag, and environment overrides. Secrets are supplied by environment/secret references rather than embedded in checked-in examples. The [server example](examples/server.toml) illustrates the proposed shape.
 
-The operator configures the initial organization and exact OIDC issuer/subject for its first owner. Bootstrap runs once against an empty catalog and records completion. The operator then signs in through that subject, verifies organization membership, and removes the bootstrap subject from routine configuration. Configuration changes never grant owners after initialization.
+The operator configures the initial organization and exact OIDC issuer/subject for its first owner. Bootstrap runs once against an empty catalog and records completion. The operator then signs in through that subject, verifies organization membership, and removes the bootstrap subject from routine configuration. Configuration changes never grant owners after initialization. The selected [authentication profile](authentication.md) and sanitized Keycloak realm example specify the first provider setup.
 
-Provision a public CLI OAuth client with Authorization Code/PKCE and a loopback redirect, plus an API audience accepted by the identity provider. Test the chosen provider against the [authentication contract](access-control.md); do not treat an ID token as an API access token. Collection uses revocable source-bound tokens; applications can use read-scoped session tokens issued by permitted members.
+Provision a public CLI OAuth client with Authorization Code/PKCE and a loopback redirect, plus an API audience accepted by the identity provider. Test the chosen provider against the [authentication contract](authentication.md); do not treat an ID token as an API access token. The first one-shot sync uses the signed-in CLI identity. Background collection later uses revocable source-bound tokens; applications can use read-scoped session tokens issued by permitted members.
 
 ## Service behavior
 
@@ -50,7 +50,7 @@ A restore drill must recover organization memberships, session grants, session r
 
 Proposed v1 behavior is no automatic expiry of accepted session generations until an organization administrator configures an explicit policy. Local disappearance does not imply server deletion. Storage limits pause affected imports with a visible error rather than silently deleting old sessions.
 
-Verified append snapshots can supersede an earlier object covering the same generation prefix. Cleanup removes only objects no longer referenced by a current generation, preserved rewrite, explicit pin, or export. Use a grace period longer than active uploads/download URLs. Rewrite generations and explicit session deletion follow separate policies.
+Verified append snapshots can supersede an earlier object covering the same generation prefix. Cleanup removes only objects no longer referenced by a current generation, preserved rewrite, explicit pin, or export. Use the initial 24-hour grace after import close or append-object retirement, and never clean active leases or referenced generations. Rewrite generations and explicit session deletion follow separate policies.
 
 Session deletion hides data from all query paths immediately and queues cleanup of messages, passages, vectors, and exclusively referenced objects. Keep its source suppression state so ordinary sync does not recreate it. Publish the effect on backups and the retention of already taken backups in deployment policy; deletion from a live server does not rewrite an offline backup.
 

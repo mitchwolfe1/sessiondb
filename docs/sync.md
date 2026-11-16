@@ -28,16 +28,20 @@ For active JSONL, read a bounded snapshot through the last complete newline. Def
 
 ## Import lifecycle
 
-1. `POST /v1/organizations/{org_id}/imports` creates a batch manifest with a registered source and file descriptors. Each descriptor supplies a source-relative path, complete byte length, media type, digest, and previously accepted version when available. Optional initial `project_ids` do not gate capture.
-2. The server checks source ownership/token permission, expected versions, path validity, and configured limits. It returns an import ID and upload targets for content it does not already have.
-3. The client uploads through the provided S3-compatible targets, preserving original bytes. Already available objects require no transfer.
-4. `POST /v1/organizations/{org_id}/imports/{import_id}/complete` verifies that every required object is durable and matches the descriptor. It transactionally accepts updates and enqueues processing.
-5. Finalization is atomic for the manifest. The receipt lists accepted, unchanged, and suppressed files. A missing object, digest mismatch, version conflict, or newly denied source prevents all new catalog acceptance in that batch. Correct the upload and retry, or create a corrected manifest with a new idempotency key. The client advances checkpoints only after the completion receipt.
-6. Background processing identifies sessions, normalizes records, and updates the keyword index. Optional embedding follows independently.
+1. `POST /v1/organizations/{org_id}/imports` reserves a manifest for an owned source and returns signed staging-upload targets. Descriptors contain source-relative path, complete length, media type, SHA-256, expected version, and optional initial project labels.
+2. The client uploads the bounded native snapshots using each target's method and headers. New targets expire after 15 minutes or at the end of the import lease, whichever comes first. Before the lease ends, `GET /imports/{id}` can issue fresh targets for an awaiting upload.
+3. `POST /imports/{id}/complete` schedules durable verification/promotion work and returns `202` with status `verifying`. This acknowledges the request, not archival acceptance of the files. Repeating completion returns the same import/job identity. `job_id` remains the verification job; the import's status tracks later parsing separately.
+4. The worker copies each staging object to a new server-only immutable key, using the observed source ETag as a copy precondition. It streams the accepted copy to check its actual length and SHA-256. Later writes to a staging URL cannot change that accepted copy.
+5. The worker rechecks source access and expected versions and atomically commits the manifest's file updates, receipt, and parse job. It sets `accepted_at`; only then may the client advance its source checkpoint. A failed object/version check leaves every new file in that batch unaccepted and reports bounded file errors.
+6. The client polls `GET /imports/{id}` until `accepted_at` is set or verification fails. Parsing and optional embedding proceed after acceptance; the client does not re-upload originals just because parsing is slow or fails.
 
-Create and complete requests use an `Idempotency-Key` scoped to the organization, source, and operation. The client persists the key with its pending request. Reusing a key with the same body returns the original result; a different body returns `409`. This is an application retry convention, not a claim that POST is inherently idempotent.
+Import states are `awaiting_upload`, `verifying`, `queued`, `processing`, `ready`, `partial`, `failed`, and `expired`. `accepted_at: null` means originals have not been accepted. `failed` plus a non-null acceptance time can mean a later parser failure; the accepted originals remain retrievable. Atomic archival acceptance and partial parsing are separate results.
 
-Import states are `awaiting_upload`, `queued`, `processing`, `ready`, `partial`, `failed`, and `expired`. A successful completion receipt means durable acceptance even while the import is `queued`. Parsing can succeed for some files and fail for others, producing `partial` or `failed` processing while every accepted original remains retrievable. Partial parsing is distinct from atomic archival acceptance.
+Create/complete requests use an `Idempotency-Key`, retained for 30 days and scoped to organization/source/operation. The same request returns the same resource and effects, with its current status; transient upload URLs can be renewed. Reusing a key with different content returns `409`. A resumed client reconciles source versions when its saved request is older than receipt retention.
+
+The upload lease is 24 hours from creation. Once expired, create a new manifest/key without advancing unaccepted checkpoints. Staging and unreferenced promotion objects are eligible for cleanup 24 hours after the import closes, with no active lease/reference. Accepted originals have no automatic expiry by default.
+
+Classification is optional: unavailable/archived initial project labels produce warnings while valid original bytes can still be accepted. Invalid JSON/paths/limits remain request errors. An asynchronous expected-version conflict is reported in the import/job result; the client refreshes source state and creates a reconciled manifest.
 
 ## Growing and rewritten files
 
@@ -45,7 +49,7 @@ V1 uploads changed file snapshots using existing object operations. The server c
 
 Publish the new object/catalog reference atomically in PostgreSQL after object verification. The preceding append snapshot can become eligible for cleanup when no explicit pin or export requires it, because the new snapshot includes its complete prefix. A rewrite preserves the previous generation. Native references that require an earlier prefix remain resolvable through the file-generation catalog.
 
-An expected-version conflict returns `409`. The client refreshes source state and reconciles before creating a new request; it does not overwrite the server's newer state blindly. Identical bytes collected from another source may share physical blob storage while retaining separate source bindings.
+An expected-version conflict detected while creating a manifest returns `409`; one detected during asynchronous verification appears in the failed import/job result. The client refreshes source state and reconciles before creating a new request; it does not overwrite the server's newer state blindly. Identical bytes collected from another source may share physical blob storage while retaining separate source bindings.
 
 Native archive moves and copied files may create another source path. Keep their collected session relation explicit and avoid creating a second visible session when the adapter can prove an identical copy. Divergent copies remain visible as separate source variants; v1 does not merge competing conversation edits.
 

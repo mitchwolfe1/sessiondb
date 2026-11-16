@@ -1,0 +1,110 @@
+{
+  "case": "pi-home-tools",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "e0000000-0000-4000-8000-000000000001",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "user",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "e0000003"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Inspect the Payments repository."
+            }
+          ],
+          "timestamp": "2026-11-16T12:00:03Z"
+        },
+        {
+          "key": "assistant",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "e0000004"
+          ],
+          "parent_key": "user",
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "Inspect the repository.",
+              "redacted": false
+            },
+            {
+              "type": "text",
+              "text": "I will inspect it."
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call-pi-pwd",
+              "name": "bash",
+              "input": {
+                "encoding": "json",
+                "value": {
+                  "command": "pwd"
+                }
+              }
+            }
+          ],
+          "timestamp": "2026-11-16T12:00:04Z"
+        },
+        {
+          "key": "result",
+          "role": "tool",
+          "origin": "tool",
+          "native_ids": [
+            "e0000005"
+          ],
+          "parent_key": "assistant",
+          "content": [
+            {
+              "type": "tool_result",
+              "call_id": "call-pi-pwd",
+              "status": "success",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "/work/payments"
+                }
+              ]
+            }
+          ],
+          "native_role": "toolResult",
+          "timestamp": "2026-11-16T12:00:05Z"
+        },
+        {
+          "key": "final",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "e0000006"
+          ],
+          "parent_key": "result",
+          "content": [
+            {
+              "type": "text",
+              "text": "The repository was inspected."
+            }
+          ],
+          "timestamp": "2026-11-16T12:00:06Z"
+        }
+      ],
+      "events": [
+        {
+          "type": "model_change"
+        },
+        {
+          "type": "thinking_level_change"
+        }
+      ],
+      "relations": []
+    }
+  ]
+}

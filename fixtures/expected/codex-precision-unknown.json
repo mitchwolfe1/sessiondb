@@ -1,0 +1,107 @@
+{
+  "case": "codex-precision-unknown",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "c0000000-0000-4000-8000-000000000005",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "call",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "precision-call"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "tool_call",
+              "call_id": "precision-id",
+              "name": "fixture_echo",
+              "input": {
+                "encoding": "json",
+                "value": {
+                  "value": 18446744073709551617
+                }
+              }
+            }
+          ]
+        },
+        {
+          "key": "result",
+          "role": "tool",
+          "origin": "tool",
+          "native_ids": [
+            "line:3"
+          ],
+          "parent_key": "call",
+          "content": [
+            {
+              "type": "tool_result",
+              "call_id": "precision-id",
+              "status": "unknown",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "18446744073709551617"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "invalid",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "invalid-call"
+          ],
+          "parent_key": "result",
+          "content": [
+            {
+              "type": "tool_call",
+              "call_id": "invalid-id",
+              "name": "fixture_echo",
+              "input": {
+                "encoding": "text",
+                "value": "{not json"
+              }
+            }
+          ],
+          "warnings": [
+            "invalid_tool_arguments_json"
+          ]
+        },
+        {
+          "key": "future",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "future-message"
+          ],
+          "parent_key": "invalid",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done."
+            },
+            {
+              "type": "unknown",
+              "native_type": "fixture_future_block",
+              "data": {
+                "type": "fixture_future_block",
+                "payload": {
+                  "n": 1
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": []
+    }
+  ]
+}

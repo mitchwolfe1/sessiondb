@@ -1,0 +1,98 @@
+{
+  "case": "pi-branches-context",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "e0000000-0000-4000-8000-000000000002",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "root",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "a0000001"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Explore alternatives."
+            }
+          ]
+        },
+        {
+          "key": "a",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "a0000002"
+          ],
+          "parent_key": "root",
+          "content": [
+            {
+              "type": "text",
+              "text": "Alternative A."
+            }
+          ]
+        },
+        {
+          "key": "b",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "a0000004"
+          ],
+          "parent_key": "root",
+          "content": [
+            {
+              "type": "text",
+              "text": "Alternative B."
+            }
+          ]
+        },
+        {
+          "key": "note",
+          "role": "user",
+          "origin": "harness",
+          "native_ids": [
+            "a0000006"
+          ],
+          "parent_key": "b",
+          "content": [
+            {
+              "type": "text",
+              "text": "Synthetic extension note."
+            }
+          ],
+          "native_role": "custom"
+        }
+      ],
+      "events": [
+        {
+          "type": "custom"
+        },
+        {
+          "type": "context_edit",
+          "target_native_id": "a0000004"
+        },
+        {
+          "type": "compaction"
+        }
+      ],
+      "relations": [],
+      "branches": {
+        "a": [
+          "root",
+          "a"
+        ],
+        "b": [
+          "root",
+          "b",
+          "note"
+        ]
+      }
+    }
+  ]
+}

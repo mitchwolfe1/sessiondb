@@ -1,19 +1,26 @@
-# Open questions
+# Implementation decisions and follow-ups
 
-These decisions guide upcoming implementation work. Codex/Claude/Pi support, automatic sync, conventional interfaces, and extensible search define the project direction. Shared access is specified alongside the other server capabilities.
+The decisions needed for the [first build](first-build.md) are settled. The reference stack has passed compatibility checks, the content model has typed schemas/fixtures, and the selected API subset is identified in OpenAPI.
 
-| ID | Decision | Concrete proposal and alternatives | Blocks |
-| --- | --- | --- | --- |
-| Q01 | Rust dependency set and MSRV | Use the workspace/library candidates in architecture; prove a compatible dependency set and lock one tested stable toolchain. | Cargo workspace and release packaging |
-| Q02 | Identity provider and CLI interoperability | OIDC Authorization Code/PKCE with loopback login and exact issuer/subject bootstrap; test against the chosen provider. Device authorization can be added if required. | Authentication and first multi-user slice |
-| Q03 | S3 implementation/client | Choose a deployed compatible service and Rust client after testing presigned uploads, checksum validation, conditional operations, and endpoint reachability. | Durable import implementation |
-| Q04 | Accept the OpenAPI draft | Review the checked-in OpenAPI 3.1 schemas, examples, and CLI mapping. Confirm optional fields and mutation semantics before implementing them. | HTTP routes and generated bindings |
-| Q05 | Retention and limits | No automatic expiry by default; coalesce append snapshots, preserve rewrites, and require explicit deletion. Review storage limits and backup retention. | Production collection and cleanup |
-| Q06 | First embedding profile and provider contract | Configured OpenAI-compatible endpoint, separate query/document transforms, exact cosine retrieval; verify dimensions and supported response/usage fields. | Semantic-search milestone |
-| Q07 | Binary distribution and SDK publishing | Linux/macOS release archives and user-service installation; Rust SDK first. Decide package registries, signing, and license before publication. | V1 release |
-| Q08 | Native compatibility matrix | Build synthetic fixtures from supported Codex/Claude/Pi shapes, including forks, subagents, and artifacts; record tested versions. | All-harness acceptance |
-| Q09 | Conversation leaf and export details | History is default; optional leaf ancestry; native bundle preserves originals. Review cyclic/missing-reference display and STS projection warnings. | Detailed message/export implementation |
-| Q10 | Search ranking and capacity objectives | Keyword default, explicit semantic/hybrid, RRF proposal; select candidate limits and benchmark with permission filtering and current model dimensions. | Search performance/release claims |
-| Q11 | Source selection and initial classification details | Native store roots collect independently of cwd. Review include/exclude syntax, optional multi-match initial rules, and manual-edit preservation against home-directory fixtures. | Collection and labeling implementation |
+## Resolved for the first build
 
-The maintainer resolves a question by accepting or replacing a decision record and updating every affected feature document/example. There is no need to settle later-stage questions before making the current documentation coherent. Do not implement a blocked surface against an undocumented assumption.
+| ID | Decision | Resolution |
+| --- | --- | --- |
+| Q01 | Dependency set and compiler baseline | [Tested library set and Rust 1.94.1](validation/reference-stack.md); commit the application lockfile when code begins. |
+| Q02 | Authentication and CLI login | [Keycloak 26.8.2 reference with code/PKCE](authentication.md), API audience, verified bootstrap subject, and headless token input. |
+| Q03 | S3 implementation/client | [SeaweedFS 4.54 and aws-sdk-s3 1.159.0](decisions/0009-reference-storage-and-dependencies.md), with signed staging, immutable promotion, and verified bytes. |
+| Q04 | Initial HTTP surface | [23 first-build operations](first-build.md), typed API draft 0.3.0, and explicit capability reporting. |
+| Q05 | Initial lease/retention/limits | [Sync defaults](sync.md): 24-hour upload lease, 15-minute renewed URLs, 30-day idempotency, 24-hour cleanup grace, 256 MiB files, and no automatic original expiry. |
+| Q08 | Native normalization fixtures | [Ten synthetic cases](../fixtures/README.md), with virtual native paths and schema-checked expectations. Actual adapter conformance is implementation work. |
+| Q09 | History, leaf, and exports | [Historical message view](normalized-content.md), explicit ancestry and inherited relations, native bundle first. |
+| Q11 | Collection versus classification | Native stores collect independently of cwd; labels are optional and sync preserves manual edits. Optional matching is a later collection feature. |
+
+## Later milestone work
+
+| ID | Follow-up | When |
+| --- | --- | --- |
+| Q06 | Implement and exercise the configured embedding endpoint contract | Semantic-search milestone; provider/model is runtime configuration rather than a prerequisite for collection. |
+| Q07 | Verify binary targets, SDK publication, and license/distribution policy | Release preparation. Private implementation does not require an open-source licensing decision. |
+| Q10 | Benchmark and tune ranking, capacity, and optional ANN indexes | After a working query/index path; initial keyword/exact-vector/RRF defaults are already specified. |
+
+These follow-ups do not block the first storage-to-CLI path. Update the relevant contract and acceptance case when implementation feedback changes a decision. Application development still begins only when explicitly requested.

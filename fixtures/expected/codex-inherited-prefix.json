@@ -1,0 +1,99 @@
+{
+  "case": "codex-inherited-prefix",
+  "sessions": [
+    {
+      "key": "parent",
+      "native_session_id": "c0000000-0000-4000-8000-000000000002",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "parent-u",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "cp-u"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Parent task."
+            }
+          ]
+        },
+        {
+          "key": "parent-a",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "cp-a"
+          ],
+          "parent_key": "parent-u",
+          "content": [
+            {
+              "type": "text",
+              "text": "Parent result."
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": []
+    },
+    {
+      "key": "child",
+      "native_session_id": "c0000000-0000-4000-8000-000000000003",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "child-u",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "cc-u"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Continue differently."
+            }
+          ]
+        },
+        {
+          "key": "child-a",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "cc-a"
+          ],
+          "parent_key": "child-u",
+          "content": [
+            {
+              "type": "text",
+              "text": "Child result."
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": [
+        {
+          "type": "fork",
+          "target": "parent"
+        },
+        {
+          "type": "inherited_context",
+          "target": "parent",
+          "history_boundary": {
+            "rollout_id": "c0000000-0000-4000-8000-000000000002",
+            "end_ordinal_exclusive": 3,
+            "end_byte_offset": 787
+          }
+        }
+      ]
+    }
+  ]
+}

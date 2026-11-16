@@ -56,6 +56,8 @@ Start with the [documentation guide](docs/README.md), then read:
 
 Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and planned development checks.
 
+The [first-build plan](docs/first-build.md) selects the initial working path. [Reference checks](docs/validation/reference-stack.md) and [synthetic native fixtures](fixtures/README.md) support the storage, login, and message contracts.
+
 Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add session import`, or `fix: retry interrupted uploads`.
 
 The repository is private. Distribution and licensing are undecided.

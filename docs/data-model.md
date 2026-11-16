@@ -25,8 +25,8 @@ A source file can contribute records to a session, and a session can depend on s
 | Resource | Main fields and behavior |
 | --- | --- |
 | Session | Organization, owner, contributor attribution, harness/native ID, title, tags, `project_ids`, recorded cwd, start/activity times, visibility, source links, and processing state. |
-| Message | Session, role, content blocks, recorded time, sequence, native reference, and optional conversation parent. |
-| Tool call | Call ID/name/arguments, source message, and linked result when available; links are scoped to the originating session/source. |
+| Message | Session, canonical/native role, origin, typed content, revision, recorded time, sequence, native references, and optional conversation parent. |
+| Tool call | Call ID/name, explicitly JSON or text input, source message, and linked result when available; links are scoped to the originating session/source. |
 | Session event | Compaction, model change, context edit, branch marker, or another recorded event, retaining native type and source reference. |
 | Session relation | Parent/child, fork, delegation, or inherited-context reference, with an explicit resolution state. |
 | Artifact | File/image/large content reference, media type, size, and access inherited from the session. |
@@ -56,7 +56,7 @@ Projects are searchable grouping metadata, not containers that determine ownersh
 
 ## Messages and events
 
-Content is a typed list of text, available reasoning, tool call, tool result, image/artifact reference, and unknown/native blocks. Missing reasoning or timestamps remain unknown. Unknown blocks retain native type and a source pointer.
+Content is a typed list of text, available reasoning, tool call, tool result, structured JSON, artifact reference, and unknown/native blocks. [Normalized content](normalized-content.md) defines the schemas and provider rules. Missing reasoning or timestamps remain unknown. Unknown blocks retain native type and opaque data, with message references locating the original records.
 
 Conversation ancestry and operation nesting are separate fields. `conversation_parent_id` describes branching. A delegated operation or tool invocation has its own relationship; adjacent timestamps alone do not establish it.
 

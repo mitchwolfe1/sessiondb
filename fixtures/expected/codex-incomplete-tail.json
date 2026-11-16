@@ -1,0 +1,37 @@
+{
+  "case": "codex-incomplete-tail",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "c0000000-0000-4000-8000-000000000004",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "complete",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "tail-u"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete prefix."
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": []
+    }
+  ],
+  "capture": {
+    "complete_lines": 3,
+    "pending_tail_bytes": 34,
+    "malformed_lines": [
+      2
+    ]
+  }
+}

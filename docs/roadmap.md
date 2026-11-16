@@ -4,9 +4,9 @@ Delivery proceeds through reviewable vertical slices. The current repository is 
 
 ## Phase zero
 
-Review session workflows, the workspace layout, sync semantics, query/search interfaces, and server configuration. Resolve the relevant [open questions](open-questions.md) and review the [OpenAPI draft](openapi.yaml), with request/response examples checked against its schemas.
+Review session workflows, the workspace layout, sync semantics, query/search interfaces, and server configuration. Use the [resolved first-build decisions](open-questions.md), [selected scope](first-build.md), and [OpenAPI draft](openapi.yaml), with request/response examples checked against its schemas.
 
-The result is an implementation plan for the first sync-to-query path.
+The [first-build plan](first-build.md) now defines that implementation path, backed by reference-stack checks and native fixtures.
 
 ## First vertical slice
 

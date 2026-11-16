@@ -1,0 +1,32 @@
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "session_id": "66666666-6666-4666-8666-666666666666",
+  "role": "assistant",
+  "native_role": "assistant",
+  "origin": "model",
+  "sequence": 2,
+  "provider_response_id": "fixture-response-1",
+  "model": "fixture-model",
+  "revision": "example-r1",
+  "timestamp": "2026-11-15T12:01:00Z",
+  "conversation_parent_id": null,
+  "content": [
+    {
+      "type": "text",
+      "text": "I will inspect the repository."
+    },
+    {
+      "type": "tool_call",
+      "call_id": "call_example",
+      "name": "bash",
+      "input": {
+        "encoding": "json",
+        "value": {
+          "command": "pwd"
+        }
+      }
+    }
+  ],
+  "truncated": false,
+  "content_url": null
+}

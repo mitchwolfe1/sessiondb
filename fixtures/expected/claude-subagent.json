@@ -1,0 +1,76 @@
+{
+  "case": "claude-subagent",
+  "sessions": [
+    {
+      "key": "parent",
+      "native_session_id": "d0000000-0000-4000-8000-000000000002",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "parent-u",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "c118f252-7c95-4407-9459-ca63cd556537"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Delegate a small task."
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": []
+    },
+    {
+      "key": "child",
+      "native_session_id": "d0000000-0000-4000-8000-000000000002",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "child-u",
+          "role": "user",
+          "origin": "harness",
+          "native_ids": [
+            "f99db7ce-8922-4878-9a73-47c25cc6c898"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Inspect a fixture."
+            }
+          ]
+        },
+        {
+          "key": "child-a",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "616a320e-f0ed-4d3c-a4bc-f0f3ed2a4e30"
+          ],
+          "parent_key": "child-u",
+          "content": [
+            {
+              "type": "text",
+              "text": "Fixture inspected."
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": [
+        {
+          "type": "subagent",
+          "target": "parent"
+        }
+      ],
+      "native_agent_id": "fixture-child"
+    }
+  ]
+}

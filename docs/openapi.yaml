@@ -1,11 +1,11 @@
-# Proposed API contract. Documentation only; no service exists yet.
+# Design contract; no SessionDB application implementation exists yet.
 openapi: 3.1.1
 info:
   title: SessionDB API
-  version: 0.2.0-draft
-  description: 'Proposed SessionDB contract: source-based collection, optional
-    project associations, independent session sharing, and extensible search. Documentation
-    only; see docs/api.md.'
+  version: 0.3.0-draft
+  description: SessionDB design contract with typed normalized content, source-based
+    collection, optional project associations, and independent session access. The
+    first implementation subset is identified by x-first-build.
 servers:
 - url: https://sessions.example.com
   description: Illustrative deployment URL
@@ -46,6 +46,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Health'
       security: []
+      x-first-build: true
   /readyz:
     parameters: []
     get:
@@ -64,6 +65,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Health'
       security: []
+      x-first-build: true
   /v1/info:
     parameters: []
     get:
@@ -82,6 +84,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ServerInfo'
       security: []
+      x-first-build: true
   /v1/auth/config:
     parameters: []
     get:
@@ -100,6 +103,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthConfig'
       security: []
+      x-first-build: true
   /v1/auth/session:
     parameters: []
     post:
@@ -117,6 +121,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Me'
+      x-first-build: true
   /v1/me:
     parameters: []
     get:
@@ -134,6 +139,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Me'
+      x-first-build: true
   /v1/organizations:
     parameters: []
     get:
@@ -165,6 +171,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: true
   /v1/organizations/{org_id}:
     parameters:
     - name: org_id
@@ -188,6 +195,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Organization'
+      x-first-build: false
     patch:
       operationId: updateOrganization
       tags:
@@ -209,6 +217,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/OrganizationPatch'
+      x-first-build: false
   /v1/organizations/{org_id}/invitations:
     parameters:
     - name: org_id
@@ -246,6 +255,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
     post:
       operationId: createInvitation
       tags:
@@ -272,6 +282,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/InvitationCreate'
+      x-first-build: true
   /v1/organizations/{org_id}/invitations/{invitation_id}:
     parameters:
     - name: org_id
@@ -297,6 +308,7 @@ paths:
           $ref: '#/components/responses/Problem'
         '204':
           description: Success
+      x-first-build: false
   /v1/organizations/{org_id}/members:
     parameters:
     - name: org_id
@@ -334,6 +346,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
   /v1/organizations/{org_id}/members/{user_id}:
     parameters:
     - name: org_id
@@ -369,6 +382,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MembershipPatch'
+      x-first-build: false
     delete:
       operationId: removeMember
       tags:
@@ -380,6 +394,7 @@ paths:
           $ref: '#/components/responses/Problem'
         '204':
           description: Success
+      x-first-build: false
   /v1/organizations/{org_id}/teams:
     parameters:
     - name: org_id
@@ -417,6 +432,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
     post:
       operationId: createTeam
       tags:
@@ -443,6 +459,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TeamCreate'
+      x-first-build: false
   /v1/organizations/{org_id}/teams/{team_id}:
     parameters:
     - name: org_id
@@ -472,6 +489,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Team'
+      x-first-build: false
     patch:
       operationId: updateTeam
       tags:
@@ -493,6 +511,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TeamPatch'
+      x-first-build: false
   /v1/organizations/{org_id}/teams/{team_id}/members:
     parameters:
     - name: org_id
@@ -536,6 +555,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
   /v1/organizations/{org_id}/teams/{team_id}/members/{user_id}:
     parameters:
     - name: org_id
@@ -571,6 +591,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TeamMember'
+      x-first-build: false
     delete:
       operationId: removeTeamMember
       tags:
@@ -582,6 +603,7 @@ paths:
           $ref: '#/components/responses/Problem'
         '204':
           description: Success
+      x-first-build: false
   /v1/organizations/{org_id}/projects:
     parameters:
     - name: org_id
@@ -620,6 +642,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
     post:
       operationId: createProject
       tags:
@@ -647,6 +670,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ProjectCreate'
+      x-first-build: false
   /v1/organizations/{org_id}/projects/{project_id}:
     parameters:
     - name: org_id
@@ -676,6 +700,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Project'
+      x-first-build: false
     patch:
       operationId: updateProject
       tags:
@@ -698,6 +723,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ProjectPatch'
+      x-first-build: false
   /v1/organizations/{org_id}/tokens:
     parameters:
     - name: org_id
@@ -735,6 +761,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
     post:
       operationId: createToken
       tags:
@@ -763,6 +790,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TokenCreate'
+      x-first-build: false
   /v1/organizations/{org_id}/tokens/{token_id}:
     parameters:
     - name: org_id
@@ -788,6 +816,7 @@ paths:
           $ref: '#/components/responses/Problem'
         '204':
           description: Success
+      x-first-build: false
   /v1/organizations/{org_id}/sources:
     parameters:
     - name: org_id
@@ -829,6 +858,7 @@ paths:
         in: query
         schema:
           $ref: '#/components/schemas/Harness'
+      x-first-build: true
     post:
       operationId: createSource
       tags:
@@ -856,6 +886,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SourceCreate'
+      x-first-build: true
   /v1/organizations/{org_id}/sources/{source_id}:
     parameters:
     - name: org_id
@@ -885,6 +916,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Source'
+      x-first-build: true
     patch:
       operationId: updateSource
       tags:
@@ -908,6 +940,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SourcePatch'
+      x-first-build: false
   /v1/organizations/{org_id}/sources/{source_id}/files:
     parameters:
     - name: org_id
@@ -951,6 +984,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: true
   /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/generations:
     parameters:
     - name: org_id
@@ -1000,6 +1034,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
   /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/content:
     parameters:
     - name: org_id
@@ -1063,6 +1098,7 @@ paths:
         in: header
         schema:
           type: string
+      x-first-build: true
   /v1/organizations/{org_id}/imports:
     parameters:
     - name: org_id
@@ -1106,6 +1142,7 @@ paths:
           type: string
           format: uuid
         description: ''
+      x-first-build: false
     post:
       operationId: createImport
       tags:
@@ -1134,14 +1171,16 @@ paths:
           type: string
           minLength: 1
           maxLength: 128
-        description: Persist with the request; same body returns the original result,
-          conflicting body returns 409.
+        description: Persist with the request; the same request returns the same resource
+          and effects with current status. Upload targets may be renewed; conflicting
+          content returns 409. Retained for 30 days.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ImportManifest'
+      x-first-build: true
   /v1/organizations/{org_id}/imports/{import_id}:
     parameters:
     - name: org_id
@@ -1161,7 +1200,8 @@ paths:
       tags:
       - imports
       summary: Read archival acceptance and processing state
-      description: Read archival acceptance and processing state
+      description: Read current state and accepted_at. While awaiting upload and before
+        the 24-hour lease expires, renew short-lived staging targets as needed.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1171,6 +1211,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Import'
+      x-first-build: true
   /v1/organizations/{org_id}/imports/{import_id}/complete:
     parameters:
     - name: org_id
@@ -1189,8 +1230,10 @@ paths:
       operationId: completeImport
       tags:
       - imports
-      summary: Verify objects and durably accept the batch
-      description: Verify objects and durably accept the batch
+      summary: Schedule verification and immutable promotion
+      description: Return 202/verifying for the durable job request. The client polls
+        until accepted_at is non-null before advancing checkpoints. Repeated completion
+        reuses the import/job.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1208,8 +1251,10 @@ paths:
           type: string
           minLength: 1
           maxLength: 128
-        description: Persist with the request; same body returns the original result,
-          conflicting body returns 409.
+        description: Persist with the request; the same request returns the same resource
+          and effects with current status. Repeated completion reuses the verification
+          job. Retained for 30 days.
+      x-first-build: true
   /v1/organizations/{org_id}/sessions:
     parameters:
     - name: org_id
@@ -1301,6 +1346,7 @@ paths:
         schema:
           type: boolean
           default: false
+      x-first-build: true
   /v1/organizations/{org_id}/sessions/{session_id}:
     parameters:
     - name: org_id
@@ -1330,6 +1376,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Session'
+      x-first-build: true
     patch:
       operationId: updateSession
       tags:
@@ -1353,6 +1400,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SessionPatch'
+      x-first-build: false
     delete:
       operationId: deleteSession
       tags:
@@ -1369,6 +1417,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
+      x-first-build: false
   /v1/organizations/{org_id}/sessions/{session_id}/messages:
     parameters:
     - name: org_id
@@ -1418,6 +1467,7 @@ paths:
           type: string
           format: uuid
         description: ''
+      x-first-build: true
   /v1/organizations/{org_id}/sessions/{session_id}/events:
     parameters:
     - name: org_id
@@ -1461,6 +1511,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
   /v1/organizations/{org_id}/sessions/{session_id}/export:
     parameters:
     - name: org_id
@@ -1513,6 +1564,7 @@ paths:
           type: string
           format: uuid
         description: ''
+      x-first-build: true
   /v1/organizations/{org_id}/messages/{message_id}:
     parameters:
     - name: org_id
@@ -1542,6 +1594,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Message'
+          headers:
+            ETag:
+              description: Strong quoted normalized message revision.
+              schema:
+                type: string
+      x-first-build: true
   /v1/organizations/{org_id}/messages/{message_id}/content:
     parameters:
     - name: org_id
@@ -1561,7 +1619,9 @@ paths:
       tags:
       - messages
       summary: Read full normalized message content
-      description: Read full normalized message content
+      description: Return full normalized content without content_reference previews.
+        If-Match protects a preview expansion from a stale revision; return 412 if
+        changed.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1571,6 +1631,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FullContent'
+          headers:
+            ETag:
+              description: Strong quoted normalized message revision.
+              schema:
+                type: string
+      parameters:
+      - name: If-Match
+        in: header
+        schema:
+          type: string
+        description: Optional quoted revision from a message/content reference; mismatch
+          returns 412.
+      x-first-build: true
   /v1/organizations/{org_id}/search:
     parameters:
     - name: org_id
@@ -1602,6 +1675,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SearchRequest'
+      x-first-build: false
   /v1/organizations/{org_id}/embedding-profiles:
     parameters:
     - name: org_id
@@ -1639,6 +1713,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
     post:
       operationId: createEmbeddingProfile
       tags:
@@ -1666,6 +1741,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/EmbeddingProfileCreate'
+      x-first-build: false
   /v1/organizations/{org_id}/embedding-profiles/{profile_id}:
     parameters:
     - name: org_id
@@ -1695,6 +1771,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EmbeddingProfile'
+      x-first-build: false
     patch:
       operationId: updateEmbeddingProfile
       tags:
@@ -1717,6 +1794,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/EmbeddingProfilePatch'
+      x-first-build: false
   /v1/organizations/{org_id}/index-jobs:
     parameters:
     - name: org_id
@@ -1747,6 +1825,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/IndexJobCreate'
+      x-first-build: false
   /v1/organizations/{org_id}/jobs/{job_id}:
     parameters:
     - name: org_id
@@ -1776,6 +1855,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
+      x-first-build: true
   /v1/organizations/{org_id}/changes:
     parameters:
     - name: org_id
@@ -1821,6 +1901,7 @@ paths:
           type: string
           format: uuid
         description: ''
+      x-first-build: false
   /v1/organizations/{org_id}/sessions/{session_id}/grants:
     parameters:
     - name: org_id
@@ -1865,6 +1946,7 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
+      x-first-build: false
     post:
       operationId: createSessionGrant
       tags:
@@ -1892,6 +1974,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SessionGrantCreate'
+      x-first-build: false
   /v1/organizations/{org_id}/sessions/{session_id}/grants/{grant_id}:
     parameters:
     - name: org_id
@@ -1924,6 +2007,82 @@ paths:
           $ref: '#/components/responses/Problem'
         '204':
           description: Success
+      x-first-build: false
+  /v1/organizations/{org_id}/artifacts/{artifact_id}:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: artifact_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getArtifact
+      tags:
+      - messages
+      summary: Read artifact metadata
+      description: Apply the associated session authorization. URLs are server-issued,
+        never arbitrary native transcript URLs.
+      responses:
+        '200':
+          description: Authorized artifact metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-first-build: false
+  /v1/organizations/{org_id}/artifacts/{artifact_id}/content:
+    parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: artifact_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      operationId: getArtifactContent
+      tags:
+      - messages
+      summary: Download artifact content
+      description: Apply the associated session authorization. URLs are server-issued,
+        never arbitrary native transcript URLs.
+      responses:
+        '200':
+          description: Authorized artifact bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: '#/components/responses/Problem'
+        '206':
+          description: Authorized byte range
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+      parameters:
+      - name: Range
+        in: header
+        schema:
+          type: string
+      x-first-build: false
 components:
   securitySchemes:
     bearerAuth:
@@ -2654,6 +2813,7 @@ components:
           type: string
           enum:
           - awaiting_upload
+          - verifying
           - queued
           - processing
           - ready
@@ -2676,6 +2836,34 @@ components:
           - type: string
             format: uuid
           - type: 'null'
+          description: Stable verification job ID after completion is scheduled. Later
+            parsing/indexing jobs do not replace it; import status tracks overall processing.
+        accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Archival acceptance timestamp. A scheduled verification request
+            alone leaves this null.
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              code:
+                type: string
+              detail:
+                type: string
+            required:
+            - code
+            - detail
+        upload_expires_at:
+          type: string
+          format: date-time
+          description: Upload lease deadline; accepted originals do not expire at
+            this time.
       additionalProperties: true
       required:
       - id
@@ -2685,6 +2873,8 @@ components:
       - uploads
       - results
       - created_at
+      - accepted_at
+      - upload_expires_at
       examples:
       - id: 88888888-8888-4888-8888-888888888888
         organization_id: 11111111-1111-4111-8111-111111111111
@@ -2696,9 +2886,26 @@ components:
           url: https://objects.example.com/sessiondb/staging/example-upload
           headers:
             Content-Type: application/octet-stream
+            x-amz-checksum-sha256: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=
           expires_at: '2026-11-15T12:15:00Z'
         results: []
         created_at: '2026-11-15T12:00:00Z'
+        accepted_at: null
+        upload_expires_at: '2026-11-16T12:00:00Z'
+      - id: 88888888-8888-4888-8888-888888888888
+        organization_id: 11111111-1111-4111-8111-111111111111
+        source_id: 55555555-5555-4555-8555-555555555555
+        status: queued
+        uploads: []
+        results:
+        - path: -home-ada/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jsonl
+          status: accepted
+          version: example-file-version-1
+          session_ids: []
+          warnings: []
+        created_at: '2026-11-15T12:00:00Z'
+        accepted_at: '2026-11-15T12:01:00Z'
+        upload_expires_at: '2026-11-16T12:00:00Z'
     ProcessingState:
       type: object
       properties:
@@ -2744,6 +2951,10 @@ components:
           - type: 'null'
         resolved:
           type: boolean
+        history_boundary:
+          anyOf:
+          - $ref: '#/components/schemas/HistoryBoundary'
+          - type: 'null'
       additionalProperties: true
       required:
       - type
@@ -2904,36 +3115,26 @@ components:
         tags:
         - retries
     ContentBlock:
-      type: object
-      properties:
-        type:
-          type: string
-        text:
-          anyOf:
-          - type: string
-          - type: 'null'
-        call_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-        name:
-          anyOf:
-          - type: string
-          - type: 'null'
-        arguments: {}
-        result: {}
-        artifact_url:
-          anyOf:
-          - type: string
-            format: uri
-          - type: 'null'
-        native_type:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - type
+      oneOf:
+      - $ref: '#/components/schemas/TextBlock'
+      - $ref: '#/components/schemas/ReasoningBlock'
+      - $ref: '#/components/schemas/ToolCallBlock'
+      - $ref: '#/components/schemas/ToolResultBlock'
+      - $ref: '#/components/schemas/JsonBlock'
+      - $ref: '#/components/schemas/ArtifactBlock'
+      - $ref: '#/components/schemas/UnknownBlock'
+      - $ref: '#/components/schemas/ContentReferenceBlock'
+      discriminator:
+        propertyName: type
+        mapping:
+          text: '#/components/schemas/TextBlock'
+          reasoning: '#/components/schemas/ReasoningBlock'
+          tool_call: '#/components/schemas/ToolCallBlock'
+          tool_result: '#/components/schemas/ToolResultBlock'
+          json: '#/components/schemas/JsonBlock'
+          artifact: '#/components/schemas/ArtifactBlock'
+          unknown: '#/components/schemas/UnknownBlock'
+          content_reference: '#/components/schemas/ContentReferenceBlock'
     Message:
       type: object
       properties:
@@ -2979,6 +3180,37 @@ components:
           - type: string
             format: uri
           - type: 'null'
+        revision:
+          type: string
+        origin:
+          type: string
+          enum:
+          - native_user
+          - model
+          - tool
+          - harness
+          - unknown
+        provider_response_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+        provider_usage:
+          anyOf:
+          - type: object
+            additionalProperties: true
+          - type: 'null'
+        warnings:
+          type: array
+          items:
+            type: string
+        source_refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/NativeRecordRef'
       additionalProperties: true
       required:
       - id
@@ -2990,6 +3222,32 @@ components:
       - content
       - truncated
       - content_url
+      - revision
+      - origin
+      examples:
+      - id: 77777777-7777-4777-8777-777777777777
+        session_id: 66666666-6666-4666-8666-666666666666
+        role: assistant
+        native_role: assistant
+        origin: model
+        sequence: 2
+        provider_response_id: fixture-response-1
+        model: fixture-model
+        revision: example-r1
+        timestamp: '2026-11-15T12:01:00Z'
+        conversation_parent_id: null
+        content:
+        - type: text
+          text: I will inspect the repository.
+        - type: tool_call
+          call_id: call_example
+          name: bash
+          input:
+            encoding: json
+            value:
+              command: pwd
+        truncated: false
+        content_url: null
     FullContent:
       type: object
       properties:
@@ -2999,11 +3257,14 @@ components:
         content:
           type: array
           items:
-            $ref: '#/components/schemas/ContentBlock'
+            $ref: '#/components/schemas/FullContentBlock'
+        revision:
+          type: string
       additionalProperties: true
       required:
       - message_id
       - content
+      - revision
     SessionEvent:
       type: object
       properties:
@@ -3416,6 +3677,7 @@ components:
         kind:
           type: string
           enum:
+          - verify_import
           - parse
           - keyword
           - embedding
@@ -3860,3 +4122,295 @@ components:
       required:
       - data
       - next_cursor
+    TextBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: text
+        text:
+          type: string
+      required:
+      - type
+      - text
+    ReasoningBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: reasoning
+        text:
+          type: string
+        redacted:
+          type: boolean
+          default: false
+      required:
+      - type
+      - text
+    JsonToolInput:
+      type: object
+      additionalProperties: false
+      properties:
+        encoding:
+          const: json
+          type: string
+        value: {}
+      required:
+      - encoding
+      - value
+    TextToolInput:
+      type: object
+      additionalProperties: false
+      properties:
+        encoding:
+          const: text
+          type: string
+        value:
+          type: string
+      required:
+      - encoding
+      - value
+    ToolInput:
+      oneOf:
+      - $ref: '#/components/schemas/JsonToolInput'
+      - $ref: '#/components/schemas/TextToolInput'
+      discriminator:
+        propertyName: encoding
+        mapping:
+          json: '#/components/schemas/JsonToolInput'
+          text: '#/components/schemas/TextToolInput'
+    ToolCallBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: tool_call
+        call_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        name:
+          type: string
+          minLength: 1
+        input:
+          $ref: '#/components/schemas/ToolInput'
+      required:
+      - type
+      - call_id
+      - name
+      - input
+    JsonBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: json
+        value: {}
+      required:
+      - type
+      - value
+    ArtifactBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: artifact
+        artifact_id:
+          type: string
+          format: uuid
+        media_type:
+          type: string
+        kind:
+          type: string
+          enum:
+          - image
+          - file
+          - audio
+          - video
+          - other
+        alt:
+          type: string
+      required:
+      - type
+      - artifact_id
+      - media_type
+      - kind
+    UnknownBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: unknown
+        native_type:
+          type: string
+        data: {}
+      required:
+      - type
+      - native_type
+      - data
+    ToolOutputBlock:
+      oneOf:
+      - $ref: '#/components/schemas/TextBlock'
+      - $ref: '#/components/schemas/JsonBlock'
+      - $ref: '#/components/schemas/ArtifactBlock'
+      - $ref: '#/components/schemas/UnknownBlock'
+      discriminator:
+        propertyName: type
+        mapping:
+          text: '#/components/schemas/TextBlock'
+          json: '#/components/schemas/JsonBlock'
+          artifact: '#/components/schemas/ArtifactBlock'
+          unknown: '#/components/schemas/UnknownBlock'
+    ToolResultBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: tool_result
+        call_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        status:
+          type: string
+          enum:
+          - success
+          - error
+          - unknown
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolOutputBlock'
+      required:
+      - type
+      - call_id
+      - status
+      - content
+    FullContentBlock:
+      oneOf:
+      - $ref: '#/components/schemas/TextBlock'
+      - $ref: '#/components/schemas/ReasoningBlock'
+      - $ref: '#/components/schemas/ToolCallBlock'
+      - $ref: '#/components/schemas/ToolResultBlock'
+      - $ref: '#/components/schemas/JsonBlock'
+      - $ref: '#/components/schemas/ArtifactBlock'
+      - $ref: '#/components/schemas/UnknownBlock'
+      discriminator:
+        propertyName: type
+        mapping:
+          text: '#/components/schemas/TextBlock'
+          reasoning: '#/components/schemas/ReasoningBlock'
+          tool_call: '#/components/schemas/ToolCallBlock'
+          tool_result: '#/components/schemas/ToolResultBlock'
+          json: '#/components/schemas/JsonBlock'
+          artifact: '#/components/schemas/ArtifactBlock'
+          unknown: '#/components/schemas/UnknownBlock'
+    ContentReferenceBlock:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          const: content_reference
+        content_url:
+          type: string
+          format: uri
+        revision:
+          type: string
+        block_index:
+          type: integer
+          minimum: 0
+        original_type:
+          type: string
+      required:
+      - type
+      - content_url
+      - revision
+      - block_index
+      - original_type
+    Artifact:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        media_type:
+          type: string
+        kind:
+          type: string
+          enum:
+          - image
+          - file
+          - audio
+          - video
+          - other
+        name:
+          type: string
+        byte_length:
+          type: integer
+          minimum: 0
+        content_url:
+          type: string
+          format: uri
+      required:
+      - id
+      - session_id
+      - media_type
+      - kind
+      - byte_length
+      - content_url
+    HistoryBoundary:
+      type: object
+      properties:
+        rollout_id:
+          type: string
+        end_ordinal_exclusive:
+          type: integer
+          minimum: 0
+        end_byte_offset:
+          type: integer
+          minimum: 0
+      required:
+      - rollout_id
+      - end_ordinal_exclusive
+      - end_byte_offset
+      additionalProperties: false
+    NativeRecordRef:
+      type: object
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        generation_id:
+          type: string
+          format: uuid
+        record_id:
+          type:
+          - string
+          - 'null'
+        line:
+          type: integer
+          minimum: 1
+        byte_offset:
+          type: integer
+          minimum: 0
+        byte_length:
+          type: integer
+          minimum: 0
+      required:
+      - file_id
+      - generation_id
+      - line
+      - byte_offset
+      - byte_length
+      additionalProperties: false

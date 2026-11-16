@@ -2,7 +2,7 @@
 
 The SessionDB API provides session, message, import, and search resources for the CLI, SDK, and other applications.
 
-Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. The session-first revision is `0.2.0-draft`, following [0008](decisions/0008-collection-and-project-associations.md). It remains a design contract before implementation.
+Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. The session-first revision is `0.3.0-draft`, with [typed content](normalized-content.md) and the [first-build subset](first-build.md). It remains a design contract before implementation.
 
 ## Conventions
 
@@ -31,7 +31,9 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 | GET | `/sessions/{session_id}/events` | Read recorded structural events and native event metadata. |
 | GET | `/sessions/{session_id}/export` | Stream a native bundle or normalized JSONL/STS projection. |
 | GET | `/messages/{message_id}` | Read a bounded normalized message. |
-| GET | `/messages/{message_id}/content` | Read full normalized content. |
+| GET | `/messages/{message_id}/content` | Read full typed content, with optional If-Match revision protection. |
+| GET | `/artifacts/{artifact_id}` | Read authorized artifact metadata. |
+| GET | `/artifacts/{artifact_id}/content` | Download artifact bytes under the associated session access. |
 | POST | `/search` | Keyword, semantic, or hybrid message search. |
 
 ### Collection and imports
@@ -45,7 +47,7 @@ Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authen
 | GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
 | GET, POST | `/imports` | Inspect import batches or create an upload manifest. |
 | GET | `/imports/{import_id}` | Get upload/processing state and file-level results. |
-| POST | `/imports/{import_id}/complete` | Verify and durably accept uploaded files; enqueue processing. |
+| POST | `/imports/{import_id}/complete` | Schedule verification/promotion; poll for non-null accepted_at before advancing a checkpoint. |
 
 ### Indexing and changes
 
@@ -95,7 +97,7 @@ Session detail contains title, tags, `project_ids`, owner/contributor, visibilit
 
 Message/event lists default to all historical records. `leaf_id` chooses a conversation ancestry where supported; incomplete ancestry is returned with a warning rather than silently represented as exact model context. Pagination cursors include a projection revision. If a rewrite/reparse invalidates that revision, return `409 cursor_stale` and instruct the client to restart the listing.
 
-Bound individual previews at 64 KiB and set `truncated=true` and a full-content URL when needed. This limit is UTF-8 bytes, not characters. A truncation boundary must be valid UTF-8. Large artifact blocks are references rather than embedded base64 in list responses.
+Content follows the [typed block union](normalized-content.md). Bound previews at 64 KiB of UTF-8; oversized structured blocks become `content_reference` rather than broken JSON. `truncated` makes omissions explicit. Full-content responses exclude preview references. Message/content ETags carry the normalized revision; `If-Match` mismatch returns `412`. Artifact bytes remain separate.
 
 ## Assignment and sharing
 
@@ -105,9 +107,13 @@ Sources register one owned native store root and harness. They have no project/w
 
 ## Imports and jobs
 
-Import creation returns `201` with a `Location` header and upload targets. Completion returns `202` once objects and the catalog are durable; indexing proceeds asynchronously. Finalization is atomic for a manifest: an invalid/missing object or version conflict prevents new catalog acceptance for the whole batch. Repeated completion with the same idempotency key returns the same receipt. A failed parse does not revoke durable archival acceptance.
+Creation returns `201` with an import resource and signed staging-upload targets. Completion returns `202` with `verifying` and schedules verification/promotion. Neither uploading nor scheduling means the originals were accepted. The worker sets `accepted_at` only after verifying immutable promoted copies and atomically committing the manifest receipt; clients poll import state and advance checkpoints after that timestamp appears.
 
-Jobs expose `queued`, `running`, `succeeded`, `partial`, `failed`, or `cancelled`, with counters and bounded errors. Retry semantics are determined by job kind. Embedding outage never changes an accepted source upload into a failed sync. Changes to labels emit previous/current associations so filtered change consumers can remove as well as add a session; they do not emit a sharing change unless visibility/grants actually change.
+Finalization is atomic for the manifest. Failed verification/version checks leave `accepted_at` null; a later parse failure does not revoke already accepted originals. Import results distinguish verification errors from classification warnings. Repeated requests return the same import/job identity with current state, not duplicate work.
+
+Awaiting imports have a 24-hour lease. Upload URLs last at most 15 minutes, and `GET /imports/{id}` can refresh them before the lease expires. Idempotency records last 30 days. Signed-URL/credential responses are not cacheable. See [sync](sync.md) for the complete retry and cleanup behavior.
+
+Jobs expose queued/running/succeeded/partial/failed/cancelled, counters, and bounded errors. `verify_import` is separate from parsing/indexing. Changes to labels emit previous/current associations; they are sharing changes only when visibility/grants actually change.
 
 ## Search
 
@@ -125,7 +131,7 @@ Native object downloads either proxy bytes or redirect to a short-lived signed U
 
 ## Errors and compatibility
 
-Use `400` for invalid input, `401` for missing/invalid authentication, `403` for a denied known management action, `404` for absent/inaccessible data, `409` for state conflicts or unavailable configured capabilities, `413` for upload limits, `429` for throttling, and `503` for a temporarily unavailable required dependency. Embedding failures may leave keyword operations healthy.
+Use `400` for invalid input, `401` for missing/invalid authentication, `403` for a denied known management action, `404` for absent/inaccessible data, `409` for state conflicts or unavailable configured capabilities, `412` for conditional-read failure, `413` for upload limits, `429` for throttling, and `503` for a temporarily unavailable required dependency. Embedding failures may leave keyword operations healthy.
 
 Problem details include `type`, `title`, `status`, `detail`, `instance`, stable `code`, and `request_id`; file/field errors are bounded extensions. Do not put transcripts, credentials, or signed URLs in errors. Use `Retry-After` when appropriate.
 

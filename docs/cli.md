@@ -2,6 +2,8 @@
 
 The `sessiondb` executable syncs, lists, reads, searches, and exports sessions. `sessiondb-server` runs the service. The CLI uses the same client SDK available to applications.
 
+The first implementation follows [the frozen build slice](first-build.md); later command groups use the same target-v1 contract.
+
 Status: proposed interface. These commands are examples of the intended contract and are not executable in the current repository.
 
 ## First use

@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "codex-home-tools",
+      "harness": "codex",
+      "native_version": "0.169.0",
+      "inputs": [
+        "native/codex/home-tools.jsonl"
+      ],
+      "expected": "expected/codex-home-tools.json",
+      "notes": "Home cwd is metadata; JSON/free-form tool inputs stay distinct; duplicate UI text is not another message.",
+      "native_paths": {
+        "native/codex/home-tools.jsonl": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000001.jsonl"
+      }
+    },
+    {
+      "id": "claude-fragments-tools",
+      "harness": "claude",
+      "native_version": "2.1.283",
+      "inputs": [
+        "native/claude/fragments-tools.jsonl"
+      ],
+      "expected": "expected/claude-fragments-tools.json",
+      "notes": "Three contiguous fragments form one assistant message; repeated usage is retained once; tool_result is not human input.",
+      "native_paths": {
+        "native/claude/fragments-tools.jsonl": "d0000000-0000-4000-8000-000000000001.jsonl"
+      }
+    },
+    {
+      "id": "pi-home-tools",
+      "harness": "pi",
+      "native_version": "session v3 / client 1.5.0",
+      "inputs": [
+        "native/pi/home-tools.jsonl"
+      ],
+      "expected": "expected/pi-home-tools.json",
+      "notes": "Entry ISO and nested millisecond timestamps normalize to UTC without using cwd as a project gate.",
+      "native_paths": {
+        "native/pi/home-tools.jsonl": "--home-ada--/2026-11-16T12-00-00-000Z_e0000000-0000-4000-8000-000000000001.jsonl"
+      }
+    },
+    {
+      "id": "pi-branches-context",
+      "harness": "pi",
+      "native_version": "session v3 / client 1.5.0",
+      "inputs": [
+        "native/pi/branches-context.jsonl"
+      ],
+      "expected": "expected/pi-branches-context.json",
+      "notes": "Nonmessage nodes bridge branches; context edits and compaction do not erase historical messages.",
+      "native_paths": {
+        "native/pi/branches-context.jsonl": "--home-ada--/2026-11-16T12-00-00-000Z_e0000000-0000-4000-8000-000000000002.jsonl"
+      }
+    },
+    {
+      "id": "codex-inherited-prefix",
+      "harness": "codex",
+      "native_version": "0.169.0",
+      "inputs": [
+        "native/codex/fork/parent.jsonl",
+        "native/codex/fork/child.jsonl"
+      ],
+      "expected": "expected/codex-inherited-prefix.json",
+      "notes": "Child history remains its own records; the bounded parent history is separately addressable and not duplicated as new evidence.",
+      "native_paths": {
+        "native/codex/fork/parent.jsonl": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000002.jsonl",
+        "native/codex/fork/child.jsonl": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000003.jsonl"
+      }
+    },
+    {
+      "id": "claude-subagent",
+      "harness": "claude",
+      "native_version": "2.1.283",
+      "inputs": [
+        "native/claude/subagent/parent.jsonl",
+        "native/claude/subagent/subagents/agent-fixture-child.jsonl"
+      ],
+      "expected": "expected/claude-subagent.json",
+      "notes": "The child repeats the parent sessionId but is a distinct agent session; its task input is not assumed to be direct human speech.",
+      "native_paths": {
+        "native/claude/subagent/parent.jsonl": "d0000000-0000-4000-8000-000000000002.jsonl",
+        "native/claude/subagent/subagents/agent-fixture-child.jsonl": "d0000000-0000-4000-8000-000000000002/subagents/agent-fixture-child.jsonl"
+      }
+    },
+    {
+      "id": "claude-compaction",
+      "harness": "claude",
+      "native_version": "2.1.283",
+      "inputs": [
+        "native/claude/compaction.jsonl"
+      ],
+      "expected": "expected/claude-compaction.json",
+      "notes": "Compaction starts a new conversation root; logical prior history remains an event link; summaries/meta inputs are labeled harness-origin.",
+      "native_paths": {
+        "native/claude/compaction.jsonl": "d0000000-0000-4000-8000-000000000003.jsonl"
+      }
+    },
+    {
+      "id": "codex-incomplete-tail",
+      "harness": "codex",
+      "native_version": "0.169.0",
+      "inputs": [
+        "native/codex/incomplete-tail.jsonl.part"
+      ],
+      "expected": "expected/codex-incomplete-tail.json",
+      "notes": "Archive complete malformed lines; defer the unfinished final line and keep the valid prefix readable.",
+      "allow_malformed_lines": [
+        2
+      ],
+      "allow_incomplete_tail": true,
+      "native_paths": {
+        "native/codex/incomplete-tail.jsonl.part": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000004.jsonl"
+      }
+    },
+    {
+      "id": "pi-artifact",
+      "harness": "pi",
+      "native_version": "session v3 / client 1.5.0",
+      "inputs": [
+        "native/pi/artifact.jsonl"
+      ],
+      "expected": "expected/pi-artifact.json",
+      "notes": "Native inline image data becomes an artifact reference in normalized API content; originals retain the base64 bytes.",
+      "artifact_bindings": [
+        {
+          "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01",
+          "input": "native/pi/artifact.jsonl",
+          "native_entry_id": "f0000002",
+          "content_index": 0,
+          "byte_length": 68
+        }
+      ],
+      "native_paths": {
+        "native/pi/artifact.jsonl": "--home-ada--/2026-11-16T12-00-00-000Z_e0000000-0000-4000-8000-000000000003.jsonl"
+      }
+    },
+    {
+      "id": "codex-precision-unknown",
+      "harness": "codex",
+      "native_version": "0.169.0 plus synthetic unknown extension",
+      "inputs": [
+        "native/codex/precision-unknown.jsonl"
+      ],
+      "expected": "expected/codex-precision-unknown.json",
+      "native_paths": {
+        "native/codex/precision-unknown.jsonl": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000005.jsonl"
+      },
+      "notes": "Preserve a JSON integer beyond u64, retain malformed argument JSON as text, and keep an unknown native block opaque."
+    }
+  ]
+}

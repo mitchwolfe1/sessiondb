@@ -1,0 +1,150 @@
+{
+  "case": "codex-home-tools",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "c0000000-0000-4000-8000-000000000001",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "user",
+          "role": "user",
+          "origin": "native_user",
+          "native_ids": [
+            "cu"
+          ],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "text",
+              "text": "Inspect the Payments repository."
+            }
+          ]
+        },
+        {
+          "key": "commentary",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "ca"
+          ],
+          "parent_key": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "I will inspect the repository."
+            }
+          ]
+        },
+        {
+          "key": "call",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "cf"
+          ],
+          "parent_key": "commentary",
+          "content": [
+            {
+              "type": "tool_call",
+              "call_id": "call-codex-pwd",
+              "name": "exec_command",
+              "input": {
+                "encoding": "json",
+                "value": {
+                  "cmd": "pwd"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "key": "result",
+          "role": "tool",
+          "origin": "tool",
+          "native_ids": [
+            "line:6"
+          ],
+          "parent_key": "call",
+          "content": [
+            {
+              "type": "tool_result",
+              "call_id": "call-codex-pwd",
+              "status": "unknown",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "/work/payments"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "custom-call",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "cc"
+          ],
+          "parent_key": "result",
+          "content": [
+            {
+              "type": "tool_call",
+              "call_id": "call-codex-custom",
+              "name": "functions.exec",
+              "input": {
+                "encoding": "text",
+                "value": "text(2 + 2);"
+              }
+            }
+          ]
+        },
+        {
+          "key": "custom-result",
+          "role": "tool",
+          "origin": "tool",
+          "native_ids": [
+            "line:8"
+          ],
+          "parent_key": "custom-call",
+          "content": [
+            {
+              "type": "tool_result",
+              "call_id": "call-codex-custom",
+              "status": "unknown",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "4"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "final",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": [
+            "cz"
+          ],
+          "parent_key": "custom-result",
+          "content": [
+            {
+              "type": "text",
+              "text": "The repository was inspected."
+            }
+          ]
+        }
+      ],
+      "events": [
+        {
+          "type": "task_started"
+        }
+      ],
+      "relations": []
+    }
+  ]
+}
