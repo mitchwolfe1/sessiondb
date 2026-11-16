@@ -1,6 +1,6 @@
 # HTTP API contract
 
-The SessionDB API is the shared interface for the CLI, Rust SDK, and other applications. Resources describe sessions and collaboration rather than internal storage tables.
+The SessionDB API provides session, message, import, and search resources for the CLI, Rust SDK, and other applications.
 
 Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations. The [contract examples](examples/README.md) exercise those schemas without claiming that an HTTP server exists. Both need design review before implementation.
 
@@ -17,7 +17,54 @@ Status: proposed v1 resource and behavior contract. The [OpenAPI draft](openapi.
 
 ## Resource inventory
 
-The first group uses the absolute paths shown. The remaining resource paths have prefix `/v1/organizations/{org_id}`; the table explicitly identifies the public/authentication/organization-list exceptions.
+Relative paths below use the prefix `/v1/organizations/{org_id}`. Public, authentication, and organization root paths are shown in full.
+
+### Sessions and search
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET | `/sessions` | Filter and paginate accessible sessions. |
+| GET, PATCH, DELETE | `/sessions/{session_id}` | Read, change title/tags, or schedule authorized deletion. |
+| GET | `/sessions/{session_id}/messages` | Read historical messages, optionally filtered by conversation leaf. |
+| GET | `/sessions/{session_id}/events` | Read recorded structural events and native event metadata. |
+| GET | `/sessions/{session_id}/export` | Stream a native bundle or normalized JSONL/STS projection. |
+| GET | `/messages/{message_id}` | Read a bounded normalized message. |
+| GET | `/messages/{message_id}/content` | Read full normalized content. |
+| POST | `/search` | Keyword, semantic, or hybrid message search. |
+
+### Collection and imports
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET, POST | `/sources` | List/register collection sources. |
+| GET, PATCH | `/sources/{source_id}` | Inspect or pause a source; project assignment is immutable in v1. |
+| GET | `/sources/{source_id}/files` | List accepted original files, including files that failed parsing. |
+| GET | `/sources/{source_id}/files/{file_id}/generations` | List preserved original generations. |
+| GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
+| GET, POST | `/imports` | Inspect import batches or create an upload manifest. |
+| GET | `/imports/{import_id}` | Get upload/processing state and file-level results. |
+| POST | `/imports/{import_id}/complete` | Verify and durably accept uploaded files; enqueue processing. |
+
+### Indexing and changes
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET, POST | `/embedding-profiles` | Inspect profiles or configure a new immutable embedding space. |
+| GET, PATCH | `/embedding-profiles/{profile_id}` | Inspect or enable/disable a profile; model/dimensions cannot be edited in place. |
+| POST | `/index-jobs` | Request parse, keyword, or embedding backfill for an authorized project. |
+| GET | `/jobs/{job_id}` | Read parsing, indexing, or deletion job state. |
+| GET | `/changes` | Read an authorized, cursor-based change feed. |
+
+### Projects
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET, POST | `/projects` | List authorized projects or create one. |
+| GET, PATCH | `/projects/{project_id}` | Inspect, rename, or archive a project. |
+| GET, POST | `/projects/{project_id}/grants` | List/create direct or team grants. |
+| DELETE | `/projects/{project_id}/grants/{grant_id}` | Revoke a grant. |
+
+### Connections and administration
 
 | Method | Path | Meaning |
 | --- | --- | --- |
@@ -37,35 +84,8 @@ The first group uses the absolute paths shown. The remaining resource paths have
 | GET, PATCH | `/teams/{team_id}` | Inspect/update a team. |
 | GET | `/teams/{team_id}/members` | List team members. |
 | PUT, DELETE | `/teams/{team_id}/members/{user_id}` | Add/remove an existing organization member. |
-| GET, POST | `/projects` | List authorized projects or create one. |
-| GET, PATCH | `/projects/{project_id}` | Inspect, rename, or archive a project. |
-| GET, POST | `/projects/{project_id}/grants` | List/create direct or team grants. |
-| DELETE | `/projects/{project_id}/grants/{grant_id}` | Revoke a grant. |
 | GET, POST | `/tokens` | List/create permitted project-scoped application or collection tokens; secret returned only on creation. |
 | DELETE | `/tokens/{token_id}` | Revoke a token. |
-| GET, POST | `/sources` | List/register collection sources. |
-| GET, PATCH | `/sources/{source_id}` | Inspect or pause a source; project assignment is immutable in v1. |
-| GET | `/sources/{source_id}/files` | List accepted original files, including files that failed parsing. |
-| GET | `/sources/{source_id}/files/{file_id}/generations` | List preserved original generations. |
-| GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
-| GET, POST | `/imports` | Inspect import batches or create an upload manifest. |
-| GET | `/imports/{import_id}` | Get upload/processing state and file-level results. |
-| POST | `/imports/{import_id}/complete` | Verify and durably accept uploaded files; enqueue processing. |
-| GET | `/sessions` | Filter and paginate accessible sessions. |
-| GET, PATCH, DELETE | `/sessions/{session_id}` | Read, change title/tags, or schedule authorized deletion. |
-| GET | `/sessions/{session_id}/messages` | Read historical messages, optionally filtered by conversation leaf. |
-| GET | `/sessions/{session_id}/events` | Read recorded structural events and native event metadata. |
-| GET | `/sessions/{session_id}/export` | Stream a native bundle or normalized JSONL/STS projection. |
-| GET | `/messages/{message_id}` | Read a bounded normalized message. |
-| GET | `/messages/{message_id}/content` | Read full normalized content. |
-| POST | `/search` | Keyword, semantic, or hybrid message search. |
-| GET, POST | `/embedding-profiles` | Inspect profiles or configure a new immutable embedding space. |
-| GET, PATCH | `/embedding-profiles/{profile_id}` | Inspect or enable/disable a profile; model/dimensions cannot be edited in place. |
-| POST | `/index-jobs` | Request parse, keyword, or embedding backfill for an authorized project. |
-| GET | `/jobs/{job_id}` | Read parsing, indexing, or deletion job state. |
-| GET | `/changes` | Read an authorized, cursor-based change feed. |
-
-Team deletion, organization self-signup, session restore, native agent execution/resume, and arbitrary SQL are not part of this inventory. Administrative CLI commands must use these same resources rather than bypassing server policy.
 
 ## Session and message queries
 

@@ -1,6 +1,6 @@
 # References and conventions
 
-These primary sources inform SessionDB's design. The project requirements and proposed contracts are defined in this repository; these sources do not establish customer adoption or benchmark results for SessionDB.
+These primary sources cover the formats, interfaces, and components used in SessionDB's design.
 
 Reviewed on 2026-11-15. Native formats and evolving AI conventions require rechecking when adapters or integrations are implemented.
 
@@ -16,6 +16,7 @@ Reviewed on 2026-11-15. Native formats and evolving AI conventions require reche
 
 ## APIs and operations
 
+- [PostgreSQL overview](https://www.postgresql.org/about/) and [MLflow documentation](https://mlflow.org/docs/latest/) — capability-focused introductions and documentation organized around using the software.
 - [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) — language-neutral HTTP contract baseline.
 - [RFC 9110 HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html) — methods, conditional requests, and ranges.
 - [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457.html) — structured HTTP errors.
@@ -40,4 +41,4 @@ Reviewed on 2026-11-15. Native formats and evolving AI conventions require reche
 
 ## Adjacent products
 
-[Hugging Face](https://huggingface.co/docs/hub/agent-traces), [Entire Sessions](https://entire.com/features/sessions), [ccusage](https://ccusage.com/guide/all-reports), and [Langfuse](https://langfuse.com/docs/observability/overview) demonstrate related storage, browsing, analytics, and observability workflows. SessionDB's proposed focus is a self-hosted organization session service with automatic native collection and conventional programmatic access.
+[Hugging Face](https://huggingface.co/docs/hub/agent-traces), [Entire Sessions](https://entire.com/features/sessions), [ccusage](https://ccusage.com/guide/all-reports), and [Langfuse](https://langfuse.com/docs/observability/overview) demonstrate related storage, browsing, analytics, and observability workflows. SessionDB focuses on storing sessions, syncing native history automatically, and providing consistent queries and search.

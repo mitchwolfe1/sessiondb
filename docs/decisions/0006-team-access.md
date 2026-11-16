@@ -10,7 +10,7 @@ Use an external OIDC identity provider for people and expiring scoped tokens for
 
 ## Rationale
 
-Organizations are the primary product audience. Team membership and project access should be explicit instead of assuming every session belongs to a private single-user archive or to one rigid team hierarchy.
+Shared deployments need a clear access model. Memberships and project grants support both individual and shared collections, with projects accessible to more than one team. [0007](0007-capability-focused-documentation.md) defines the capability-first presentation of these features.
 
 ## Consequences
 

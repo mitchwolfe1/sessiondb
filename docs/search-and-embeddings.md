@@ -1,6 +1,6 @@
 # Search and embeddings
 
-SessionDB provides shared keyword search and optional semantic or hybrid search. Engineers and applications use the same project filters and access rules regardless of retrieval mode.
+Search session content with keywords or configure an embedding provider for semantic and hybrid retrieval. The CLI and API support filters for project, harness, author, date, and message content.
 
 Status: proposed v1 retrieval contract. Benchmarking and library integration precede performance commitments.
 

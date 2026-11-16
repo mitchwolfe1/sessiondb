@@ -1,6 +1,6 @@
 # Automatic sync
 
-The sync client automatically collects supported sessions from an engineer's machine into explicitly configured organization projects. It supports an initial backfill, one-shot synchronization, and continuous watch mode.
+The sync client automatically collects sessions from configured workspaces and keeps them updated in SessionDB. It supports initial backfill, one-shot synchronization, continuous watch mode, and collection from multiple machines.
 
 Status: proposed v1 protocol. The client is part of the Rust CLI and uses the public import API and ordinary signed object uploads.
 

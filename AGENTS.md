@@ -2,7 +2,9 @@
 
 ## Product direction
 
-SessionDB is a Rust session database and automatic sync product for organizations, teams, and engineers using Codex, Claude Code, and Pi. Team collaboration, convenient access, conventional interfaces, and embedding extensibility are the priorities. Keep archive bookkeeping subordinate to that product mission.
+SessionDB is a Rust database for coding-agent sessions. Lead with storing, automatically syncing, accessing, querying, and searching Codex, Claude Code, and Pi sessions through conventional CLI/API/SDK interfaces, with embedding extensibility.
+
+Lead with capabilities and usage, as database and developer-tool documentation does. Shared deployment, users, teams, and permissions are supported features; they are not the product's identity or an exclusive audience. Put administration and policy details in the relevant reference pages. Explain sessions and useful workflows before account structures or internal storage bookkeeping.
 
 Use established Rust, HTTP, CLI, PostgreSQL, and S3 conventions. SessionDB exposes session resources through its API and uses an existing object storage implementation for raw files. Do not implement a new S3 server or invent a SQL language for the CLI.
 

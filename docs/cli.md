@@ -1,6 +1,6 @@
 # CLI and Rust SDK
 
-The `sessiondb` executable is the primary engineer and administrator interface. `sessiondb-server` runs the service. The CLI uses the same Rust HTTP client crate available to applications.
+The `sessiondb` executable syncs, lists, reads, searches, and exports sessions. `sessiondb-server` runs the service. The CLI uses the same Rust HTTP client crate available to applications.
 
 Status: proposed interface. These commands are examples of the intended contract and are not executable in the current repository.
 
@@ -15,7 +15,7 @@ sessiondb sources add --project payments --workspace ~/work/payments --detect
 sessiondb sync --watch
 ```
 
-Login authenticates the account; a context selects the server and organization. `--detect` discovers applicable harnesses and creates one source per selected harness after showing the proposed workspace/project mappings. An unattended setup supplies explicit mappings in configuration. It never interprets discovery alone as permission to collect unrelated sessions.
+Login authenticates the account; a context selects a server and collection scope. `--detect` discovers harnesses for the selected workspace and creates their collection sources. Configuration files provide the same mappings for unattended setup. See [automatic sync](sync.md) for source selection and discovery details.
 
 `sessiondb sync install` installs the current context and approved mappings as a user-level service. It uses systemd on Linux and launchd on macOS. `sessiondb sync uninstall` removes that service without deleting local harness files or remote history.
 
@@ -23,21 +23,21 @@ Login authenticates the account; a context selects the server and organization. 
 
 | Group | Commands |
 | --- | --- |
-| `auth` | `login`, `logout`, `status`, `token create`, `token list`, `token revoke` |
+| `sessions` | `list`, `show`, `messages`, `events`, `update`, `export`, `delete` |
+| `search` | Query with a keyword, semantic, or hybrid mode and filters |
+| `sources` | `list`, `add`, `show`, `pause`, `resume` |
+| `sync` | One pass; `--watch`; `status`, `install`, `uninstall` |
+| `embeddings` | `profiles list`, `profiles create`, `profiles show`, `profiles enable`, `profiles disable`, `backfill` |
+| `jobs` | `show`, `wait` |
 | `context` | `create`, `list`, `show`, `use`, `remove` |
+| `projects` | `list`, `create`, `show`, `update`, `archive`, `grants list`, `grants add`, `grants remove` |
+| `auth` | `login`, `logout`, `status`, `token create`, `token list`, `token revoke` |
 | `organizations` | `list` |
 | `members` | `list`, `invite`, `update`, `remove` |
 | `teams` | `list`, `create`, `show`, `update`, `members list`, `members add`, `members remove` |
-| `projects` | `list`, `create`, `show`, `update`, `archive`, `grants list`, `grants add`, `grants remove` |
-| `sources` | `list`, `add`, `show`, `pause`, `resume` |
-| `sync` | One pass; `--watch`; `status`, `install`, `uninstall` |
-| `sessions` | `list`, `show`, `messages`, `events`, `update`, `export`, `delete` |
-| `search` | Query with a keyword, semantic, or hybrid mode and filters |
-| `embeddings` | `profiles list`, `profiles create`, `profiles show`, `profiles enable`, `profiles disable`, `backfill` |
-| `jobs` | `show`, `wait` |
 | Top level | `status`, `config show`, `completion`, `version` |
 
-This is a product command inventory, not a promise that every administrative convenience ships in the first vertical slice. Every command must map to an API operation or documented local configuration/service action before implementation.
+Session and search commands cover everyday use. Connection, project, and account commands configure the server and shared access. Release sequencing is described in the [delivery plan](roadmap.md).
 
 ## Everyday use
 
@@ -60,7 +60,7 @@ sessiondb auth token create --project payments --scope sessions:read --expires-i
 
 Human output is a stable, readable table or transcript. `--json` writes structured API-shaped JSON to stdout. Export writes bytes to `--output` or stdout with `--output -`; diagnostics and progress stay on stderr. Disable color when redirected and honor `NO_COLOR`. Do not interleave progress with machine-readable output.
 
-Support `--help`, `--version`, generated shell completions, `--server`, `--organization`, `--context`, `--config`, `--timeout`, and quiet/verbose modes consistently. A command's resource name is singular in arguments but command groups use plural nouns. Server-side filters must behave the same through the CLI and SDK.
+Support `--help`, `--version`, generated shell completions, `--server`, `--organization`, `--context`, `--config`, `--timeout`, and quiet/verbose modes consistently. Server-side filters behave the same through the CLI and SDK.
 
 Proposed exit codes are `0` for success, `1` for an operational/server failure, `2` for invalid usage, `3` for authentication/authorization failure, and `4` for a requested resource not found. An interrupted foreground watch exits conventionally with the signal-derived status. `jobs wait` returns failure for a failed job; partial results are explained and require explicit caller handling.
 

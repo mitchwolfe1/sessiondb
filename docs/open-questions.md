@@ -1,6 +1,6 @@
 # Open questions
 
-This is the bounded decision queue for design review. Rust, organizations/teams, the initial three harnesses, automatic sync, and documentation-first delivery are settled product requirements.
+These decisions guide upcoming implementation work. Rust, Codex/Claude/Pi support, automatic sync, conventional interfaces, and extensible search define the project direction. Shared access is specified alongside the other server capabilities.
 
 | ID | Decision | Concrete proposal and alternatives | Blocks |
 | --- | --- | --- | --- |

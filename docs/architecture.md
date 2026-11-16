@@ -21,7 +21,7 @@ flowchart LR
     X[hype-history and other applications] --> A
 ```
 
-Use an existing S3-compatible implementation. SessionDB is a client of object storage, not a new S3 server. PostgreSQL holds organizations, memberships, projects, session data, search indexes, and job state. Original files and large artifacts live in object storage.
+PostgreSQL holds session data, search indexes, project metadata, access settings, and job state. Original files and large artifacts live in an existing S3-compatible object store. SessionDB uses its object API for storage and its own session API for queries.
 
 ## Rust workspace
 

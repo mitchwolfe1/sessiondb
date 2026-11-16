@@ -1,66 +1,69 @@
 # Product specification
 
-SessionDB gives engineering organizations one place to collect, manage, and search coding-agent sessions across engineers, teams, machines, and harnesses. Engineers contribute through an automatic sync client. Colleagues and applications access shared work through a CLI, HTTP API, and SDK.
+SessionDB is a database for coding-agent sessions. It collects sessions from Codex, Claude Code, and Pi, stores their native files, and exposes a consistent model for reading and querying their contents.
 
-Status: agreed product direction with proposed v1 requirements. Implementation requires the review gates in the [delivery plan](roadmap.md).
+A sync client collects new and updated sessions automatically. A server provides session access, keyword search, and optional semantic search through the CLI, HTTP API, and Rust SDK. Applications can use those interfaces to build session browsers, memory tools, analytics, and evaluation workflows.
 
-## Customers and users
+Status: product direction with proposed v1 behavior. See the [delivery plan](roadmap.md) for implementation milestones.
 
-The primary customer is an engineering organization managing sessions across people and projects. Engineers use it to find previous work, team leads explore project history, and platform or developer-experience teams operate the service and connect internal tools.
+## Core capabilities
 
-Personal use is a single-user organization using the same product. Tool builders are another important audience: memory systems, session browsers, analytics, and evaluation pipelines can use a consistent session interface instead of collecting and interpreting each harness independently. These are target-user hypotheses, not a list of validated commercial customers.
+**Collect sessions.** Discover supported harnesses, select workspaces, backfill existing history, and continue syncing as files change. Collection works across multiple machines and recovers after disconnection.
 
-## Main workflows
+**Read and query sessions.** List and filter sessions, read messages and tool activity, inspect session relationships, update titles/tags, and export original or normalized data.
 
-1. An operator deploys SessionDB, configures identity and storage, and establishes the first organization owner.
-2. An owner adds engineers to the organization, creates teams and projects, and grants project access.
-3. An engineer signs in, connects local workspaces to projects, and enables automatic collection.
-4. Codex, Claude Code, and Pi write sessions normally. SessionDB discovers both new sessions and updates to existing sessions.
-5. An authorized colleague lists or searches the project and reads relevant conversations and tool activity.
-6. An application uses the same API to supply history to a briefing, browser, or research workflow.
-7. An administrator optionally configures an embedding profile and monitors background indexing. Keyword search remains available independently.
+**Search history.** Search message content by keyword and filter by project, harness, author, or date. Configure an embedding provider to enable semantic or hybrid retrieval.
 
-The first meaningful demonstration is several engineers, using different harnesses, contributing to one shared project and successfully finding each other's relevant work.
+**Build on a common interface.** The CLI and SDK use a versioned HTTP API. Harness adapters normalize native differences while retaining the original data for export and future parsing improvements.
 
-## V1 requirements
+**Run the service where it is needed.** The initial deployment uses a Rust server, PostgreSQL, and an S3-compatible object store. User and project access settings support shared servers.
 
-| ID | Requirement | Acceptance |
+## Main workflow
+
+1. Connect the client to a configured SessionDB server.
+2. Select local workspaces and run an initial sync or continuous collection.
+3. Continue using Codex, Claude Code, or Pi normally. New sessions and updates appear in SessionDB.
+4. List sessions, inspect a conversation, or search previous work through the CLI or API.
+5. Export a session or retrieve its messages from an application.
+6. Configure an embedding profile when semantic search is useful.
+
+The first end-to-end demonstration is a session moving from a native file into SessionDB and becoming readable through both the CLI and API. Subsequent milestones cover all three harnesses, continuous sync, search, shared access, and application integration.
+
+## V1 scope
+
+| ID | Capability | Expected behavior |
 | --- | --- | --- |
-| P01 | Organizations, users, teams, projects, and project grants | A member can access one shared project while being denied another across every read surface. |
-| P02 | Native Codex, Claude Code, and Pi collection | Each harness imports real supported record shapes, including tool calls/results and later appends. |
-| P03 | Automatic sync | Initial backfill and watch mode work; the client catches up after a restart or network outage without duplicate sessions. |
-| P04 | Session access | List, filter, inspect messages and tool activity, edit title/tags, and export a session. |
-| P05 | Shared keyword search | Search sessions and messages using project, harness, engineer, and date filters. |
-| P06 | Optional embeddings | A configurable provider supports semantic/hybrid search and exposes coverage and job state. |
-| P07 | Conventional interfaces | Versioned REST, documented errors/pagination, OpenAPI before route implementation, CLI scripting, and a Rust SDK. |
-| P08 | Original file preservation | Retrieve the native files associated with an imported session even if parsing fails. |
-| P09 | Operable deployment | A documented single-server setup, authenticated access, migrations, health, logs, backup, and restore. |
-| P10 | Extensible adapters | Another harness can use the same adapter boundary without changing storage or CLI commands. |
-| P11 | Administrative control | Owners manage membership and grants, source credentials can be revoked, and project maintainers can delete sessions. |
-| P12 | Application integration | hype-history can consume sessions and search through the public API without reading SessionDB's database. |
+| P02 | Codex, Claude Code, and Pi collection | Import supported native record shapes, including tool calls/results and later appends. |
+| P03 | Automatic sync | Backfill and watch mode recover after restarts or outages without duplicate sessions. |
+| P04 | Session access | List, filter, inspect messages and tool activity, edit title/tags, and export sessions. |
+| P05 | Keyword search | Search sessions and messages with project, harness, author, and date filters. |
+| P06 | Optional embeddings | A configured provider supports semantic/hybrid search with visible coverage and job state. |
+| P07 | Conventional interfaces | Versioned REST/OpenAPI, predictable pagination/errors, CLI scripting, and a Rust SDK. |
+| P08 | Native files | Retrieve collected originals even when normalization is incomplete. |
+| P10 | Harness adapters | Add another harness through the same discovery/normalization boundary. |
+| P12 | Application integration | Applications such as hype-history consume sessions and search through the public API. |
+| P09 | Server deployment | Document installation, configuration, migrations, health, backup, and restore. |
+| P01 | Shared access | Users, teams, and project grants scope access to sessions and related data. |
+| P11 | Administration | Manage membership and project access, revoke source credentials, and delete sessions. |
 
-## Product principles
+See [access control](access-control.md) for shared-server access settings.
 
-**Sessions are the public abstraction.** Storage hashes, cursor bookkeeping, and object paths are implementation details. Users should primarily work with organizations, projects, engineers, sessions, messages, and search.
+## Design approach
 
-**Use familiar contracts.** Use Rust/Cargo conventions, standard HTTP semantics, PostgreSQL, an existing S3-compatible service, structured configuration, and operating-system service managers. Reuse a complete protocol rather than giving a custom protocol a familiar name.
+Preserve original session files and make the parsed model rebuildable. Native branches, compaction, and context edits remain available even when a normalized view cannot reproduce an exact harness request.
 
-**Collect through explicit project mappings.** Discover harness installations automatically, but publish only sessions matching configured workspaces or explicitly selected sessions. Team collection must not silently sweep an engineer's unrelated personal conversations into a company project.
+Use familiar interfaces and components: Cargo, standard HTTP, PostgreSQL, S3-compatible storage, conventional CLI behavior, and operating-system service managers. Extend the service through focused adapter/provider interfaces.
 
-**Make state understandable.** The client reports pending collection, accepted imports, and failures. The server distinguishes uploaded, parsed, keyword-indexed, and embedded content. Search explains which retrieval mode and coverage it used.
+Keep embeddings optional. Session storage, sync, reading, and keyword search remain useful without a model endpoint. Expose collection and indexing state so a pending upload, partial parse, and embedding backlog are distinguishable.
 
-**Keep enrichment optional.** Storage, collection, reading, and keyword search work without an embedding service or model account.
+## Initial release boundaries
 
-## V1 boundaries
+V1 targets a self-hosted server on Linux and sync clients on Linux/macOS. It includes shared projects and access management; deployment and account setup are covered by the server guides.
 
-V1 is self-hosted, with Linux servers and Linux/macOS clients. The schema supports organizations, while the deployment experience initially bootstraps one organization per installation. Multiple teams and projects are core.
+A browser application, hosted billing, native harness resume, write-back into local transcripts, deterministic execution replay, and model training are later work. Existing applications can add specialized briefing, memory, analytics, or evaluation behavior through the API.
 
-A browser UI, hosted billing, organization self-signup, SCIM provisioning, a marketplace of plugins, native harness resume, write-back into local transcript files, deterministic execution replay, model training, and employee performance scoring are outside v1. Aggregate analytics and evaluation exports may be built on the API without becoming prerequisites for the session service.
+## Evaluation
 
-SessionDB stores recorded interactions. A `user` message can be tool output or injected context depending on the harness; it does not automatically identify a human author. An assistant's completion message is not independent verification of an external outcome.
+Evaluate the complete sync-to-query workflow: setup effort, collection freshness, recovery, time to useful search results, and ease of building another API client. Benchmark query and indexing performance on a representative corpus before setting numerical capacity targets.
 
-## Evaluation of the product
-
-Track onboarding completion, collection freshness, recoverable failures, time to the first useful shared search result, and whether a second application can use the public API. Numerical latency and capacity targets require a benchmark on the selected Rust/storage implementation; the documentation does not promise unmeasured performance.
-
-The [acceptance scenarios](roadmap.md#acceptance-scenarios) define the initial release gate. Customer interviews and pilots should test whether shared session access changes an actual workflow before expanding enterprise scope.
+The [acceptance scenarios](roadmap.md#acceptance-scenarios) cover native format handling, synchronization, retrieval, exports, shared access, and recovery.

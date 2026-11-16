@@ -4,13 +4,13 @@ Delivery proceeds through reviewable vertical slices. The current repository is 
 
 ## Phase zero
 
-Review product scope, team permissions, Rust workspace, sync semantics, CLI behavior, and retrieval behavior. Resolve the blocking questions in [the decision queue](open-questions.md). Validate and accept the [OpenAPI draft](openapi.yaml) before implementing routes, with request/response examples checked against its schemas.
+Review session workflows, the Rust workspace, sync semantics, query/search interfaces, and server configuration. Resolve the relevant [open questions](open-questions.md) and review the [OpenAPI draft](openapi.yaml), with request/response examples checked against its schemas.
 
-The phase-zero exit is an explicitly reviewed implementation plan. Creating documentation does not itself authorize an agent to start application development.
+The result is an implementation plan for the first sync-to-query path.
 
 ## First vertical slice
 
-Create the Rust workspace and one local deployment with PostgreSQL, S3-compatible storage, and the selected identity integration. Support two engineers, one organization/project, contributor/viewer permissions, one harness import, session listing/reading, and raw export through both API and CLI.
+Create the Rust workspace and a local server with PostgreSQL and S3-compatible storage. Import one native session, list it, read its messages, and export its original data through the API and CLI. Include the connection/authentication setup and project access needed to exercise that path.
 
 Prove the API client boundary and import acceptance semantics before adding more retrieval capabilities. Readiness, migrations, durable jobs, and a basic restore drill are part of this slice.
 
@@ -18,7 +18,7 @@ Prove the API client boundary and import acceptance semantics before adding more
 
 Add Codex, Claude Code, and Pi adapters, initial backfill, continuous sync, local state recovery, supporting artifacts, and Linux/macOS service installation. Verify branch/subagent/context-event handling and visible partial-parse states. Add team grants and full administration for the documented v1 role model.
 
-## Shared search
+## Session search
 
 Add PostgreSQL keyword indexing, authorized filtering, session-diverse results, pagination, source expansion, and changes consumption. Connect hype-history through the public API. Validate that a browser-style consumer can use the same contract without direct database access.
 
@@ -34,7 +34,7 @@ Complete CLI packaging, Rust SDK documentation, installation and upgrade procedu
 
 | ID | Scenario | Required result |
 | --- | --- | --- |
-| A01 | Two engineers contribute Codex, Claude, and Pi work into one project | An authorized colleague finds and reads all three through CLI/API. |
+| A01 | Sync Codex, Claude, and Pi sessions into SessionDB | All three are discoverable and readable through the CLI and API. |
 | A02 | Another team lacks that project's grant | No session, snippet, count, artifact, job result, export, or vector result reveals its content. |
 | A03 | Repeated upload and lost completion response | Retrying returns the accepted result without duplicate visible sessions/messages. |
 | A04 | Server/network outage and client restart | Local originals remain intact; pending work catches up from persisted state. |
@@ -50,6 +50,7 @@ Complete CLI packaging, Rust SDK documentation, installation and upgrade procedu
 | A14 | Maintainer deletes a session and client syncs again | Session stays removed through source suppression; local harness file is not deleted. |
 | A15 | Backup restored into a clean deployment | Memberships, grants, original reads/exports, and collection recovery work; derived indexes can be rebuilt. |
 | A16 | API result is consumed by CLI, Rust SDK, and hype-history | Same permissions, filters, error semantics, and session meanings apply. |
+| A17 | Several accounts contribute to a shared project | Project members can find and read one another's sessions according to their grants. |
 
 ## Later work
 

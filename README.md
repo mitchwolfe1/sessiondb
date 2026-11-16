@@ -1,19 +1,19 @@
 # SessionDB
 
-SessionDB is a self-hosted session database for engineering organizations. It automatically collects coding-agent sessions across engineers and machines, presents Codex, Claude Code, and Pi through a consistent API, and supports shared search with optional embeddings.
+SessionDB is a database for coding-agent sessions. It automatically syncs sessions from Codex, Claude Code, and Pi, stores their original files, and makes their contents accessible through a common interface.
 
-**Status: documentation and contract design.** This repository contains the proposed product and technical specification. There is no server, client, Cargo workspace, or runnable deployment yet. Command examples describe the intended interface.
+Use SessionDB to browse conversations and tool calls, search previous work, or build applications on session history. It provides a CLI, an HTTP API, and a Rust client SDK, with configurable embedding providers for semantic search.
 
-SessionDB will be a **Rust project**. Its primary interfaces are a `sessiondb` CLI, a `sessiondb-server` service, an HTTP API, and a Rust client SDK. Applications such as hype-history can build research, briefing, and memory workflows on those interfaces.
+**Status: design phase.** SessionDB will be written in Rust. This repository currently contains specifications and documentation; the commands and API describe the planned interface.
 
-## Product experience
+## Sync and query sessions
 
-An organization operates a server and creates shared projects. Engineers connect the client, select which workspaces to collect, and run automatic sync. Authorized colleagues can find sessions by project, engineer, harness, date, or content and inspect conversations and tool activity.
+Connect to a server, select local workspaces, and enable automatic sync. Sessions remain searchable as they grow and as new sessions are created.
 
 ```sh
-# Proposed commands, not available software.
 sessiondb-server --config /etc/sessiondb/config.toml
 sessiondb auth login --server https://sessions.example.com
+sessiondb context create acme --organization acme
 sessiondb context use acme
 sessiondb sources add --project payments --workspace ~/work/payments --detect
 sessiondb sync --watch
@@ -24,34 +24,36 @@ sessiondb search "payment retries" --project payments
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
 
-## Core capabilities
+## Features
 
-- Automatic collection from Codex, Claude Code, and Pi, including later updates to existing sessions.
-- Organizations, users, teams, and project access from the initial product model.
-- Original session files alongside a consistent representation of messages, tool activity, and session relationships.
-- Keyword search, filtering, and optional semantic or hybrid search through configurable embedding providers.
-- Conventional CLI behavior, a versioned REST API described with OpenAPI, and a reusable Rust SDK.
-- PostgreSQL for application data and indexes; an existing S3-compatible service for original files and artifacts.
+- **Automatic sync:** collect new and updated sessions from multiple harnesses and machines.
+- **Session access:** list conversations, read messages and tool activity, inspect relationships, and export sessions.
+- **Search:** filter by project, harness, author, or date; use keyword search or enable semantic and hybrid retrieval.
+- **Native storage:** keep original files alongside a consistent, queryable session model.
+- **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a Rust SDK, PostgreSQL, and S3-compatible object storage.
+- **Extensibility:** add harness adapters, embedding providers, and applications without changing the collection workflow.
+
+SessionDB can also serve a shared collection, with users, teams, and project access. See [access control](docs/access-control.md) for that configuration.
 
 The initial release targets a single server deployment and Linux/macOS sync clients. A hosted SaaS service, billing, a browser application, and native harness resume are outside the first release.
 
-## Specification
+## Documentation
 
 Start with the [documentation guide](docs/README.md), then read:
 
-1. [Product specification](docs/product.md) — customers, requirements, scope, and acceptance criteria.
-2. [Architecture](docs/architecture.md) — Rust components and deployment boundaries.
-3. [Data model](docs/data-model.md) and [access control](docs/access-control.md) — shared sessions across engineers and teams.
-4. [Sync protocol](docs/sync.md), [API contract](docs/api.md), [OpenAPI draft](docs/openapi.yaml), and [CLI contract](docs/cli.md).
-5. [Search and embeddings](docs/search-and-embeddings.md) and [harness adapters](docs/harness-adapters.md).
-6. [Operations](docs/operations.md), [integrations](docs/integrations.md), and [delivery plan](docs/roadmap.md).
+1. [Product specification](docs/product.md) — capabilities and release scope.
+2. [CLI](docs/cli.md) and [automatic sync](docs/sync.md) — collect and work with sessions.
+3. [API](docs/api.md), [OpenAPI draft](docs/openapi.yaml), and [data model](docs/data-model.md) — access sessions programmatically.
+4. [Search and embeddings](docs/search-and-embeddings.md) — retrieve relevant history.
+5. [Harness adapters](docs/harness-adapters.md) and [integrations](docs/integrations.md) — formats and application support.
+6. [Architecture](docs/architecture.md), [operations](docs/operations.md), and [access control](docs/access-control.md) — build and run the service.
 
-[Design decisions](docs/decisions/README.md) distinguish agreed direction from proposed implementation choices. [Open questions](docs/open-questions.md) identify decisions to resolve before their corresponding implementation work begins.
+[The delivery plan](docs/roadmap.md), [design decisions](docs/decisions/README.md), and [open questions](docs/open-questions.md) track implementation planning.
 
 ## Development
 
-Documentation comes first. Review the relevant specification and resolve its blocking questions before implementing a feature. Application code and Cargo scaffolding are intentionally absent during this phase.
+Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and planned Rust workspace checks.
 
-Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: clarify project permissions`, `feat: add session import`, or `fix: retry interrupted uploads`. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add session import`, or `fix: retry interrupted uploads`.
 
-The repository is private. Distribution and licensing are undecided; no open-source license is granted by these documents.
+The repository is private. Distribution and licensing are undecided.

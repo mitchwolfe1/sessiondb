@@ -1,6 +1,6 @@
 # Operations
 
-The initial deployment is a self-hosted SessionDB service for one engineering organization, with multiple users, teams, and projects. The logical schema retains an explicit organization boundary so APIs and jobs do not depend on a single global workspace.
+SessionDB runs as a Rust service backed by PostgreSQL and an S3-compatible object store. This guide covers server configuration, background processing, health, upgrades, and backup/restore. Account and project setup are described in [access control](access-control.md).
 
 Status: proposed operating model. There are no Docker images, Compose files, migrations, or installers in this documentation-only repository.
 

@@ -1,6 +1,6 @@
 # Access control
 
-SessionDB is an organization service from the beginning. Engineers publish work into configured projects, and project access governs every representation of those sessions.
+Access control determines who can sync, read, search, and manage sessions on a shared server. Sessions belong to projects; memberships and grants determine project access.
 
 Status: proposed v1 role and authentication contract. Identity-provider interoperability and bootstrap are review gates before implementation.
 

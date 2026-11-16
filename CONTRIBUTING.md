@@ -6,6 +6,8 @@ SessionDB is currently a private, documentation-first Rust project. The first de
 
 Read the [documentation guide](docs/README.md). Update the feature specification, related API and CLI examples, and acceptance criteria together. Record an architectural choice in [the decision register](docs/decisions/README.md) when it affects several components.
 
+Lead with what SessionDB does and how to use it. Put access settings and deployment details in their reference pages; keep introductory documentation focused on sessions, sync, queries, search, and integrations.
+
 State whether a choice is an agreed requirement, a proposed implementation, or an unresolved question. Resolve contradictions rather than adding another competing example. Keep examples synthetic and runnable-looking examples explicitly identified as proposed while implementation is absent.
 
 Before committing, check that relative links resolve, fenced examples are balanced, JSON/TOML examples parse where applicable, and `git diff --check` passes. An OpenAPI contract must be validated and compared against the resource inventory before a route is implemented.
@@ -15,7 +17,7 @@ Before committing, check that relative links resolve, fenced examples are balanc
 Use Conventional Commits:
 
 ```text
-docs: define team session access
+docs: describe session queries
 feat(sync): collect updates to existing sessions
 fix(api): apply project access to exports
 refactor(adapters): share content block conversion

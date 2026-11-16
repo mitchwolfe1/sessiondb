@@ -12,21 +12,21 @@ servers:
 security:
 - bearerAuth: []
 tags:
-- name: authentication
-- name: changes
-- name: embeddings
-- name: imports
-- name: jobs
-- name: members
-- name: messages
-- name: operations
-- name: organizations
-- name: projects
-- name: search
 - name: sessions
+- name: messages
+- name: search
 - name: sources
+- name: imports
+- name: embeddings
+- name: jobs
+- name: changes
+- name: projects
+- name: authentication
+- name: organizations
+- name: members
 - name: teams
 - name: tokens
+- name: operations
 paths:
   /healthz:
     parameters: []

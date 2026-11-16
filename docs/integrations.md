@@ -1,6 +1,6 @@
 # Integrations and formats
 
-SessionDB is useful by itself for collection, session access, and shared retrieval. Applications use its APIs to add workflows such as briefings, memory, browsing, analytics, or evaluation.
+Applications use SessionDB to collect, read, and search coding-agent history. Its APIs support session browsers, briefing and memory tools, analytics, and evaluation pipelines.
 
 Status: agreed integration direction with proposed export and migration contracts.
 
@@ -14,7 +14,7 @@ Status: agreed integration direction with proposed export and migration contract
 | Analytics application | Recorded usage and session activity | Reports and interpretation of estimated cost |
 | Evaluation pipeline | Selected trajectories and exports | Tasks, graders, environment outcomes, experiment results |
 
-These are integration use cases, not claims of existing third-party adoption. Existing products such as Hugging Face Agent Traces, ccusage, Entire, and observability tools are adjacent implementations or possible interoperability targets, not customers established by this specification.
+Existing products such as Hugging Face Agent Traces, ccusage, Entire, and observability tools provide useful interoperability targets and examples of these workflows.
 
 ## Original and normalized formats
 
