@@ -6,14 +6,15 @@ Historical record: the pre-cutover OIDC implementation was exercised on 2026-11-
 
 The authentication/authorization observations below belong to the superseded build described by ADR 0010. [ADR 0013](../decisions/0013-instance-api-key.md) removes that protocol and identity model.
 
-The instance-key build passes Clippy with warnings denied and the affected Rust package tests (seven tests passed; the two Docker integration scenarios are separate). The API/documentation checks pass for 37 target operations, 20 implemented operations, 13 API examples, and all documentation links. Markdown lint reports no issues. The simplified development launcher passes shell syntax and Compose configuration checks.
+The instance-key build passed Clippy with warnings denied and the affected Rust package tests (seven tests passed; Docker integration is separate). The API/documentation checks passed for 37 target operations, 20 implemented operations, 13 API examples, and all documentation links. Markdown lint reported no issues. The simplified development launcher passed shell syntax and Compose configuration checks.
 
-Both Docker integration scenarios pass against the built server and CLI binaries with PostgreSQL and S3-compatible storage, without an identity provider:
+The Docker integration scenario passes against the built server and CLI binaries with PostgreSQL and S3-compatible storage, without an identity provider:
 
 - Missing, empty, and incorrect keys are rejected; all data surfaces require authentication, and correct-key clients have equal access to sessions, related history, originals, and artifacts.
 - Replacing the instance key and restarting rejects previously configured clients while preserving stored data.
 - All three native harnesses, immutable acceptance, append/rewrite handling, native exports, large content, CLI watch/outage recovery, expired worker leases, and backup/restore still pass.
-- Upgrading a populated pre-cutover catalog preserves session/source UUIDs, manual metadata, original bytes, native exports, and pending staged uploads; obsolete identity fields are absent from session responses.
+
+The undeployed schema is consolidated in `0001_catalog.sql`; the obsolete catalog-upgrade test has been removed. The rebuilt server passes the integration scenario using fresh catalog initialization followed by storage, sync, and recovery checks. API/documentation contracts and Markdown lint also pass after consolidation.
 
 The actual CLI help and credential-store login help were also inspected. Container release builds and additional platform/provider compatibility were not rerun for this cutover.
 

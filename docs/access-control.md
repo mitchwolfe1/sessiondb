@@ -16,11 +16,9 @@ The operator or client explicitly selects native stores to collect. Starting cwd
 
 Use separate instances, databases, and object namespaces when independent collections must remain isolated. A read-only application cannot be safely given the same key with an assumption of reduced rights. Secure remote transport with HTTPS; keep storage private and protect metrics separately at the operator's network boundary.
 
-## Revocation and migration
+## Revocation
 
 Rotate the instance key to revoke API access for every old-key client, then distribute the replacement only to intended clients. There is no per-client revocation mechanism. Already issued signed downloads may remain usable for their documented maximum lifetime of 60 seconds; use API-proxied downloads when that exposure is unacceptable.
-
-The cutover makes formerly isolated records accessible through the same key. It preserves accepted content and IDs while removing identity fields/tables. This is a breaking data-disclosure and client configuration/state change, not just a login simplification. See [upgrade guidance](operations.md#migrations-and-upgrades).
 
 ## Acceptance scenarios
 

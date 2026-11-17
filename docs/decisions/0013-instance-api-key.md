@@ -16,14 +16,14 @@ This replaces the identity/access assumptions in 0001, 0004, 0005, 0006, 0007, 0
 
 The first-build set is 18 baseline operations, plus two implemented artifact operations: the previous 23 baseline operations minus authentication configuration, login registration, current-account lookup, organization listing, and invitation creation. Search, embeddings, projects, changes, and other planned non-auth resource APIs retain their implementation status and inherit the same key boundary.
 
-## Migration and consequences
+## Initial schema and consequences
 
-Apply a forward server migration without changing migration 0001. Retain accepted native content, UUIDs, metadata labels, original bytes, source/file generations, project associations, imports, jobs, and sync recovery. Drop obsolete identity tables/columns and remove identity fields from stored session JSON. Retain distinct source UUIDs even when former isolated sources had matching device/root tuples; do not merge or delete them. Existing opaque object keys can remain unchanged.
+SessionDB has not been deployed, so define the instance-wide schema directly in `0001_catalog.sql`. There is no identity-model conversion migration or compatibility path: the initial catalog contains only the current session, source, file, project, import, object, and job tables.
 
-This is a breaking disclosure change: formerly isolated content becomes one key-accessible collection. Operators must review that effect before migration and retain backups. Clients must upgrade paths/DTOs, remove obsolete config fields, replace old credentials, and migrate persistent local state without losing source IDs, checkpoints, or pending snapshots. No compatibility shim is provided.
+Disposable development databases initialized with the earlier migration history must be recreated. SQLx rejects their obsolete migration versions/checksums; do not bypass those checks or carry the abandoned identity schema forward.
 
 One key cannot provide partial/read-only access, per-client revocation, or human attribution. Use separate instances for independent collections. Rotation replaces the server key and updates every intended client; already issued signed object URLs remain subject to their expiry.
 
 ## Validation boundary
 
-Earlier OIDC/Keycloak checks in the validation records prove only the superseded implementation/protocol. This decision does not claim cutover tests have run. Integrated validation must cover missing/empty server key, incorrect/missing request keys on all data routes and `/v1/info`, equal access across correct-key clients, migration preservation, global URLs, client state recovery, and withholding bearer secrets from object requests.
+Earlier OIDC/Keycloak checks in the validation records prove only the superseded implementation/protocol. Integrated validation covers fresh catalog initialization, missing/empty server keys, incorrect/missing request keys on all data routes and `/v1/info`, equal access across correct-key clients, global URLs, client state recovery, and withholding bearer secrets from object requests. See [first-build validation](../validation/first-build.md) for recorded results.

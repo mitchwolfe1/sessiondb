@@ -4,7 +4,7 @@ Delivery proceeds through reviewable vertical slices. Phase zero and the first s
 
 ## Instance-key cutover
 
-Apply [ADR 0013](decisions/0013-instance-api-key.md) across server, migrations, types, SDK, CLI, and docs. Preserve accepted content, UUIDs, and client recovery state while removing the identity model. The disclosure of formerly isolated data and required config/state upgrades must be explicit. Historical OIDC checks do not verify this cutover; run the integrated checks before recording new validation results.
+[ADR 0013](decisions/0013-instance-api-key.md) defines the instance-wide key boundary across the server, types, SDK, CLI, and docs. Because the project has not been deployed, the current schema is defined directly in the initial migration rather than upgrading the abandoned identity model. Validate fresh catalog initialization and the complete storage/client path before recording new results.
 
 ## Phase zero
 

@@ -6,7 +6,7 @@ use sqlx::postgres::PgRow;
 fn staging_key(import: Uuid, index: usize) -> String {
     format!("staging/{import}/{index}")
 }
-// Read persisted locations so pre-cutover upload leases and queued jobs keep working.
+// Read the staged object locations reserved for this import.
 pub(crate) async fn staging_keys(
     state: &AppState,
     import: Uuid,

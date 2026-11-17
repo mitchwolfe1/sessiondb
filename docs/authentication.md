@@ -2,7 +2,7 @@
 
 SessionDB uses one instance-wide API key. Configure a nonempty `SESSIONDB_API_KEY` in the server environment; startup fails closed when it is missing or empty. Clients send `Authorization: Bearer <key>`. The key is a shared secret, not an identity, scoped credential, JWT, or expiring login session.
 
-Status: accepted clean cutover in [ADR 0013](decisions/0013-instance-api-key.md). Historical OIDC checks in [reference validation](validation/reference-stack.md) and [first-build validation](validation/first-build.md) do not verify this cutover. No cutover checks have been run as part of this documentation update.
+Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md). [First-build validation](validation/first-build.md) records instance-key checks separately from historical OIDC observations.
 
 ## Request boundary
 
@@ -22,8 +22,6 @@ Generate a strong random key in the operator's secret manager and distribute it 
 
 Anyone given the key can read every session and original, sync content, and invoke all implemented mutations. Do not distribute it to a consumer that should have read-only or partial access. Use separate instances when collection isolation is required; project labels and provenance are not access controls.
 
-## Upgrade warning
+## Catalog initialization
 
-The forward migration removes the former identity model without deleting accepted session/file/project/job data. Previously isolated content becomes one collection accessible to every correct-key client. Preserve backups and review this disclosure before migration. Existing object locations may retain opaque historical components; those names do not enforce isolation.
-
-Existing clients must update their API paths, DTOs, credential configuration, and local state format. Old organization contexts, login credentials, and identity-scoped sync state are not a compatibility mode. Follow [operations](operations.md#migrations-and-upgrades) and the current CLI migration behavior rather than silently reusing old state.
+The instance-wide model is defined directly in the initial catalog migration. There are no deployed identity-based catalogs to convert. Disposable development databases created with earlier schema history must be recreated; see [operations](operations.md#migrations-and-upgrades).

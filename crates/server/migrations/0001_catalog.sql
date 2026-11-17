@@ -1,46 +1,11 @@
-CREATE TABLE users (
-    id uuid PRIMARY KEY,
-    issuer text NOT NULL,
-    subject text NOT NULL,
-    display_name text NOT NULL,
-    email text,
-    UNIQUE (issuer, subject)
-);
-CREATE TABLE organizations (
-    id uuid PRIMARY KEY,
-    slug text NOT NULL UNIQUE,
-    name text NOT NULL
-);
-CREATE TABLE memberships (
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    user_id uuid NOT NULL REFERENCES users(id),
-    role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
-    status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
-    PRIMARY KEY (organization_id, user_id)
-);
-CREATE TABLE invitations (
-    id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    email text NOT NULL,
-    role text NOT NULL CHECK (role IN ('admin', 'member')),
-    expires_at timestamptz NOT NULL,
-    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','revoked','expired'))
-);
-CREATE UNIQUE INDEX invitation_pending_email ON invitations(organization_id, lower(email)) WHERE status = 'pending';
-CREATE TABLE bootstrap_state (singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton), completed_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE sources (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    owner_id uuid NOT NULL REFERENCES users(id),
     harness text NOT NULL CHECK (harness IN ('codex','claude','pi')),
     device_label text NOT NULL,
     root text NOT NULL,
-    default_visibility text NOT NULL DEFAULT 'private' CHECK (default_visibility IN ('private','organization')),
     paused boolean NOT NULL DEFAULT false,
-    last_synced_at timestamptz,
-    UNIQUE (organization_id, owner_id, device_label, harness, root)
+    last_synced_at timestamptz
 );
-CREATE INDEX sources_owner ON sources(organization_id, owner_id, id);
 CREATE TABLE source_files (
     id uuid PRIMARY KEY,
     source_id uuid NOT NULL REFERENCES sources(id),
@@ -64,18 +29,13 @@ CREATE TABLE file_generations (
 ALTER TABLE source_files ADD CONSTRAINT source_files_current_generation FOREIGN KEY (generation_id) REFERENCES file_generations(id) DEFERRABLE INITIALLY DEFERRED;
 CREATE TABLE projects (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    creator_id uuid NOT NULL REFERENCES users(id),
     slug text NOT NULL,
     name text NOT NULL,
-    archived boolean NOT NULL DEFAULT false,
-    UNIQUE (organization_id, slug)
+    archived boolean NOT NULL DEFAULT false
 );
 CREATE TABLE imports (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id),
     source_id uuid NOT NULL REFERENCES sources(id),
-    requester_id uuid NOT NULL REFERENCES users(id),
     manifest jsonb NOT NULL,
     request_hash text NOT NULL,
     create_key text,
@@ -88,8 +48,8 @@ CREATE TABLE imports (
     job_id uuid,
     results jsonb NOT NULL DEFAULT '[]',
     errors jsonb NOT NULL DEFAULT '[]',
-    UNIQUE (organization_id, source_id, create_key),
-    UNIQUE (organization_id, source_id, complete_key)
+    UNIQUE (source_id, create_key),
+    UNIQUE (source_id, complete_key)
 );
 CREATE TABLE import_files (
     import_id uuid NOT NULL REFERENCES imports(id),
@@ -110,8 +70,6 @@ CREATE TABLE objects (
 CREATE INDEX objects_cleanup ON objects(state, created_at, retired_at);
 CREATE TABLE jobs (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    requester_id uuid NOT NULL REFERENCES users(id),
     source_id uuid NOT NULL REFERENCES sources(id),
     import_id uuid NOT NULL REFERENCES imports(id),
     kind text NOT NULL CHECK (kind IN ('verify_import','parse')),
@@ -131,18 +89,15 @@ CREATE INDEX jobs_claim ON jobs(available_at, created_at) WHERE status IN ('queu
 ALTER TABLE imports ADD CONSTRAINT imports_job FOREIGN KEY (job_id) REFERENCES jobs(id);
 CREATE TABLE sessions (
     id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations(id),
     source_id uuid NOT NULL REFERENCES sources(id),
-    owner_id uuid NOT NULL REFERENCES users(id),
     native_key text NOT NULL,
     harness text NOT NULL,
     native_session_id text NOT NULL,
-    visibility text NOT NULL CHECK (visibility IN ('private','organization')),
     revision text NOT NULL,
     updated_at timestamptz NOT NULL,
     document jsonb NOT NULL
 );
-CREATE INDEX sessions_access_order ON sessions(organization_id, updated_at DESC, id DESC);
+CREATE INDEX sessions_updated_order ON sessions(updated_at DESC, id DESC);
 CREATE INDEX sessions_native ON sessions(source_id, native_key);
 CREATE TABLE session_projects (
     session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
