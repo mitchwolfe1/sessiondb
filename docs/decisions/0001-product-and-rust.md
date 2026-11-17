@@ -1,6 +1,6 @@
 # Product direction
 
-Status: accepted. Date: 2026-11-15.
+Status: accepted; identity assumptions superseded by [0013](0013-instance-api-key.md). Date: 2026-11-15.
 
 Product framing is clarified by [0007 Capability focused documentation](0007-capability-focused-documentation.md).
 

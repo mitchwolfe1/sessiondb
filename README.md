@@ -13,10 +13,10 @@ Build instructions and a local development setup are in [Build and run SessionDB
 Connect to a server, select native session stores, and enable automatic sync. Sessions are collected regardless of their starting directory. Project associations can be added or changed separately.
 
 ```sh
+# Provision SESSIONDB_API_KEY securely in the server and client environments first.
 sessiondb-server --config /etc/sessiondb/config.toml
-sessiondb auth login --server https://sessions.example.com
-sessiondb context create acme --organization acme
-sessiondb context use acme
+sessiondb context create shared --server https://sessions.example.com
+sessiondb context use shared
 sessiondb sources add --detect
 sessiondb sync --watch
 
@@ -30,13 +30,13 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 
 - **Automatic sync:** collect new and updated sessions from multiple harnesses and machines.
 - **Session access:** list conversations, read messages and tool activity, inspect relationships, and export sessions.
-- **Filtering:** browse sessions by harness, author, date, or optional project associations. Keyword and semantic search are planned.
+- **Filtering:** browse sessions by harness, date, or optional project associations. Keyword and semantic search are planned.
 - **Native storage:** keep original files alongside a consistent, queryable session model.
 - **Optional grouping:** sessions can have zero or more project associations, independently of starting directory and collection source. Project administration is planned.
 - **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a client SDK, PostgreSQL, and S3-compatible object storage.
 - **Extensibility:** native adapters and the shared API support additional integrations; embedding-provider support is a later milestone.
 
-SessionDB can also serve a shared collection, with private and organization-visible sessions. Team grants and additional sharing controls are planned. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
+Each instance is one shared collection protected by the required `SESSIONDB_API_KEY`. All clients with the key have identical full access; use separate instances for isolated collections. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
 
 The initial release targets a single server deployment and Linux/macOS sync clients.
 
@@ -57,7 +57,7 @@ Start with the [documentation guide](docs/README.md), then read:
 
 Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md) for the documentation workflow and required checks.
 
-The [first-build plan](docs/first-build.md) selects the initial working path. [Reference checks](docs/validation/reference-stack.md) and [synthetic native fixtures](fixtures/README.md) support the storage, login, and message contracts.
+The [first-build plan](docs/first-build.md) selects the initial working path. [Reference checks](docs/validation/reference-stack.md) and [synthetic native fixtures](fixtures/README.md) support the storage and message contracts; the earlier OIDC validation is historical and does not verify the instance-key cutover.
 
 Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add session import`, or `fix: retry interrupted uploads`.
 

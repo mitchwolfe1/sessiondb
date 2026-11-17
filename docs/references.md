@@ -20,7 +20,7 @@ Reviewed on 2026-11-15. Native formats and evolving AI conventions require reche
 - [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) — language-neutral HTTP contract baseline.
 - [RFC 9110 HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html) — methods, conditional requests, and ranges.
 - [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457.html) — structured HTTP errors.
-- [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) and [RFC 8252 OAuth for Native Apps](https://www.rfc-editor.org/rfc/rfc8252.html) — proposed human/CLI authentication.
+- [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) and [RFC 8252 OAuth for Native Apps](https://www.rfc-editor.org/rfc/rfc8252.html) — historical OIDC references for the superseded authentication experiments, not current deployment requirements.
 - [S3 GetObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html), [conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html), and [metadata](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html) — object access conventions; an ETag is not universally a content digest.
 - [Docker contexts](https://docs.docker.com/reference/cli/docker/context/) — familiar connection selection.
 - [psql](https://www.postgresql.org/docs/current/app-psql.html) — a first-class CLI client for a database service.

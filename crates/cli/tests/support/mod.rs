@@ -1,24 +1,10 @@
-use axum::{
-    Json, Router,
-    extract::{Form, Query, State},
-    response::Redirect,
-    routing::{get, post},
-};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use rsa::{RsaPrivateKey, pkcs8::EncodePrivateKey, traits::PublicKeyParts};
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
     fs,
     io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::Arc,
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::Mutex};
 use uuid::Uuid;
 
 pub struct Services {
@@ -235,176 +221,15 @@ impl Drop for Services {
     }
 }
 
-pub struct Issuer {
-    pub url: String,
-    pub state: Arc<IssuerState>,
-    task: tokio::task::JoinHandle<()>,
-}
-pub struct IssuerState {
-    pub url: String,
-    key: EncodingKey,
-    jwk: Value,
-    codes: Mutex<HashMap<String, (String, String)>>,
-    refresh: Mutex<HashMap<String, String>>,
-    pub bad_refresh_subject: std::sync::atomic::AtomicBool,
-}
-impl Issuer {
-    pub async fn start() -> Self {
-        let key = RsaPrivateKey::new(&mut rand08::rngs::OsRng, 2048).unwrap();
-        let pem = key.to_pkcs8_pem(Default::default()).unwrap();
-        let jwk = json!({"kty":"RSA","kid":"test-key","alg":"RS256","use":"sig","n":URL_SAFE_NO_PAD.encode(key.n().to_bytes_be()),"e":URL_SAFE_NO_PAD.encode(key.e().to_bytes_be())});
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let state = Arc::new(IssuerState {
-            url: url.clone(),
-            key: EncodingKey::from_rsa_pem(pem.as_bytes()).unwrap(),
-            jwk,
-            codes: Mutex::new(HashMap::new()),
-            refresh: Mutex::new(HashMap::new()),
-            bad_refresh_subject: std::sync::atomic::AtomicBool::new(false),
-        });
-        let app = Router::new()
-            .route("/.well-known/openid-configuration", get(discovery))
-            .route("/jwks", get(jwks))
-            .route("/authorize", get(authorize))
-            .route("/token", post(token))
-            .with_state(state.clone());
-        let task = tokio::spawn(async {
-            axum::serve(listener, app).await.unwrap();
-        });
-        Self { url, state, task }
-    }
-    pub fn token(&self, subject: &str) -> String {
-        self.claims(
-            json!({"sub":subject,"email":format!("{subject}@example.com"),"email_verified":true}),
-        )
-    }
-    pub fn claims(&self, overrides: Value) -> String {
-        let mut claims = json!({"iss":self.url,"aud":"sessiondb-api","sub":"owner","exp":chrono::Utc::now().timestamp()+3600,"iat":chrono::Utc::now().timestamp(),"name":"Synthetic account","email":"owner@example.com","email_verified":true});
-        for (key, value) in overrides.as_object().unwrap() {
-            if value.is_null() {
-                claims.as_object_mut().unwrap().remove(key);
-            } else {
-                claims[key] = value.clone();
-            }
-        }
-        sign(&self.state, claims)
-    }
-}
-impl Drop for Issuer {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-fn sign(state: &IssuerState, claims: Value) -> String {
-    let mut header = Header::new(Algorithm::RS256);
-    header.kid = Some("test-key".into());
-    jsonwebtoken::encode(&header, &claims, &state.key).unwrap()
-}
-async fn discovery(State(s): State<Arc<IssuerState>>) -> Json<Value> {
-    Json(
-        json!({"issuer":s.url,"authorization_endpoint":format!("{}/authorize",s.url),"token_endpoint":format!("{}/token",s.url),"jwks_uri":format!("{}/jwks",s.url),"response_types_supported":["code"],"subject_types_supported":["public"],"id_token_signing_alg_values_supported":["RS256"],"token_endpoint_auth_methods_supported":["none"],"scopes_supported":["openid","profile","email"]}),
-    )
-}
-async fn jwks(State(s): State<Arc<IssuerState>>) -> Json<Value> {
-    Json(json!({"keys":[s.jwk]}))
-}
-async fn authorize(
-    State(s): State<Arc<IssuerState>>,
-    Query(p): Query<HashMap<String, String>>,
-) -> Redirect {
-    assert_eq!(
-        p.get("code_challenge_method").map(String::as_str),
-        Some("S256")
-    );
-    let code = Uuid::new_v4().to_string();
-    s.codes.lock().await.insert(
-        code.clone(),
-        (p["code_challenge"].clone(), p["nonce"].clone()),
-    );
-    let mut url = url::Url::parse(&p["redirect_uri"]).unwrap();
-    url.query_pairs_mut()
-        .append_pair("code", &code)
-        .append_pair("state", &p["state"]);
-    Redirect::temporary(url.as_str())
-}
-async fn token(
-    State(s): State<Arc<IssuerState>>,
-    Form(p): Form<HashMap<String, String>>,
-) -> (axum::http::StatusCode, Json<Value>) {
-    let refreshing = p.get("grant_type").map(String::as_str) == Some("refresh_token");
-    let nonce = if refreshing {
-        let previous = s
-            .refresh
-            .lock()
-            .await
-            .remove(p.get("refresh_token").map(String::as_str).unwrap_or(""));
-        if previous.is_none() {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(json!({"error":"invalid_grant"})),
-            );
-        }
-        previous
-    } else {
-        let Some((challenge, nonce)) = s
-            .codes
-            .lock()
-            .await
-            .remove(p.get("code").map(String::as_str).unwrap_or(""))
-        else {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(json!({"error":"invalid_grant"})),
-            );
-        };
-        if URL_SAFE_NO_PAD.encode(Sha256::digest(
-            p.get("code_verifier").map(String::as_str).unwrap_or(""),
-        )) != challenge
-        {
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                Json(json!({"error":"invalid_grant"})),
-            );
-        }
-        Some(nonce)
-    };
-    let now = chrono::Utc::now().timestamp();
-    let access = sign(
-        &s,
-        json!({"iss":s.url,"aud":"sessiondb-api","sub":"owner","exp":now+60,"iat":now,"name":"Owner","email":"owner@example.com","email_verified":true}),
-    );
-    let refresh = Uuid::new_v4().to_string();
-    s.refresh
-        .lock()
-        .await
-        .insert(refresh.clone(), nonce.clone().unwrap_or_default());
-    let mut response = json!({"access_token":access,"token_type":"Bearer","expires_in":60,"refresh_token":refresh});
-    if let Some(nonce) = nonce {
-        let subject = if refreshing
-            && s.bad_refresh_subject
-                .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            "wrong-user"
-        } else {
-            "owner"
-        };
-        response["id_token"] = json!(sign(
-            &s,
-            json!({"iss":s.url,"aud":"sessiondb-cli","sub":subject,"exp":now+60,"iat":now,"nonce":nonce})
-        ));
-    }
-    (axum::http::StatusCode::OK, Json(response))
-}
-
 pub struct Server {
     pub url: String,
     pub config: PathBuf,
     pub log: PathBuf,
+    pub api_key: String,
     child: Option<Child>,
 }
 impl Server {
-    pub async fn start(root: &Path, services: &Services, issuer: &Issuer) -> Self {
+    pub async fn start(root: &Path, services: &Services) -> Self {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         drop(listener);
@@ -412,9 +237,10 @@ impl Server {
             url: format!("http://{address}"),
             config: root.join("server.toml"),
             log: root.join("server.log"),
+            api_key: format!("test-{}", Uuid::new_v4()),
             child: None,
         };
-        value.write_config(services, issuer);
+        value.write_config(services);
         let output = value
             .command(services, "postgres")
             .arg("migrate")
@@ -428,7 +254,7 @@ impl Server {
         value.restart(services, "postgres").await;
         value
     }
-    pub fn write_config(&self, services: &Services, issuer: &Issuer) {
+    pub fn write_config(&self, services: &Services) {
         fs::write(
             &self.config,
             format!(
@@ -445,26 +271,16 @@ path_style = true
 access_key_env = "SESSIONDB_TEST_ACCESS"
 secret_key_env = "SESSIONDB_TEST_SECRET"
 [auth]
-issuer = "{}"
-audience = "sessiondb-api"
-cli_client_id = "sessiondb-cli"
-allow_insecure_http = true
-[bootstrap]
-organization_slug = "test"
-organization_name = "Test"
-owner_issuer = "{}"
-owner_subject = "owner"
+api_key_env = "SESSIONDB_API_KEY"
 "#,
                 self.url.trim_start_matches("http://"),
                 self.url,
-                services.endpoint(),
-                issuer.url,
-                issuer.url
+                services.endpoint()
             ),
         )
         .unwrap();
     }
-    fn command(&self, services: &Services, database: &str) -> Command {
+    pub fn command(&self, services: &Services, database: &str) -> Command {
         let executable =
             Path::new(env!("CARGO_BIN_EXE_sessiondb")).with_file_name("sessiondb-server");
         assert!(
@@ -478,6 +294,7 @@ owner_subject = "owner"
             .env("SESSIONDB_TEST_DATABASE", services.database_url(database))
             .env("SESSIONDB_TEST_ACCESS", &services.access)
             .env("SESSIONDB_TEST_SECRET", &services.secret)
+            .env("SESSIONDB_API_KEY", &self.api_key)
             .env("AWS_EC2_METADATA_DISABLED", "true");
         command
     }
@@ -533,12 +350,7 @@ impl Drop for Server {
     }
 }
 
-pub fn cli_command(
-    server: &Server,
-    issuer: &Issuer,
-    root: &Path,
-    args: &[&str],
-) -> tokio::process::Command {
+pub fn cli_command(server: &Server, root: &Path, args: &[&str]) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_sessiondb"));
     command
         .arg("--config")
@@ -547,21 +359,11 @@ pub fn cli_command(
         .arg(root.join("state"))
         .arg("--server")
         .arg(&server.url)
-        .arg("--organization")
-        .arg("test")
-        .env("SESSIONDB_TOKEN", issuer.token("owner"))
+        .env("SESSIONDB_API_KEY", &server.api_key)
         .args(args);
     command.kill_on_drop(true);
     command
 }
-pub async fn cli(
-    server: &Server,
-    issuer: &Issuer,
-    root: &Path,
-    args: &[&str],
-) -> std::process::Output {
-    cli_command(server, issuer, root, args)
-        .output()
-        .await
-        .unwrap()
+pub async fn cli(server: &Server, root: &Path, args: &[&str]) -> std::process::Output {
+    cli_command(server, root, args).output().await.unwrap()
 }

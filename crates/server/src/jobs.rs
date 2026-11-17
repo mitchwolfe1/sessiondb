@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    api::imports::staging_key,
+    api::imports::staging_keys,
     objects::{ObjectError, read_bounded},
 };
 use chrono::Utc;
@@ -19,8 +19,6 @@ use uuid::Uuid;
 
 struct Claimed {
     id: Uuid,
-    org: Uuid,
-    requester: Uuid,
     source: Uuid,
     import: Uuid,
     kind: String,
@@ -123,8 +121,6 @@ async fn claim(state: &AppState) -> Result<Option<Claimed>, sqlx::Error> {
     let row = sqlx::query("WITH candidate AS (SELECT id FROM jobs WHERE (status='queued' AND available_at<=now()) OR (status='running' AND lease_until<=now()) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE jobs j SET status='running',attempts=attempts+1,lease_owner=$1,lease_until=now()+interval '30 seconds',updated_at=now() FROM candidate c WHERE j.id=c.id RETURNING j.*").bind(owner).fetch_optional(&state.pool).await?;
     Ok(row.map(|r| Claimed {
         id: r.get("id"),
-        org: r.get("organization_id"),
-        requester: r.get("requester_id"),
         source: r.get("source_id"),
         import: r.get("import_id"),
         kind: r.get("kind"),
@@ -154,19 +150,8 @@ async fn lock_source(tx: &mut Transaction<'_, Postgres>, job: &Claimed) -> WorkR
         .bind(job.source)
         .fetch_one(&mut **tx)
         .await?;
-    let role: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM memberships WHERE organization_id=$1 AND user_id=$2 AND status='active'",
-    )
-    .bind(job.org)
-    .bind(job.requester)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if source.get::<bool, _>("paused")
-        || !role.is_some_and(|r| {
-            source.get::<Uuid, _>("owner_id") == job.requester || r == "owner" || r == "admin"
-        })
-    {
-        return Err(WorkError::permanent("access_revoked"));
+    if source.get::<bool, _>("paused") {
+        return Err(WorkError::permanent("source_paused"));
     }
     own_job(tx, job).await?;
     Ok(source)
@@ -226,21 +211,24 @@ async fn verify(state: &AppState, job: &Claimed) -> WorkResult<()> {
         .get::<sqlx::types::Json<ImportManifest>, _>("manifest")
         .0;
     let mut verified = Vec::new();
+    let staged_keys = staging_keys(state, job.import).await?;
     for (index, file) in manifest.files.iter().enumerate() {
         let prior = sqlx::query("SELECT f.*,g.object_key FROM source_files f JOIN file_generations g ON g.id=f.generation_id WHERE f.source_id=$1 AND f.path=$2").bind(job.source).bind(&file.path).fetch_optional(&state.pool).await?;
-        let staged = staging_key(job.org, job.import, index);
-        let key = format!("native/{}/{}", job.org, Uuid::new_v4());
+        let staged = staged_keys
+            .get(index)
+            .ok_or_else(|| WorkError::permanent("object_missing"))?;
+        let key = format!("native/{}", Uuid::new_v4());
         sqlx::query("INSERT INTO objects(object_key,import_id,state) VALUES($1,$2,'promotion')")
             .bind(&key)
             .bind(job.import)
             .execute(&state.pool)
             .await?;
         let check = async {
-            let head = state.objects.head(&staged).await?;
+            let head = state.objects.head(staged).await?;
             if head.byte_length != file.byte_length {
                 return Err(WorkError::permanent("length_mismatch"));
             }
-            state.objects.copy(&staged, &key, &head.etag).await?;
+            state.objects.copy(staged, &key, &head.etag).await?;
             let bytes = read_bounded(
                 state.objects.as_ref(),
                 &key,
@@ -324,7 +312,7 @@ async fn verify(state: &AppState, job: &Claimed) -> WorkResult<()> {
             }
         }
         sqlx::query("INSERT INTO import_files(import_id,file_id,generation_id,version,object_key,path) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING").bind(job.import).bind(v.file_id).bind(v.generation).bind(&v.version).bind(&v.key).bind(&f.path).execute(&mut *tx).await?;
-        let unavailable: i64 = sqlx::query_scalar("SELECT count(*) FROM unnest($1::uuid[]) p(id) WHERE NOT EXISTS(SELECT 1 FROM projects WHERE id=p.id AND organization_id=$2 AND NOT archived)").bind(&f.project_ids).bind(job.org).fetch_one(&mut *tx).await?;
+        let unavailable: i64 = sqlx::query_scalar("SELECT count(*) FROM unnest($1::uuid[]) p(id) WHERE NOT EXISTS(SELECT 1 FROM projects WHERE id=p.id AND NOT archived)").bind(&f.project_ids).fetch_one(&mut *tx).await?;
         results.push(ImportFileResult {
             path: f.path.clone(),
             status: if v.unchanged { "unchanged" } else { "accepted" }.into(),
@@ -337,7 +325,7 @@ async fn verify(state: &AppState, job: &Claimed) -> WorkResult<()> {
             },
         });
     }
-    sqlx::query("INSERT INTO jobs(id,organization_id,requester_id,source_id,import_id,kind,total_items) VALUES($1,$2,$3,$4,$5,'parse',$6) ON CONFLICT(import_id,kind) DO NOTHING").bind(Uuid::new_v4()).bind(job.org).bind(job.requester).bind(job.source).bind(job.import).bind(verified.len() as i64).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO jobs(id,source_id,import_id,kind,total_items) VALUES($1,$2,$3,'parse',$4) ON CONFLICT(import_id,kind) DO NOTHING").bind(Uuid::new_v4()).bind(job.source).bind(job.import).bind(verified.len() as i64).execute(&mut *tx).await?;
     sqlx::query("UPDATE imports SET accepted_at=now(),status='queued',results=$2 WHERE id=$1 AND accepted_at IS NULL").bind(job.import).bind(sqlx::types::Json(results)).execute(&mut *tx).await?;
     sqlx::query("UPDATE sources SET last_synced_at=now() WHERE id=$1")
         .bind(job.source)
@@ -463,7 +451,7 @@ async fn publish(
 ) -> WorkResult<Option<Uuid>> {
     let mut uploaded = HashMap::new();
     for artifact in &native.artifacts {
-        let key = format!("artifacts/{}/{}", job.org, Uuid::new_v4());
+        let key = format!("artifacts/{}", Uuid::new_v4());
         sqlx::query("INSERT INTO objects(object_key,import_id,state) VALUES($1,$2,'promotion')")
             .bind(&key)
             .bind(job.import)
@@ -476,8 +464,7 @@ async fn publish(
         uploaded.insert(artifact.id, key);
     }
     let mut tx = state.pool.begin().await?;
-    let source = lock_source(&mut tx, job).await?;
-    let owner: Uuid = source.get("owner_id");
+    lock_source(&mut tx, job).await?;
     let file_id: Uuid = file.get("file_id");
     let generation: Uuid = file.get("generation_id");
     let current: String = sqlx::query_scalar("SELECT version FROM source_files WHERE id=$1")
@@ -503,7 +490,7 @@ async fn publish(
         }
     }
     if existing.is_none() {
-        let duplicate = sqlx::query("SELECT DISTINCT s.id FROM sessions s JOIN session_files sf ON sf.session_id=s.id JOIN file_generations g ON g.id=sf.generation_id WHERE s.organization_id=$1 AND s.owner_id=$2 AND s.harness=$3 AND s.native_key=$4 AND g.sha256=$5 ORDER BY s.id LIMIT 2").bind(job.org).bind(owner).bind(harness.as_str()).bind(&native.native_key).bind(file.get::<String,_>("sha256")).fetch_all(&mut *tx).await?;
+        let duplicate = sqlx::query("SELECT DISTINCT s.id FROM sessions s JOIN session_files sf ON sf.session_id=s.id JOIN file_generations g ON g.id=sf.generation_id WHERE s.harness=$1 AND s.native_key=$2 AND g.sha256=$3 ORDER BY s.id LIMIT 2").bind(harness.as_str()).bind(&native.native_key).bind(file.get::<String,_>("sha256")).fetch_all(&mut *tx).await?;
         if duplicate.len() == 1 {
             let id: Uuid = duplicate[0].get("id");
             sqlx::query("INSERT INTO session_files(session_id,file_id,generation_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING").bind(id).bind(file_id).bind(generation).execute(&mut *tx).await?;
@@ -525,18 +512,11 @@ async fn publish(
     } else {
         Session {
             id,
-            organization_id: job.org,
-            author_id: owner,
-            owner_id: owner,
             harness,
             native_session_id: native.native_session_id.clone(),
             title: native.title(),
             tags: vec![],
             project_ids: vec![],
-            visibility: source
-                .get::<String, _>("default_visibility")
-                .parse()
-                .map_err(|_| WorkError::permanent("invalid_visibility"))?,
             recorded_cwd: native.recorded_cwd.clone(),
             started_at: native.started_at,
             updated_at: Utc::now(),
@@ -551,7 +531,12 @@ async fn publish(
         }
     };
     if existing.is_none() {
-        session.project_ids = sqlx::query_scalar("SELECT id FROM projects WHERE organization_id=$1 AND id=ANY($2) AND NOT archived ORDER BY id").bind(job.org).bind(labels).fetch_all(&mut *tx).await?;
+        session.project_ids = sqlx::query_scalar(
+            "SELECT id FROM projects WHERE id=ANY($1) AND NOT archived ORDER BY id",
+        )
+        .bind(labels)
+        .fetch_all(&mut *tx)
+        .await?;
     }
     session.updated_at = native
         .messages
@@ -580,7 +565,7 @@ async fn publish(
         "partial"
     }
     .into();
-    sqlx::query("INSERT INTO sessions(id,organization_id,source_id,owner_id,native_key,harness,native_session_id,visibility,revision,updated_at,document) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET revision=EXCLUDED.revision,updated_at=EXCLUDED.updated_at,document=EXCLUDED.document").bind(id).bind(job.org).bind(job.source).bind(owner).bind(&native.native_key).bind(harness.as_str()).bind(&native.native_session_id).bind(session.visibility.as_str()).bind(&revision).bind(session.updated_at).bind(sqlx::types::Json(&session)).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO sessions(id,source_id,native_key,harness,native_session_id,revision,updated_at,document) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET revision=EXCLUDED.revision,updated_at=EXCLUDED.updated_at,document=EXCLUDED.document").bind(id).bind(job.source).bind(&native.native_key).bind(harness.as_str()).bind(&native.native_session_id).bind(&revision).bind(session.updated_at).bind(sqlx::types::Json(&session)).execute(&mut *tx).await?;
     for project in &session.project_ids {
         sqlx::query("INSERT INTO session_projects(session_id,project_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(id).bind(project).execute(&mut *tx).await?;
     }
@@ -646,12 +631,7 @@ async fn publish(
                 })
                 .collect(),
         };
-        preview(
-            &mut message,
-            &full,
-            state.config.public_url.as_str(),
-            job.org,
-        )?;
+        preview(&mut message, &full, state.config.public_url.as_str())?;
         sqlx::query("INSERT INTO messages(id,session_id,sequence,document,full_content) VALUES($1,$2,$3,$4,$5)").bind(message.id).bind(id).bind(sequence as i64).bind(sqlx::types::Json(&message)).bind(sqlx::types::Json(&full)).execute(&mut *tx).await?;
     }
     for (sequence, event) in native.events.into_iter().enumerate() {
@@ -727,14 +707,9 @@ fn remap_artifacts(blocks: &mut [FullContentBlock], ids: &HashMap<Uuid, Uuid>) {
         }
     }
 }
-fn preview(
-    message: &mut Message,
-    blocks: &[FullContentBlock],
-    base: &str,
-    org: Uuid,
-) -> WorkResult<()> {
+fn preview(message: &mut Message, blocks: &[FullContentBlock], base: &str) -> WorkResult<()> {
     let url = format!(
-        "{}/v1/organizations/{org}/messages/{}/content",
+        "{}/v1/messages/{}/content",
         base.trim_end_matches('/'),
         message.id
     );

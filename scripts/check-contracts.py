@@ -36,14 +36,73 @@ EXAMPLES = {
     "problem.json": "Problem", "message.json": "Message",
     "content-reference.json": "ContentReferenceBlock",
 }
+assert {path.name for path in ROOT.glob("docs/examples/*.json")} == set(EXAMPLES)
+examples = {}
 for filename, name in EXAMPLES.items():
-    validator(name).validate(json.loads((ROOT / "docs/examples" / filename).read_text()))
+    examples[filename] = json.loads((ROOT / "docs/examples" / filename).read_text())
+    validator(name).validate(examples[filename])
+for name, schema in SPEC["components"]["schemas"].items():
+    for example in schema.get("examples", []):
+        validator(name).validate(example)
+
 for path in [*ROOT.glob("docs/examples/*.toml"), ROOT / "dev/server.toml"]:
-    tomllib.loads(path.read_text())
-realm = json.loads((ROOT / "docs/examples/keycloak-realm.json").read_text())
-assert "users" not in realm
-assert realm["clients"][0]["publicClient"]
-assert "basic" in realm["clients"][0]["defaultClientScopes"]
+    config = tomllib.loads(path.read_text())
+    if path.name == "client.toml":
+        assert all(set(context) == {"server"} for context in config["contexts"].values())
+        assert all(set(source) == {"context", "harness", "root"} for source in config["sources"])
+    else:
+        assert config["auth"] == {"api_key_env": "SESSIONDB_API_KEY"}
+        assert "bootstrap" not in config
+
+# Response extensibility must not reintroduce identity policy in examples or schemas.
+identity_fields = {
+    "organization_id", "org_id", "owner_id", "creator_id", "author_id", "author_ids",
+    "team_id", "user_id", "default_visibility", "visibility", "principal_id", "principal_type",
+}
+
+def check_no_identity(value):
+    if isinstance(value, dict):
+        assert not identity_fields.intersection(value), identity_fields.intersection(value)
+        for child in value.values():
+            check_no_identity(child)
+    elif isinstance(value, list):
+        for child in value:
+            check_no_identity(child)
+
+check_no_identity(SPEC)
+check_no_identity(examples)
+removed_schemas = {
+    "AuthConfig", "User", "Organization", "OrganizationPatch", "Membership", "MembershipPatch",
+    "Me", "Invitation", "InvitationCreate", "Team", "TeamCreate", "TeamPatch", "TeamMember",
+    "Token", "TokenCreate", "CreatedToken", "SessionGrant", "SessionGrantCreate",
+}
+assert not any(name.removesuffix("Page") in removed_schemas for name in SPEC["components"]["schemas"])
+assert set(SPEC["components"]["schemas"]["Source"]["properties"]) == {
+    "id", "harness", "device_label", "paused", "last_synced_at", "root",
+}
+assert set(SPEC["components"]["schemas"]["SourceCreate"]["properties"]) == {
+    "harness", "device_label", "root",
+}
+assert set(SPEC["components"]["schemas"]["Session"]["properties"]) == {
+    "id", "project_ids", "harness", "native_session_id", "title", "tags", "recorded_cwd",
+    "started_at", "updated_at", "message_count", "processing", "relations", "warnings",
+}
+assert set(SPEC["components"]["schemas"]["Import"]["properties"]) == {
+    "id", "source_id", "status", "uploads", "results", "created_at", "job_id", "accepted_at",
+    "errors", "upload_expires_at",
+}
+for name, sample, field in [
+    ("SourceCreate", examples["source-create.json"], "default_visibility"),
+    ("SessionPatch", examples["session-update.json"], "visibility"),
+    ("SearchFilters", {}, "author_ids"),
+    ("SearchFilters", {}, "team_id"),
+]:
+    assert list(validator(name).iter_errors({**sample, field: "removed"}))
+assert examples["session-unassigned.json"]["project_ids"] == []
+assert examples["import-response.json"]["source_id"] == examples["import-request.json"]["source_id"]
+assert examples["import-accepted.json"]["id"] == examples["import-response.json"]["id"]
+assert examples["import-response.json"]["accepted_at"] is None
+assert examples["import-accepted.json"]["accepted_at"] is not None
 assert list(validator("ContentBlock").iter_errors({"type": "tool_call", "name": "bash"}))
 reference = json.loads((ROOT / "docs/examples/content-reference.json").read_text())
 assert list(validator("FullContentBlock").iter_errors(reference))
@@ -124,14 +183,28 @@ for line in (ROOT / "docs/api.md").read_text().splitlines():
     if match:
         methods, path = match.groups()
         if not path.startswith(("/v1", "/healthz", "/readyz")):
-            path = "/v1/organizations/{org_id}" + path
+            path = "/v1" + path
         inventory.update((method, path) for method in methods.split(", "))
 assert inventory == operations
 first = {op["operationId"] for item in SPEC["paths"].values() for method, op in item.items() if method != "parameters" and op.get("x-first-build")}
 implementation = {op["operationId"] for item in SPEC["paths"].values() for method, op in item.items() if method != "parameters" and op.get("x-implemented")}
 source = (ROOT / "crates/types/src/lib.rs").read_text().split("FIRST_BUILD_OPERATIONS:", 1)[1]
 assert first == set(re.findall(r'"([a-zA-Z]+)"', source))
-assert first <= implementation and len(implementation) == len(first) + 2
+assert len(first) == 18
+assert implementation == first | {"getArtifact", "getArtifactContent"}
+assert SPEC["security"] == [{"bearerAuth": []}]
+assert set(SPEC["components"]["securitySchemes"]) == {"bearerAuth"}
+assert SPEC["components"]["securitySchemes"]["bearerAuth"]["type"] == "http"
+assert SPEC["components"]["securitySchemes"]["bearerAuth"]["scheme"] == "bearer"
+for path, item in SPEC["paths"].items():
+    assert path in {"/healthz", "/readyz"} or path.startswith("/v1/")
+    assert not re.search(r"/(?:auth|me|organizations|members|teams|invitations|tokens|grants)(?:/|$)", path)
+    for method, operation in item.items():
+        if method == "parameters":
+            continue
+        effective_security = operation.get("security", SPEC["security"])
+        assert effective_security == ([] if path in {"/healthz", "/readyz"} else [{"bearerAuth": []}])
+        assert not any(parameter["name"] in identity_fields for parameter in operation.get("parameters", []))
 
 
 def heading_anchors(path):

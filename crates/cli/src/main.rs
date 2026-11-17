@@ -4,10 +4,10 @@ mod sync;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use config::{ConfiguredSource, ContextConfig, FileConfig, StoredCredentials};
+use config::{ConfiguredSource, ContextConfig, FileConfig};
 use serde::Serialize;
 use serde_json::json;
-use sessiondb_client::{Client, Tokens, auth::LoginFlow};
+use sessiondb_client::Client;
 use sessiondb_types::*;
 use state::LocalState;
 use std::{path::PathBuf, process::ExitCode, time::Duration};
@@ -23,8 +23,6 @@ use uuid::Uuid;
 struct Cli {
     #[arg(long, global = true, env = "SESSIONDB_URL")]
     server: Option<String>,
-    #[arg(long, global = true, env = "SESSIONDB_ORGANIZATION")]
-    organization: Option<String>,
     #[arg(long, global = true)]
     context: Option<String>,
     #[arg(long,global=true,env="SESSIONDB_CONFIG",default_value_os_t=config::default_config_path())]
@@ -64,14 +62,6 @@ enum Command {
         #[command(subcommand)]
         command: MessageCommand,
     },
-    Organizations {
-        #[command(subcommand)]
-        command: OrganizationCommand,
-    },
-    Members {
-        #[command(subcommand)]
-        command: MemberCommand,
-    },
     Jobs {
         #[command(subcommand)]
         command: JobCommand,
@@ -96,10 +86,9 @@ enum Command {
 #[derive(Subcommand)]
 enum AuthCommand {
     Login {
-        #[arg(long)]
-        no_browser: bool,
-        #[arg(long, conflicts_with = "no_browser")]
-        token_stdin: bool,
+        /// Read the instance API key from stdin and save it in the OS credential store.
+        #[arg(long, required = true)]
+        key_stdin: bool,
     },
     Logout,
     Status,
@@ -130,8 +119,6 @@ enum SourceCommand {
         root: Option<PathBuf>,
         #[arg(long)]
         device_label: Option<String>,
-        #[arg(long, default_value = "private")]
-        visibility: Visibility,
     },
 }
 #[derive(Subcommand)]
@@ -145,8 +132,6 @@ enum SessionCommand {
         unassigned: bool,
         #[arg(long)]
         project: Option<Uuid>,
-        #[arg(long)]
-        author: Option<Uuid>,
         #[arg(long)]
         tag: Option<String>,
         #[arg(long)]
@@ -188,21 +173,6 @@ enum MessageCommand {
     },
 }
 #[derive(Subcommand)]
-enum OrganizationCommand {
-    List {
-        #[command(flatten)]
-        page: PageArgs,
-    },
-}
-#[derive(Subcommand)]
-enum MemberCommand {
-    Invite {
-        email: String,
-        #[arg(long, default_value = "member")]
-        role: String,
-    },
-}
-#[derive(Subcommand)]
 enum JobCommand {
     Show {
         id: Uuid,
@@ -240,7 +210,6 @@ impl PageArgs {
 
 struct Runtime {
     client: Client,
-    org: Uuid,
     context: String,
 }
 fn selected_context<'a>(args: &'a Cli, config: &'a FileConfig) -> &'a str {
@@ -265,25 +234,10 @@ async fn runtime(args: &Cli, config: &FileConfig) -> Result<Runtime> {
     let context = selected_context(args, config).to_owned();
     let server = server(args, config)?;
     let client = config::authenticated(server, Duration::from_secs(args.timeout)).await?;
-    let organization = args
-        .organization
-        .as_deref()
-        .or_else(|| {
-            config
-                .contexts
-                .get(&context)
-                .map(|c| c.organization.as_str())
-        })
-        .context("select an organization with --organization or a context")?;
-    let org = config::organization(&client, organization).await?;
     if args.verbose > 0 {
-        eprintln!("Using {} / {}", client.server(), org);
+        eprintln!("Using {}", client.server());
     }
-    Ok(Runtime {
-        client,
-        org,
-        context,
-    })
+    Ok(Runtime { client, context })
 }
 fn emit(args: &Cli, value: &impl Serialize, human: impl FnOnce()) -> Result<()> {
     if args.json {
@@ -361,7 +315,7 @@ async fn run(args: &Cli) -> Result<()> {
         Command::Config {
             command: ConfigCommand::Show,
         } => {
-            let value = json!({"config_path":args.config,"state_path":args.state_dir,"context":selected_context(args,&config),"server":server(args,&config).ok(),"organization":args.organization.as_deref().or_else(|| config.contexts.get(selected_context(args,&config)).map(|c| c.organization.as_str())),"sources":config.sources,"sync":config.sync});
+            let value = json!({"config_path":args.config,"state_path":args.state_dir,"context":selected_context(args,&config),"server":server(args,&config).ok(),"sources":config.sources,"sync":config.sync});
             emit(args, &value, || {
                 println!(
                     "{}",
@@ -407,18 +361,12 @@ async fn run(args: &Cli) -> Result<()> {
                     let mut first_error = None;
                     for source in &sources {
                         let result = async {
-                            let registered = sync::ensure_source(
-                                &runtime.client,
-                                &state,
-                                runtime.org,
-                                &device,
-                                source,
-                            )
-                            .await?;
+                            let registered =
+                                sync::ensure_source(&runtime.client, &state, &device, source)
+                                    .await?;
                             sync::source(
                                 &runtime.client,
                                 &state,
-                                runtime.org,
                                 &registered,
                                 &config.sync,
                                 args.quiet,
@@ -469,37 +417,6 @@ async fn run(args: &Cli) -> Result<()> {
                 tokio::select! { _=tokio::time::sleep(Duration::from_secs(config.sync.reconcile_interval_seconds.max(1)))=>{},_=tokio::signal::ctrl_c()=>return Err(Interrupted.into()) }
             }
         }
-        Command::Organizations {
-            command: OrganizationCommand::List { page },
-        } => {
-            let client =
-                config::authenticated(server(args, &config)?, Duration::from_secs(args.timeout))
-                    .await?;
-            let value = client.organizations(&page.options()).await?;
-            emit(args, &value, || {
-                for org in &value.data {
-                    println!("{}\t{}\t{}", org.id, clean(&org.slug), clean(&org.name));
-                }
-            })?;
-        }
-        Command::Members {
-            command: MemberCommand::Invite { email, role },
-        } => {
-            let runtime = runtime(args, &config).await?;
-            let value = runtime
-                .client
-                .invite(
-                    runtime.org,
-                    &InvitationCreate {
-                        email: email.clone(),
-                        role: role.clone(),
-                    },
-                )
-                .await?;
-            emit(args, &value, || {
-                println!("Invited {} ({})", clean(&value.email), value.id)
-            })?;
-        }
         Command::Sessions { command } => {
             let runtime = runtime(args, &config).await?;
             match command {
@@ -508,7 +425,6 @@ async fn run(args: &Cli) -> Result<()> {
                     harness,
                     unassigned,
                     project,
-                    author,
                     tag,
                     after,
                     before,
@@ -518,14 +434,13 @@ async fn run(args: &Cli) -> Result<()> {
                         cursor: page.cursor.clone(),
                         project_id: *project,
                         unassigned: Some(*unassigned),
-                        author_id: *author,
                         harness: *harness,
                         tag: tag.clone(),
                         after: *after,
                         before: *before,
                         ..Default::default()
                     };
-                    let value = runtime.client.sessions(runtime.org, &filter).await?;
+                    let value = runtime.client.sessions(&filter).await?;
                     emit(args, &value, || {
                         for s in &value.data {
                             println!(
@@ -538,7 +453,7 @@ async fn run(args: &Cli) -> Result<()> {
                     })?;
                 }
                 SessionCommand::Show { id } => {
-                    let value = runtime.client.session(runtime.org, *id).await?;
+                    let value = runtime.client.session(*id).await?;
                     emit(args, &value, || {
                         println!(
                             "{}\nID: {}\nHarness: {}\nDirectory: {}\nMessages: {}\nParsing: {}",
@@ -560,7 +475,6 @@ async fn run(args: &Cli) -> Result<()> {
                     let mut value = runtime
                         .client
                         .messages(
-                            runtime.org,
                             *id,
                             &MessageFilter {
                                 limit: Some(page.limit),
@@ -571,10 +485,7 @@ async fn run(args: &Cli) -> Result<()> {
                         .await?;
                     if *full {
                         for m in &mut value.data {
-                            let content = runtime
-                                .client
-                                .content(runtime.org, m.id, Some(&m.revision))
-                                .await?;
+                            let content = runtime.client.content(m.id, Some(&m.revision)).await?;
                             m.content = content
                                 .content
                                 .into_iter()
@@ -601,10 +512,7 @@ async fn run(args: &Cli) -> Result<()> {
                     }
                     if output.as_os_str() == "-" {
                         let mut stdout = tokio::io::stdout();
-                        runtime
-                            .client
-                            .export_to(runtime.org, *id, &mut stdout)
-                            .await?;
+                        runtime.client.export_to(*id, &mut stdout).await?;
                     } else {
                         let parent = output
                             .parent()
@@ -613,10 +521,7 @@ async fn run(args: &Cli) -> Result<()> {
                         let temporary = tempfile::NamedTempFile::new_in(parent)
                             .context("create export output")?;
                         let mut file = tokio::fs::File::from_std(temporary.reopen()?);
-                        runtime
-                            .client
-                            .export_to(runtime.org, *id, &mut file)
-                            .await?;
+                        runtime.client.export_to(*id, &mut file).await?;
                         file.sync_all().await?;
                         drop(file);
                         if *force {
@@ -638,14 +543,11 @@ async fn run(args: &Cli) -> Result<()> {
             let runtime = runtime(args, &config).await?;
             match command {
                 MessageCommand::Show { id } => {
-                    let value = runtime.client.message(runtime.org, *id).await?;
+                    let value = runtime.client.message(*id).await?;
                     emit(args, &value, || show_message(&value))?;
                 }
                 MessageCommand::Content { id, revision } => {
-                    let value = runtime
-                        .client
-                        .content(runtime.org, *id, revision.as_deref())
-                        .await?;
+                    let value = runtime.client.content(*id, revision.as_deref()).await?;
                     emit(args, &value, || {
                         for b in &value.content {
                             println!("{}", serde_json::to_string_pretty(b).unwrap_or_default());
@@ -657,11 +559,11 @@ async fn run(args: &Cli) -> Result<()> {
         Command::Jobs { command } => {
             let runtime = runtime(args, &config).await?;
             let value = match command {
-                JobCommand::Show { id } => runtime.client.job(runtime.org, *id).await?,
+                JobCommand::Show { id } => runtime.client.job(*id).await?,
                 JobCommand::Wait { id, wait_timeout } => {
                     runtime
                         .client
-                        .wait_for_job(runtime.org, *id, Duration::from_secs(*wait_timeout))
+                        .wait_for_job(*id, Duration::from_secs(*wait_timeout))
                         .await?
                 }
             };
@@ -676,7 +578,7 @@ async fn run(args: &Cli) -> Result<()> {
             let client =
                 config::authenticated(server(args, &config)?, Duration::from_secs(args.timeout))
                     .await?;
-            let value = json!({"server":client.server(),"info":client.info().await?,"account":client.me().await?,"sync":LocalState::open(&args.state_dir).await?.status().await?});
+            let value = json!({"server":client.server(),"info":client.info().await?,"sync":LocalState::open(&args.state_dir).await?.status().await?});
             emit(args, &value, || {
                 println!(
                     "{}",
@@ -701,18 +603,12 @@ async fn context_command(
                 bail!("context name is invalid or already exists");
             }
             let server = server(args, config)?.to_owned();
-            let organization = args
-                .organization
-                .as_deref()
-                .context("context create requires --organization")?
-                .to_owned();
             let client = config::authenticated(&server, Duration::from_secs(args.timeout)).await?;
-            config::organization(&client, &organization).await?;
+            client.info().await?;
             config.contexts.insert(
                 name.clone(),
                 ContextConfig {
                     server: client.server().into(),
-                    organization,
                 },
             );
             if config.current_context.is_none() {
@@ -738,80 +634,55 @@ async fn context_command(
         }
         ContextCommand::List => emit(args, &config.contexts, || {
             for (name, c) in &config.contexts {
-                println!("{}\t{}\t{}", clean(name), c.server, clean(&c.organization));
+                println!("{}\t{}", clean(name), c.server);
             }
         })?,
         ContextCommand::Show => {
             let name = selected_context(args, config);
             let value = config.contexts.get(name).context("no context selected")?;
             emit(args, value, || {
-                println!(
-                    "{}: {} / {}",
-                    clean(name),
-                    value.server,
-                    clean(&value.organization)
-                )
+                println!("{}: {}", clean(name), value.server)
             })?;
         }
     }
     Ok(())
 }
 async fn auth_command(args: &Cli, config: &mut FileConfig, command: &AuthCommand) -> Result<()> {
-    let server = server(args, config)?.to_owned();
+    let server = config::normalize_server(server(args, config)?)?;
     match command {
-        AuthCommand::Login {
-            no_browser,
-            token_stdin,
-        } => {
-            let anonymous = Client::new(&server, None, Duration::from_secs(args.timeout))?;
-            let auth = anonymous.auth_config().await?;
-            let tokens = if *token_stdin {
-                let mut token = String::new();
-                tokio::io::stdin()
-                    .take(32 * 1024)
-                    .read_to_string(&mut token)
-                    .await?;
-                Tokens {
-                    access_token: token.trim().into(),
-                    refresh_token: None,
-                    expires_at: None,
-                    subject: None,
-                    nonce: None,
-                }
-            } else {
-                let flow = LoginFlow::start(&auth).await?;
-                eprintln!("Open this URL to sign in:\n{}", flow.authorization_url);
-                if !no_browser {
-                    webbrowser::open(flow.authorization_url.as_str())
-                        .context("open the browser; use --no-browser to open the URL yourself")?;
-                }
-                flow.finish().await?
-            };
-            let client = Client::new(
-                &server,
-                Some(tokens.access_token.clone()),
-                Duration::from_secs(args.timeout),
+        AuthCommand::Login { key_stdin: _ } => {
+            let mut api_key = String::new();
+            tokio::io::stdin()
+                .take(64 * 1024 + 1)
+                .read_to_string(&mut api_key)
+                .await
+                .context("read API key from stdin")?;
+            if api_key.len() > 64 * 1024 {
+                bail!("API key input exceeds 64 KiB");
+            }
+            let api_key = api_key.trim_end_matches(['\r', '\n']).to_owned();
+            let client = Client::new(&server, api_key.clone(), Duration::from_secs(args.timeout))?;
+            client.info().await?;
+            config::store(server.clone(), api_key).await.context(
+                "OS credential storage is required; headless clients can use SESSIONDB_API_KEY",
             )?;
-            let me = client.register_login().await?;
-            config::store(StoredCredentials { server:client.server().into(),issuer:auth.issuer,client_id:auth.cli_client_id,tokens }).await.context("OS credential storage is required for saved login; headless clients can use SESSIONDB_TOKEN")?;
-            config.server = Some(client.server().into());
+            config.server = Some(server.clone());
             config::save(&args.config, config)?;
-            emit(args, &me, || {
-                println!("Signed in as {}", clean(&me.user.display_name))
+            emit(args, &json!({"server":server,"saved":true}), || {
+                println!("API key saved in the OS credential store.")
             })?;
         }
         AuthCommand::Logout => {
-            let client = Client::new(&server, None, Duration::from_secs(args.timeout))?;
-            config::remove_credentials(client.server().into()).await?;
+            config::remove_credentials(server).await?;
         }
         AuthCommand::Status => {
-            let value = config::authenticated(&server, Duration::from_secs(args.timeout))
-                .await?
-                .me()
-                .await?;
-            emit(args, &value, || {
-                println!("Signed in as {}", clean(&value.user.display_name))
-            })?;
+            let client = config::authenticated(&server, Duration::from_secs(args.timeout)).await?;
+            client.info().await?;
+            emit(
+                args,
+                &json!({"server":client.server(),"authenticated":true}),
+                || println!("API key accepted by {}", client.server()),
+            )?;
         }
     }
     Ok(())
@@ -824,7 +695,7 @@ async fn source_command(
     let runtime = runtime(args, config).await?;
     match command {
         SourceCommand::List { page } => {
-            let value = runtime.client.sources(runtime.org, &page.options()).await?;
+            let value = runtime.client.sources(&page.options()).await?;
             emit(args, &value, || {
                 for s in &value.data {
                     println!("{}\t{}\t{}", s.id, s.harness, clean(&s.root));
@@ -832,7 +703,7 @@ async fn source_command(
             })?;
         }
         SourceCommand::Show { id } => {
-            let value = runtime.client.source(runtime.org, *id).await?;
+            let value = runtime.client.source(*id).await?;
             emit(args, &value, || {
                 println!("{}\n{}\n{}", value.id, value.harness, clean(&value.root))
             })?;
@@ -842,7 +713,6 @@ async fn source_command(
             harness,
             root,
             device_label,
-            visibility,
         } => {
             let roots = if *detect {
                 if harness.is_some() || root.is_some() {
@@ -870,11 +740,9 @@ async fn source_command(
                     context: runtime.context.clone(),
                     harness,
                     root,
-                    default_visibility: *visibility,
                 };
                 let source =
-                    sync::ensure_source(&runtime.client, &state, runtime.org, &device, &configured)
-                        .await?;
+                    sync::ensure_source(&runtime.client, &state, &device, &configured).await?;
                 if !config.sources.iter().any(|s| {
                     s.context == configured.context
                         && s.root == configured.root

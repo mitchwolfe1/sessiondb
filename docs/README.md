@@ -55,4 +55,4 @@ The [product specification](product.md) describes scope. Feature pages describe 
 
 ## Contract examples
 
-The [examples directory](examples/README.md) contains illustrative configuration and API documents. They are documentation fixtures, not executable deployment files. Use the same synthetic organization, projects, and IDs throughout the examples so the complete product flow can be reviewed.
+The [examples directory](examples/README.md) contains illustrative configuration and API documents. They are documentation fixtures, not executable deployment files. Use the same synthetic projects and resource IDs throughout the examples so the complete product flow can be reviewed.

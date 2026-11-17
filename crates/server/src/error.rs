@@ -39,14 +39,7 @@ impl ApiError {
         Self::new(
             StatusCode::UNAUTHORIZED,
             "authentication_required",
-            "Sign in with a valid SessionDB API access token.",
-        )
-    }
-    pub fn forbidden() -> Self {
-        Self::new(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "This action is not permitted.",
+            "Supply the instance API key as a Bearer credential.",
         )
     }
     pub fn conflict(code: &'static str, detail: impl Into<String>) -> Self {

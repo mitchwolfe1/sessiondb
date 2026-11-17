@@ -19,7 +19,7 @@ Use Conventional Commits:
 ```text
 docs: describe session queries
 feat(sync): collect updates to existing sessions
-fix(api): apply session access to exports
+fix(api): require the instance key for exports
 refactor(adapters): share content block conversion
 test(sync): cover reconnect after server outage
 ```
@@ -39,7 +39,7 @@ cargo test --workspace
 cargo doc --workspace --no-deps
 ```
 
-Add integration tests for meaningful behavior: sync and recovery, provider normalization, organization isolation, session sharing, optional project labels, and search coverage as those features ship. The Docker integration suite uses disposable PostgreSQL and S3-compatible services with synthetic transcripts. Keep embedding tests deterministic and avoid paid model calls.
+Add integration tests for meaningful behavior: sync and recovery, provider normalization, instance-key rejection and rotation, equal access for all correct-key clients, optional project labels, and search coverage as those features ship. The Docker integration suite uses disposable PostgreSQL and S3-compatible services with synthetic transcripts. Keep embedding tests deterministic and avoid paid model calls.
 
 Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) for the public client crate. Keep network DTOs, internal database models, and native harness payloads distinct. Avoid publishing internal server types through the SDK.
 

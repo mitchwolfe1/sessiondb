@@ -2,7 +2,7 @@
   "name": "Session semantic search",
   "provider": "openai_compatible",
   "base_url": "https://embeddings.example.com/v1",
-  "model": "organization-embedding-model",
+  "model": "instance-embedding-model",
   "model_revision": "example-revision",
   "dimensions": 4096,
   "credential_ref": "env:SESSIONDB_EMBEDDING_API_KEY",

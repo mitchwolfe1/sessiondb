@@ -5,7 +5,7 @@ use sessiondb_client::{Client, Error};
 use sessiondb_types::*;
 use sha2::{Digest, Sha256};
 use std::{fs, io::Cursor, path::PathBuf, time::Duration};
-use support::{Issuer, Server, Services, cli, docker};
+use support::{Server, Services, cli, docker};
 use uuid::Uuid;
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -27,17 +27,11 @@ fn descriptor(path: &str, bytes: &[u8], version: Option<String>) -> FileDescript
         project_ids: vec![],
     }
 }
-fn client(server: &Server, issuer: &Issuer, user: &str) -> Client {
-    Client::new(
-        &server.url,
-        Some(issuer.token(user)),
-        Duration::from_secs(5),
-    )
-    .unwrap()
+fn client(server: &Server) -> Client {
+    Client::new(&server.url, server.api_key.clone(), Duration::from_secs(5)).unwrap()
 }
 async fn ingest(
     client: &Client,
-    org: Uuid,
     source: Uuid,
     path: &str,
     bytes: Vec<u8>,
@@ -48,7 +42,7 @@ async fn ingest(
         files: vec![descriptor(path, &bytes, version)],
     };
     let import = client
-        .create_import(org, &manifest, &Uuid::new_v4().to_string())
+        .create_import(&manifest, &Uuid::new_v4().to_string())
         .await
         .unwrap();
     client
@@ -56,13 +50,10 @@ async fn ingest(
         .await
         .unwrap();
     client
-        .complete_import(org, import.id, &Uuid::new_v4().to_string())
+        .complete_import(import.id, &Uuid::new_v4().to_string())
         .await
         .unwrap();
-    client
-        .wait_for_processing(org, import.id, WAIT)
-        .await
-        .unwrap()
+    client.wait_for_processing(import.id, WAIT).await.unwrap()
 }
 fn status(error: Error, expected: u16) {
     match error {
@@ -70,23 +61,13 @@ fn status(error: Error, expected: u16) {
         other => panic!("expected HTTP {expected}, got {other}"),
     }
 }
-async fn source(
-    client: &Client,
-    org: Uuid,
-    harness: Harness,
-    visibility: Visibility,
-    label: &str,
-) -> Source {
+async fn source(client: &Client, harness: Harness, label: &str) -> Source {
     client
-        .create_source(
-            org,
-            &SourceCreate {
-                harness,
-                device_label: label.into(),
-                root: format!("/synthetic/{label}"),
-                default_visibility: visibility,
-            },
-        )
+        .create_source(&SourceCreate {
+            harness,
+            device_label: label.into(),
+            root: format!("/synthetic/{label}"),
+        })
         .await
         .unwrap()
 }
@@ -96,189 +77,95 @@ async fn source(
 async fn authenticated_sync_storage_and_recovery() {
     let root = tempfile::tempdir().unwrap();
     let services = Services::start().await;
-    let issuer = Issuer::start().await;
-    let mut server = Server::start(root.path(), &services, &issuer).await;
-    let owner = client(&server, &issuer, "owner");
-    let account = owner.register_login().await.unwrap();
-    assert_eq!(account.memberships.len(), 1);
-    let org = account.memberships[0].organization_id;
+    let mut server = Server::start(root.path(), &services).await;
+    let owner = client(&server);
+    let peer = client(&server);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(4)
         .connect(&services.database_url("postgres"))
         .await
         .unwrap();
 
-    // Authentication follows the API-audience profile, including required claims.
-    for overrides in [
-        json!({"aud":"sessiondb-cli"}),
-        json!({"iss":"https://wrong.example.com"}),
-        json!({"exp":chrono::Utc::now().timestamp()-60}),
-        json!({"sub":null}),
-        json!({"aud":null}),
-        json!({"exp":null}),
-    ] {
-        let invalid = Client::new(&server.url, Some(issuer.claims(overrides)), WAIT).unwrap();
-        status(invalid.me().await.unwrap_err(), 401);
+    // The same instance key works for every client; there is no login or identity.
+    for key in [None, Some("wrong-key"), Some("")] {
+        let mut request = reqwest::Client::new().get(format!("{}/v1/info", server.url));
+        if let Some(key) = key {
+            request = request.bearer_auth(key);
+        }
+        let response = request.send().await.unwrap();
+        assert_eq!(response.status(), 401);
+        assert_eq!(response.headers()["www-authenticate"], "Bearer");
     }
+    let invalid = Client::new(&server.url, "wrong-key".into(), WAIT).unwrap();
     status(
-        Client::new(&server.url, None, WAIT)
-            .unwrap()
-            .me()
+        invalid
+            .sessions(&SessionFilter::default())
             .await
             .unwrap_err(),
         401,
     );
-    let mut altered = issuer.token("owner");
-    let index = altered.len() - 20;
-    altered.replace_range(
-        index..index + 1,
-        if &altered[index..index + 1] == "A" {
-            "B"
-        } else {
-            "A"
-        },
-    );
-    status(
-        Client::new(&server.url, Some(altered), WAIT)
-            .unwrap()
-            .me()
-            .await
-            .unwrap_err(),
-        401,
-    );
-
-    // Exercise the actual SDK code/PKCE callback, nonce validation, and refresh.
-    let auth = owner.auth_config().await.unwrap();
-    let flow = sessiondb_client::auth::LoginFlow::start(&auth)
-        .await
-        .unwrap();
-    let authorization = flow.authorization_url.clone();
-    let pending = tokio::spawn(flow.finish());
-    reqwest::Client::new()
-        .get(authorization)
-        .send()
-        .await
-        .unwrap()
-        .error_for_status()
-        .unwrap();
-    let tokens = pending.await.unwrap().unwrap();
-    assert!(tokens.refresh_token.is_some());
-    let refreshed = sessiondb_client::auth::refresh(&auth, &tokens)
-        .await
-        .unwrap();
-    assert_ne!(refreshed.refresh_token, tokens.refresh_token);
-    Client::new(&server.url, Some(refreshed.access_token.clone()), WAIT)
-        .unwrap()
-        .me()
-        .await
-        .unwrap();
-
-    issuer
-        .state
-        .bad_refresh_subject
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    assert!(matches!(
-        sessiondb_client::auth::refresh(&auth, &refreshed).await,
-        Err(Error::Authentication(_))
-    ));
-    issuer
-        .state
-        .bad_refresh_subject
-        .store(false, std::sync::atomic::Ordering::Relaxed);
-
-    // Invitations require a verified address and do not grant organization ownership.
-    owner
-        .invite(
-            org,
-            &InvitationCreate {
-                email: "bob@example.com".into(),
-                role: "member".into(),
-            },
-        )
-        .await
-        .unwrap();
-    let unverified = Client::new(
-        &server.url,
-        Some(issuer.claims(json!({"sub":"bob","email":"bob@example.com","email_verified":false}))),
-        WAIT,
-    )
-    .unwrap();
+    for key in [None, Some("")] {
+        let mut command = server.command(&services, "postgres");
+        match key {
+            Some(key) => {
+                command.env("SESSIONDB_API_KEY", key);
+            }
+            None => {
+                command.env_remove("SESSIONDB_API_KEY");
+            }
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+    }
+    let output = cli(&server, root.path(), &["auth", "status", "--json"]).await;
     assert!(
-        unverified
-            .register_login()
-            .await
-            .unwrap()
-            .memberships
-            .is_empty()
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let bob = client(&server, &issuer, "bob");
-    let bob_account = bob.register_login().await.unwrap();
-    assert_eq!(bob_account.memberships[0].role, OrganizationRole::Member);
-    status(
-        bob.invite(
-            org,
-            &InvitationCreate {
-                email: "other@example.com".into(),
-                role: "member".into(),
-            },
-        )
-        .await
-        .unwrap_err(),
-        403,
-    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&server.api_key));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(&server.api_key));
 
     // Originals are accepted without project associations or a repository cwd.
-    let codex = source(&owner, org, Harness::Codex, Visibility::Private, "codex").await;
+    let codex = source(&owner, Harness::Codex, "codex").await;
     let bytes = fixture("codex/home-tools.jsonl");
     let manifest = ImportManifest {
         source_id: codex.id,
         files: vec![descriptor("home.jsonl", &bytes, None)],
     };
     let key = Uuid::new_v4().to_string();
-    let first = owner.create_import(org, &manifest, &key).await.unwrap();
-    let repeated = owner.create_import(org, &manifest, &key).await.unwrap();
+    let first = owner.create_import(&manifest, &key).await.unwrap();
+    let repeated = owner.create_import(&manifest, &key).await.unwrap();
     assert_eq!(first.id, repeated.id);
     let mut conflict = manifest.clone();
     conflict.files[0].sha256 = "b".repeat(64);
-    status(
-        owner.create_import(org, &conflict, &key).await.unwrap_err(),
-        409,
-    );
+    status(owner.create_import(&conflict, &key).await.unwrap_err(), 409);
     owner
         .upload(&first.uploads[0], Cursor::new(bytes.clone()))
         .await
         .unwrap();
     let complete_key = Uuid::new_v4().to_string();
     owner
-        .complete_import(org, first.id, &complete_key)
+        .complete_import(first.id, &complete_key)
         .await
         .unwrap();
-    let accepted = owner
-        .wait_for_acceptance(org, first.id, WAIT)
-        .await
-        .unwrap();
+    let accepted = owner.wait_for_acceptance(first.id, WAIT).await.unwrap();
     assert!(accepted.accepted_at.is_some());
-    let ready = owner
-        .wait_for_processing(org, first.id, WAIT)
-        .await
-        .unwrap();
+    let ready = owner.wait_for_processing(first.id, WAIT).await.unwrap();
     assert_eq!(ready.status, ImportStatus::Ready);
     assert_eq!(
         owner
-            .complete_import(org, first.id, &complete_key)
+            .complete_import(first.id, &complete_key)
             .await
             .unwrap()
             .id,
         first.id
     );
     let session = owner
-        .sessions(
-            org,
-            &SessionFilter {
-                harness: Some(Harness::Codex),
-                ..Default::default()
-            },
-        )
+        .sessions(&SessionFilter {
+            harness: Some(Harness::Codex),
+            ..Default::default()
+        })
         .await
         .unwrap()
         .data
@@ -286,18 +173,22 @@ async fn authenticated_sync_storage_and_recovery() {
     assert!(session.project_ids.is_empty());
     assert_eq!(session.recorded_cwd.as_deref(), Some("/home/ada"));
     assert_eq!(session.message_count, 7);
-    status(bob.session(org, session.id).await.unwrap_err(), 404);
-    status(
-        bob.messages(org, session.id, &MessageFilter::default())
+    assert_eq!(peer.session(session.id).await.unwrap().id, session.id);
+    assert_eq!(
+        peer.messages(session.id, &MessageFilter::default())
             .await
-            .unwrap_err(),
-        404,
+            .unwrap()
+            .data
+            .len(),
+        7
     );
-    status(bob.import(org, first.id).await.unwrap_err(), 404);
-    status(bob.job(org, ready.job_id.unwrap()).await.unwrap_err(), 404);
+    assert_eq!(peer.import(first.id).await.unwrap().id, first.id);
+    assert_eq!(
+        peer.job(ready.job_id.unwrap()).await.unwrap().status,
+        JobStatus::Succeeded
+    );
     let message_page = owner
         .messages(
-            org,
             session.id,
             &MessageFilter {
                 limit: Some(2),
@@ -308,34 +199,35 @@ async fn authenticated_sync_storage_and_recovery() {
         .unwrap();
     assert_eq!(message_page.data.len(), 2);
     assert!(message_page.next_cursor.is_some());
-    status(
-        bob.message(org, message_page.data[0].id).await.unwrap_err(),
-        404,
+    assert_eq!(
+        peer.message(message_page.data[0].id).await.unwrap().id,
+        message_page.data[0].id
     );
-    status(
-        bob.content(org, message_page.data[0].id, None)
+    assert_eq!(
+        peer.content(message_page.data[0].id, None)
             .await
-            .unwrap_err(),
-        404,
+            .unwrap()
+            .message_id,
+        message_page.data[0].id
     );
     let file = owner
-        .source_files(org, codex.id, &ListOptions::default())
+        .source_files(codex.id, &ListOptions::default())
         .await
         .unwrap()
         .data
         .remove(0);
     let mut original = Vec::new();
     owner
-        .original_to(org, codex.id, file.id, None, &mut original)
+        .original_to(codex.id, file.id, None, &mut original)
         .await
         .unwrap();
     assert_eq!(original, bytes);
     let range = reqwest::Client::new()
         .get(format!(
-            "{}/v1/organizations/{org}/sources/{}/files/{}/content",
+            "{}/v1/sources/{}/files/{}/content",
             server.url, codex.id, file.id
         ))
-        .bearer_auth(issuer.token("owner"))
+        .bearer_auth(&server.api_key)
         .header("range", "bytes=0-9")
         .send()
         .await
@@ -343,7 +235,7 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(range.status(), 206);
     assert_eq!(range.bytes().await.unwrap().as_ref(), &bytes[..10]);
     let mut native = Vec::new();
-    owner.export_to(org, session.id, &mut native).await.unwrap();
+    owner.export_to(session.id, &mut native).await.unwrap();
     let mut zip = zip_bytes(&native);
     let manifest_value: Value =
         serde_json::from_reader(zip.by_name("manifest.json").unwrap()).unwrap();
@@ -368,12 +260,12 @@ async fn authenticated_sync_storage_and_recovery() {
         .unwrap();
     let mut original = Vec::new();
     owner
-        .original_to(org, codex.id, file.id, None, &mut original)
+        .original_to(codex.id, file.id, None, &mut original)
         .await
         .unwrap();
     assert_eq!(original, bytes);
 
-    // Append advances the same generation and preserves manual metadata/default sharing.
+    // Append advances the same generation and preserves manual metadata.
     sqlx::query(
         "UPDATE sessions SET document=jsonb_set(document,'{tags}','[\"manual\"]') WHERE id=$1",
     )
@@ -381,16 +273,10 @@ async fn authenticated_sync_storage_and_recovery() {
     .execute(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE sources SET default_visibility='organization' WHERE id=$1")
-        .bind(codex.id)
-        .execute(&pool)
-        .await
-        .unwrap();
     let mut appended = bytes.clone();
     appended.extend_from_slice(b"{\"timestamp\":\"2026-11-16T13:00:00Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"id\":\"append\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Appended answer.\"}]}}\n");
     let append = ingest(
         &owner,
-        org,
         codex.id,
         "home.jsonl",
         appended.clone(),
@@ -399,21 +285,19 @@ async fn authenticated_sync_storage_and_recovery() {
     .await;
     assert_eq!(append.status, ImportStatus::Ready);
     let after = owner
-        .source_files(org, codex.id, &ListOptions::default())
+        .source_files(codex.id, &ListOptions::default())
         .await
         .unwrap()
         .data
         .remove(0);
     assert_eq!(after.generation_id, file.generation_id);
-    let session_after = owner.session(org, session.id).await.unwrap();
+    let session_after = owner.session(session.id).await.unwrap();
     assert_eq!(session_after.message_count, 8);
     assert_eq!(session_after.tags, vec!["manual"]);
-    assert_eq!(session_after.visibility, Visibility::Private);
-    status(bob.session(org, session.id).await.unwrap_err(), 404);
+    assert_eq!(peer.session(session.id).await.unwrap().message_count, 8);
     status(
         owner
             .messages(
-                org,
                 session.id,
                 &MessageFilter {
                     cursor: message_page.next_cursor,
@@ -426,7 +310,7 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     status(
         owner
-            .create_import(org, &manifest, &Uuid::new_v4().to_string())
+            .create_import(&manifest, &Uuid::new_v4().to_string())
             .await
             .unwrap_err(),
         409,
@@ -436,7 +320,6 @@ async fn authenticated_sync_storage_and_recovery() {
     let rewritten = fixture("codex/precision-unknown.jsonl");
     let rewrite = ingest(
         &owner,
-        org,
         codex.id,
         "home.jsonl",
         rewritten.clone(),
@@ -445,11 +328,7 @@ async fn authenticated_sync_storage_and_recovery() {
     .await;
     assert_eq!(rewrite.status, ImportStatus::Ready);
     let precision = owner
-        .messages(
-            org,
-            rewrite.results[0].session_ids[0],
-            &MessageFilter::default(),
-        )
+        .messages(rewrite.results[0].session_ids[0], &MessageFilter::default())
         .await
         .unwrap();
     assert_eq!(
@@ -458,7 +337,7 @@ async fn authenticated_sync_storage_and_recovery() {
         "18446744073709551617"
     );
     let rewritten_file = owner
-        .source_files(org, codex.id, &ListOptions::default())
+        .source_files(codex.id, &ListOptions::default())
         .await
         .unwrap()
         .data
@@ -466,7 +345,7 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_ne!(rewritten_file.generation_id, file.generation_id);
     let mut old = Vec::new();
     owner
-        .original_to(org, codex.id, file.id, Some(file.generation_id), &mut old)
+        .original_to(codex.id, file.id, Some(file.generation_id), &mut old)
         .await
         .unwrap();
     assert_eq!(old, appended);
@@ -481,7 +360,7 @@ async fn authenticated_sync_storage_and_recovery() {
         ],
     };
     let bad = owner
-        .create_import(org, &batch, &Uuid::new_v4().to_string())
+        .create_import(&batch, &Uuid::new_v4().to_string())
         .await
         .unwrap();
     owner
@@ -506,15 +385,15 @@ async fn authenticated_sync_storage_and_recovery() {
         .await
         .unwrap();
     owner
-        .complete_import(org, bad.id, &Uuid::new_v4().to_string())
+        .complete_import(bad.id, &Uuid::new_v4().to_string())
         .await
         .unwrap();
-    let failed = owner.wait_for_processing(org, bad.id, WAIT).await.unwrap();
+    let failed = owner.wait_for_processing(bad.id, WAIT).await.unwrap();
     assert_eq!(failed.status, ImportStatus::Failed);
     assert!(failed.accepted_at.is_none());
     assert!(
         !owner
-            .source_files(org, codex.id, &ListOptions::default())
+            .source_files(codex.id, &ListOptions::default())
             .await
             .unwrap()
             .data
@@ -523,17 +402,9 @@ async fn authenticated_sync_storage_and_recovery() {
     );
 
     // All harnesses work through the same storage/read boundary.
-    let claude = source(
-        &owner,
-        org,
-        Harness::Claude,
-        Visibility::Organization,
-        "claude",
-    )
-    .await;
+    let claude = source(&owner, Harness::Claude, "claude").await;
     let imported = ingest(
         &owner,
-        org,
         claude.id,
         "session.jsonl",
         fixture("claude/fragments-tools.jsonl"),
@@ -542,23 +413,19 @@ async fn authenticated_sync_storage_and_recovery() {
     .await;
     assert_eq!(imported.status, ImportStatus::Ready);
     let shared = owner
-        .sessions(
-            org,
-            &SessionFilter {
-                harness: Some(Harness::Claude),
-                ..Default::default()
-            },
-        )
+        .sessions(&SessionFilter {
+            harness: Some(Harness::Claude),
+            ..Default::default()
+        })
         .await
         .unwrap()
         .data
         .remove(0);
     assert_eq!(shared.message_count, 4);
-    bob.session(org, shared.id).await.unwrap();
-    let pi = source(&owner, org, Harness::Pi, Visibility::Private, "pi").await;
+    peer.session(shared.id).await.unwrap();
+    let pi = source(&owner, Harness::Pi, "pi").await;
     let imported = ingest(
         &owner,
-        org,
         pi.id,
         "branches.jsonl",
         fixture("pi/branches-context.jsonl"),
@@ -567,19 +434,16 @@ async fn authenticated_sync_storage_and_recovery() {
     .await;
     assert_eq!(imported.status, ImportStatus::Ready);
     let branch = owner
-        .sessions(
-            org,
-            &SessionFilter {
-                harness: Some(Harness::Pi),
-                ..Default::default()
-            },
-        )
+        .sessions(&SessionFilter {
+            harness: Some(Harness::Pi),
+            ..Default::default()
+        })
         .await
         .unwrap()
         .data
         .remove(0);
     let messages = owner
-        .messages(org, branch.id, &MessageFilter::default())
+        .messages(branch.id, &MessageFilter::default())
         .await
         .unwrap()
         .data;
@@ -589,7 +453,6 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     let ancestry = owner
         .messages(
-            org,
             branch.id,
             &MessageFilter {
                 leaf_id: Some(messages[3].id),
@@ -601,7 +464,6 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(ancestry.data.len(), 3);
     let image = ingest(
         &owner,
-        org,
         pi.id,
         "image.jsonl",
         fixture("pi/artifact.jsonl"),
@@ -610,11 +472,11 @@ async fn authenticated_sync_storage_and_recovery() {
     .await;
     assert_eq!(image.status, ImportStatus::Ready);
     let image_session = owner
-        .session(org, image.results[0].session_ids[0])
+        .session(image.results[0].session_ids[0])
         .await
         .unwrap();
     let image_messages = owner
-        .messages(org, image_session.id, &MessageFilter::default())
+        .messages(image_session.id, &MessageFilter::default())
         .await
         .unwrap()
         .data;
@@ -624,25 +486,39 @@ async fn authenticated_sync_storage_and_recovery() {
         .unwrap()
         .parse()
         .unwrap();
-    let artifact = owner.artifact(org, artifact_id).await.unwrap();
+    let artifact = owner.artifact(artifact_id).await.unwrap();
     assert_eq!(artifact.byte_length, 68);
     let mut png = Vec::new();
-    owner.artifact_to(org, artifact_id, &mut png).await.unwrap();
+    owner.artifact_to(artifact_id, &mut png).await.unwrap();
     assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-    status(bob.artifact(org, artifact_id).await.unwrap_err(), 404);
+    assert_eq!(peer.artifact(artifact_id).await.unwrap().byte_length, 68);
 
-    // Parent history resolves across native stores while retaining its own access.
-    let parent_source = source(
-        &owner,
-        org,
-        Harness::Codex,
-        Visibility::Private,
-        "archived-parent",
-    )
-    .await;
+    // Authentication protects every data surface, not only session listings.
+    for path in [
+        format!("sources/{}", codex.id),
+        format!("sources/{}/files/{}/content", codex.id, file.id),
+        format!("imports/{}", first.id),
+        format!("jobs/{}", ready.job_id.unwrap()),
+        format!("sessions/{}", shared.id),
+        format!("sessions/{}/messages", shared.id),
+        format!("sessions/{}/export", shared.id),
+        format!("messages/{}", message_page.data[0].id),
+        format!("messages/{}/content", message_page.data[0].id),
+        format!("artifacts/{artifact_id}"),
+        format!("artifacts/{artifact_id}/content"),
+    ] {
+        let response = reqwest::Client::new()
+            .get(format!("{}/v1/{path}", server.url))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 401, "{path}");
+    }
+
+    // Parent history resolves across native stores for every key-holding client.
+    let parent_source = source(&owner, Harness::Codex, "archived-parent").await;
     let parent = ingest(
         &owner,
-        org,
         parent_source.id,
         "parent.jsonl",
         fixture("codex/fork/parent.jsonl"),
@@ -651,17 +527,9 @@ async fn authenticated_sync_storage_and_recovery() {
     .await
     .results[0]
         .session_ids[0];
-    let child_source = source(
-        &owner,
-        org,
-        Harness::Codex,
-        Visibility::Organization,
-        "active-child",
-    )
-    .await;
+    let child_source = source(&owner, Harness::Codex, "active-child").await;
     let child = ingest(
         &owner,
-        org,
         child_source.id,
         "child.jsonl",
         fixture("codex/fork/child.jsonl"),
@@ -670,7 +538,7 @@ async fn authenticated_sync_storage_and_recovery() {
     .await
     .results[0]
         .session_ids[0];
-    let owner_child = owner.session(org, child).await.unwrap();
+    let owner_child = owner.session(child).await.unwrap();
     assert_eq!(owner_child.message_count, 2);
     assert!(
         owner_child
@@ -678,43 +546,40 @@ async fn authenticated_sync_storage_and_recovery() {
             .iter()
             .all(|r| r.resolved && r.session_id == Some(parent))
     );
-    let reader_child = bob.session(org, child).await.unwrap();
+    let reader_child = peer.session(child).await.unwrap();
     assert!(
         reader_child
             .relations
             .iter()
-            .all(|r| !r.resolved && r.session_id.is_none())
+            .all(|r| r.resolved && r.session_id == Some(parent))
     );
     let mut owner_bundle = Vec::new();
-    owner
-        .export_to(org, child, &mut owner_bundle)
-        .await
-        .unwrap();
+    owner.export_to(child, &mut owner_bundle).await.unwrap();
     let mut archive = zip_bytes(&owner_bundle);
     let manifest: Value =
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap();
     assert_eq!(manifest["files"].as_array().unwrap().len(), 2);
     let mut reader_bundle = Vec::new();
-    bob.export_to(org, child, &mut reader_bundle).await.unwrap();
+    peer.export_to(child, &mut reader_bundle).await.unwrap();
     let mut archive = zip_bytes(&reader_bundle);
     let manifest: Value =
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap();
-    assert_eq!(manifest["files"].as_array().unwrap().len(), 1);
-    status(bob.session(org, parent).await.unwrap_err(), 404);
+    assert_eq!(manifest["files"].as_array().unwrap().len(), 2);
+    assert_eq!(peer.session(parent).await.unwrap().id, parent);
 
     // Large structured content expands intact with revision protection.
     let large=format!("{}\n{}\n",json!({"type":"session_meta","payload":{"id":"large-session","cwd":"/home/ada"}}),json!({"type":"response_item","payload":{"type":"function_call","id":"large-call","call_id":"large","name":"fixture","arguments":json!({"text":"ü".repeat(40000)}).to_string()}})).into_bytes();
-    let large = ingest(&owner, org, codex.id, "large.jsonl", large, None).await;
+    let large = ingest(&owner, codex.id, "large.jsonl", large, None).await;
     let large_session = large.results[0].session_ids[0];
     let m = owner
-        .messages(org, large_session, &MessageFilter::default())
+        .messages(large_session, &MessageFilter::default())
         .await
         .unwrap()
         .data
         .remove(0);
     assert!(m.truncated);
     assert!(serde_json::to_vec(&m.content).unwrap().len() <= PREVIEW_BYTES + 2);
-    let expanded = owner.content(org, m.id, Some(&m.revision)).await.unwrap();
+    let expanded = owner.content(m.id, Some(&m.revision)).await.unwrap();
     assert_eq!(
         serde_json::to_value(&expanded.content).unwrap()[0]["input"]["value"]["text"]
             .as_str()
@@ -722,10 +587,7 @@ async fn authenticated_sync_storage_and_recovery() {
             .len(),
         80000
     );
-    status(
-        owner.content(org, m.id, Some("stale")).await.unwrap_err(),
-        412,
-    );
+    status(owner.content(m.id, Some("stale")).await.unwrap_err(), 412);
 
     // The real CLI captures a complete prefix, resumes after an S3 outage, and exports.
     let local = root.path().join("native");
@@ -733,13 +595,7 @@ async fn authenticated_sync_storage_and_recovery() {
     let mut captured = fixture("codex/home-tools.jsonl");
     captured.extend_from_slice(b"{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"id\":\"watch-tail\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"");
     fs::write(local.join("cli.jsonl"), &captured).unwrap();
-    let output = cli(
-        &server,
-        &issuer,
-        root.path(),
-        &["context", "create", "test"],
-    )
-    .await;
+    let output = cli(&server, root.path(), &["context", "create", "test"]).await;
     assert!(
         output.status.success(),
         "{}",
@@ -747,7 +603,6 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     let output = cli(
         &server,
-        &issuer,
         root.path(),
         &[
             "sources",
@@ -766,25 +621,19 @@ async fn authenticated_sync_storage_and_recovery() {
         String::from_utf8_lossy(&output.stderr)
     );
     docker(&["pause", &services.s3]);
-    let output = cli(
-        &server,
-        &issuer,
-        root.path(),
-        &["--timeout", "1", "sync", "--json"],
-    )
-    .await;
+    let output = cli(&server, root.path(), &["--timeout", "1", "sync", "--json"]).await;
     assert!(!output.status.success());
     docker(&["unpause", &services.s3]);
-    let output = cli(&server, &issuer, root.path(), &["sync", "status", "--json"]).await;
+    let output = cli(&server, root.path(), &["sync", "status", "--json"]).await;
     let pending: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(pending["pending_imports"], 1);
-    let output = cli(&server, &issuer, root.path(), &["sync", "--json"]).await;
+    let output = cli(&server, root.path(), &["sync", "--json"]).await;
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let status_output = cli(&server, &issuer, root.path(), &["sync", "status", "--json"]).await;
+    let status_output = cli(&server, root.path(), &["sync", "status", "--json"]).await;
     let synced: Value = serde_json::from_slice(&status_output.stdout).unwrap();
     assert_eq!(synced["pending_imports"], 0);
     assert!(synced["accepted_files"].as_i64().unwrap() > 0);
@@ -795,14 +644,14 @@ async fn authenticated_sync_storage_and_recovery() {
         .parse()
         .unwrap();
     let cli_file = owner
-        .source_files(org, source_id, &ListOptions::default())
+        .source_files(source_id, &ListOptions::default())
         .await
         .unwrap()
         .data
         .remove(0);
     let mut capture = Vec::new();
     owner
-        .original_to(org, source_id, cli_file.id, None, &mut capture)
+        .original_to(source_id, cli_file.id, None, &mut capture)
         .await
         .unwrap();
     assert_eq!(capture, sessiondb_adapters::complete_prefix(&captured));
@@ -816,7 +665,6 @@ async fn authenticated_sync_storage_and_recovery() {
     let watch_log = fs::File::create(root.path().join("watch.log")).unwrap();
     let mut watch = support::cli_command(
         &server,
-        &issuer,
         root.path(),
         &["--quiet", "sync", "--watch", "--json"],
     )
@@ -825,20 +673,20 @@ async fn authenticated_sync_storage_and_recovery() {
     .spawn()
     .unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let competing = cli(&server, &issuer, root.path(), &["sync"]).await;
+    let competing = cli(&server, root.path(), &["sync"]).await;
     assert!(!competing.status.success());
     captured.extend_from_slice(b"Watched answer.\"}]}}\n");
     fs::write(local.join("cli.jsonl"), &captured).unwrap();
     let deadline = tokio::time::Instant::now() + WAIT;
     loop {
         let current = owner
-            .source_files(org, source_id, &ListOptions::default())
+            .source_files(source_id, &ListOptions::default())
             .await
             .unwrap()
             .data
             .remove(0);
         if current.byte_length == captured.len() as u64 {
-            let local = cli(&server, &issuer, root.path(), &["sync", "status", "--json"]).await;
+            let local = cli(&server, root.path(), &["sync", "status", "--json"]).await;
             if serde_json::from_slice::<Value>(&local.stdout).unwrap()["pending_imports"] == 0 {
                 break;
             }
@@ -859,7 +707,6 @@ async fn authenticated_sync_storage_and_recovery() {
     let missing = Uuid::new_v4().to_string();
     let failed_export = cli(
         &server,
-        &issuer,
         root.path(),
         &[
             "sessions",
@@ -881,7 +728,7 @@ async fn authenticated_sync_storage_and_recovery() {
         files: vec![descriptor("queued.jsonl", &queued_bytes, None)],
     };
     let queued = owner
-        .create_import(org, &queued_manifest, &Uuid::new_v4().to_string())
+        .create_import(&queued_manifest, &Uuid::new_v4().to_string())
         .await
         .unwrap();
     owner
@@ -892,7 +739,7 @@ async fn authenticated_sync_storage_and_recovery() {
     let configuration: sessiondb_server::config::Config =
         toml::from_str(&fs::read_to_string(&server.config).unwrap()).unwrap();
     let api_state = std::sync::Arc::new(sessiondb_server::AppState {
-        auth: sessiondb_server::auth::Authenticator::new(configuration.auth.clone()).unwrap(),
+        auth: sessiondb_server::auth::Authenticator::from_key(&server.api_key).unwrap(),
         config: configuration,
         pool: pool.clone(),
         objects: std::sync::Arc::new(sessiondb_server::objects::S3Store::from_client(
@@ -914,7 +761,7 @@ async fn authenticated_sync_storage_and_recovery() {
             .unwrap();
     });
     let scheduled = owner
-        .complete_import(org, queued.id, &Uuid::new_v4().to_string())
+        .complete_import(queued.id, &Uuid::new_v4().to_string())
         .await
         .unwrap();
     assert_eq!(scheduled.status, ImportStatus::Verifying);
@@ -923,10 +770,7 @@ async fn authenticated_sync_storage_and_recovery() {
     stop.send(()).unwrap();
     api_task.await.unwrap();
     server.restart(&services, "postgres").await;
-    let recovered = owner
-        .wait_for_processing(org, queued.id, WAIT)
-        .await
-        .unwrap();
+    let recovered = owner.wait_for_processing(queued.id, WAIT).await.unwrap();
     assert_eq!(recovered.status, ImportStatus::Ready);
     let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM jobs WHERE id=$1")
         .bind(scheduled.job_id.unwrap())
@@ -938,11 +782,11 @@ async fn authenticated_sync_storage_and_recovery() {
     // Restart both the API process and object service, then restore the catalog.
     server.stop();
     docker(&["restart", &services.s3]);
-    server.write_config(&services, &issuer);
+    server.write_config(&services);
     server.restart(&services, "postgres").await;
     assert_eq!(
         owner
-            .complete_import(org, first.id, &complete_key)
+            .complete_import(first.id, &complete_key)
             .await
             .unwrap()
             .id,
@@ -950,7 +794,7 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     let mut persisted = Vec::new();
     owner
-        .original_to(org, codex.id, rewritten_file.id, None, &mut persisted)
+        .original_to(codex.id, rewritten_file.id, None, &mut persisted)
         .await
         .unwrap();
     assert_eq!(persisted, rewritten);
@@ -963,13 +807,10 @@ async fn authenticated_sync_storage_and_recovery() {
     server.restart(&services, "restored").await;
     assert_eq!(
         owner
-            .sessions(
-                org,
-                &SessionFilter {
-                    limit: Some(200),
-                    ..Default::default()
-                }
-            )
+            .sessions(&SessionFilter {
+                limit: Some(200),
+                ..Default::default()
+            })
             .await
             .unwrap()
             .data
@@ -978,11 +819,11 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     let mut restored = Vec::new();
     owner
-        .original_to(org, codex.id, rewritten_file.id, None, &mut restored)
+        .original_to(codex.id, rewritten_file.id, None, &mut restored)
         .await
         .unwrap();
     assert_eq!(restored, rewritten);
-    let output = cli(&server, &issuer, root.path(), &["sync", "--json"]).await;
+    let output = cli(&server, root.path(), &["sync", "--json"]).await;
     assert!(
         output.status.success(),
         "{}",
@@ -992,10 +833,10 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(value["sources"][0]["accepted_files"], 0);
 
     // Restoring behind another public address must not expose stale content URLs.
-    let preview_url = format!("{}/v1/organizations/{org}/messages/{}", server.url, m.id);
+    let preview_url = format!("{}/v1/messages/{}", server.url, m.id);
     let before = reqwest::Client::new()
         .get(&preview_url)
-        .bearer_auth(issuer.token("owner"))
+        .bearer_auth(&server.api_key)
         .send()
         .await
         .unwrap()
@@ -1010,7 +851,7 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     fs::write(&server.config, configuration).unwrap();
     server.restart(&services, "restored").await;
-    let relocated = owner.message(org, m.id).await.unwrap();
+    let relocated = owner.message(m.id).await.unwrap();
     assert!(
         relocated
             .content_url
@@ -1020,12 +861,12 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     assert_eq!(relocated.revision, m.revision);
     owner
-        .content(org, m.id, Some(&relocated.revision))
+        .content(m.id, Some(&relocated.revision))
         .await
         .unwrap();
     let after = reqwest::Client::new()
         .get(&preview_url)
-        .bearer_auth(issuer.token("owner"))
+        .bearer_auth(&server.api_key)
         .send()
         .await
         .unwrap()
@@ -1035,23 +876,217 @@ async fn authenticated_sync_storage_and_recovery() {
         .to_owned();
     assert_ne!(before, after);
 
-    // Membership revocation is enforced on subsequent calls, including raw originals.
-    let restored_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&services.database_url("restored"))
+    // Replacing the one instance key revokes every previously configured client.
+    server.api_key = format!("rotated-{}", Uuid::new_v4());
+    server.restart(&services, "restored").await;
+    status(owner.session(shared.id).await.unwrap_err(), 401);
+    status(peer.artifact(artifact_id).await.unwrap_err(), 401);
+    let replacement = client(&server);
+    assert_eq!(replacement.session(shared.id).await.unwrap().id, shared.id);
+    let mut still_archived = Vec::new();
+    replacement
+        .original_to(codex.id, rewritten_file.id, None, &mut still_archived)
         .await
         .unwrap();
-    sqlx::query("UPDATE memberships SET status='disabled' WHERE user_id=$1")
-        .bind(bob_account.user.id)
-        .execute(&restored_pool)
-        .await
-        .unwrap();
-    status(bob.session(org, shared.id).await.unwrap_err(), 404);
+    assert_eq!(still_archived, rewritten);
+    assert!(
+        !fs::read_to_string(&server.log)
+            .unwrap()
+            .contains(&server.api_key)
+    );
     server.stop();
     pool.close().await;
-    restored_pool.close().await;
 }
 
 fn zip_bytes(bytes: &[u8]) -> zip::ZipArchive<Cursor<&[u8]>> {
     zip::ZipArchive::new(Cursor::new(bytes)).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires Docker and cargo build --workspace; uses isolated synthetic services"]
+async fn legacy_catalog_preserves_originals_during_instance_key_cutover() {
+    let root = tempfile::tempdir().unwrap();
+    let services = Services::start().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&services.database_url("postgres"))
+        .await
+        .unwrap();
+    let migrations = tempfile::tempdir().unwrap();
+    fs::write(
+        migrations.path().join("0001_catalog.sql"),
+        include_str!("../../server/migrations/0001_catalog.sql"),
+    )
+    .unwrap();
+    sqlx::migrate::Migrator::new(migrations.path())
+        .await
+        .unwrap()
+        .run(&pool)
+        .await
+        .unwrap();
+
+    let user = Uuid::new_v4();
+    let organization = Uuid::new_v4();
+    let source = Uuid::new_v4();
+    let file = Uuid::new_v4();
+    let generation = Uuid::new_v4();
+    let session = Uuid::new_v4();
+    let message = Uuid::new_v4();
+    let pending = Uuid::new_v4();
+    let bytes = fixture("codex/home-tools.jsonl");
+    let hash = hex::encode(Sha256::digest(&bytes));
+    let object_key = format!("organizations/{organization}/originals/{generation}");
+    let pending_manifest = ImportManifest {
+        source_id: source,
+        files: vec![descriptor("pending.jsonl", &bytes, None)],
+    };
+    let pending_manifest = serde_json::to_value(pending_manifest).unwrap();
+    let request_hash = hex::encode(Sha256::digest(
+        serde_json::to_vec(&pending_manifest).unwrap(),
+    ));
+    let staging_key = format!("organizations/{organization}/imports/{pending}/staging/0");
+    services
+        .s3_client()
+        .put_object()
+        .bucket("sessiondb-test")
+        .key(&object_key)
+        .body(aws_sdk_s3::primitives::ByteStream::from(bytes.clone()))
+        .send()
+        .await
+        .unwrap();
+    services
+        .s3_client()
+        .put_object()
+        .bucket("sessiondb-test")
+        .key(&staging_key)
+        .body(aws_sdk_s3::primitives::ByteStream::from(bytes.clone()))
+        .send()
+        .await
+        .unwrap();
+    let document = json!({
+        "id": session, "organization_id": organization, "author_id": user,
+        "owner_id": user, "visibility": "private", "harness": "codex",
+        "native_session_id": "legacy-native", "title": "Preserved legacy session",
+        "tags": ["manual"], "project_ids": [], "recorded_cwd": "/home/ada",
+        "started_at": null, "updated_at": "2026-01-01T00:00:00Z", "message_count": 1,
+        "processing": {"parse":"ready", "keyword":"not_implemented", "embedding":"disabled"},
+        "relations": [], "warnings": []
+    });
+    let content = json!([{"type": "text", "text": "Preserved legacy answer."}]);
+    let message_document = json!({
+        "id": message, "session_id": session, "role": "assistant", "origin": "model",
+        "sequence": 0, "content": content, "revision": "legacy-revision", "truncated": false
+    });
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO users(id,issuer,subject,display_name) VALUES($1,'https://legacy.example.com','synthetic','Legacy user')")
+        .bind(user).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO organizations(id,slug,name) VALUES($1,'legacy','Legacy')")
+        .bind(organization)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO sources(id,organization_id,owner_id,harness,device_label,root) VALUES($1,$2,$3,'codex','legacy-device','/synthetic/legacy')")
+        .bind(source).bind(organization).bind(user).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO source_files(id,source_id,path,generation_id,version,byte_length,sha256,media_type) VALUES($1,$2,'legacy.jsonl',$3,'legacy-version',$4,$5,'application/x-ndjson')")
+        .bind(file).bind(source).bind(generation).bind(bytes.len() as i64).bind(&hash).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO file_generations(id,file_id,object_key,byte_length,sha256) VALUES($1,$2,$3,$4,$5)")
+        .bind(generation).bind(file).bind(&object_key).bind(bytes.len() as i64).bind(&hash).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO objects(object_key,state) VALUES($1,'accepted')")
+        .bind(&object_key)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO imports(id,organization_id,source_id,requester_id,manifest,request_hash,create_key) VALUES($1,$2,$3,$4,$5,$6,'legacy-create-key')")
+        .bind(pending).bind(organization).bind(source).bind(user).bind(&pending_manifest).bind(request_hash).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO objects(object_key,import_id,state) VALUES($1,$2,'staging')")
+        .bind(&staging_key)
+        .bind(pending)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO sessions(id,organization_id,source_id,owner_id,native_key,harness,native_session_id,visibility,revision,updated_at,document) VALUES($1,$2,$3,$4,'legacy-native','codex','legacy-native','private','legacy-revision','2026-01-01T00:00:00Z',$5)")
+        .bind(session).bind(organization).bind(source).bind(user).bind(&document).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO session_files(session_id,file_id,generation_id) VALUES($1,$2,$3)")
+        .bind(session)
+        .bind(file)
+        .bind(generation)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO messages(id,session_id,sequence,document,full_content) VALUES($1,$2,0,$3,$4)",
+    )
+    .bind(message)
+    .bind(session)
+    .bind(&message_document)
+    .bind(&content)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    let mut server = Server::start(root.path(), &services).await;
+    let api = client(&server);
+    api.complete_import(pending, "legacy-complete-key")
+        .await
+        .unwrap();
+    let resumed = api.wait_for_processing(pending, WAIT).await.unwrap();
+    assert_eq!(resumed.status, ImportStatus::Ready);
+    let files = api
+        .source_files(source, &ListOptions::default())
+        .await
+        .unwrap();
+    let captured = files
+        .data
+        .iter()
+        .find(|file| file.path == "pending.jsonl")
+        .unwrap();
+    let mut recovered = Vec::new();
+    api.original_to(source, captured.id, None, &mut recovered)
+        .await
+        .unwrap();
+    assert_eq!(recovered, bytes);
+    let preserved = api.session(session).await.unwrap();
+    assert_eq!(preserved.title, "Preserved legacy session");
+    assert_eq!(preserved.tags, ["manual"]);
+    assert_eq!(
+        api.source(source).await.unwrap().device_label,
+        "legacy-device"
+    );
+    let messages = api
+        .messages(session, &MessageFilter::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&messages.data[0].content).unwrap(),
+        content
+    );
+    let mut original = Vec::new();
+    api.original_to(source, file, Some(generation), &mut original)
+        .await
+        .unwrap();
+    assert_eq!(original, bytes);
+    let mut bundle = Vec::new();
+    api.export_to(session, &mut bundle).await.unwrap();
+    let mut archive = zip_bytes(&bundle);
+    let manifest: Value =
+        serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap();
+    let path = manifest["files"][0]["archive_path"].as_str().unwrap();
+    let mut exported = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name(path).unwrap(), &mut exported).unwrap();
+    assert_eq!(exported, bytes);
+    let response: Value = reqwest::Client::new()
+        .get(format!("{}/v1/sessions/{session}", server.url))
+        .bearer_auth(&server.api_key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    for obsolete in ["organization_id", "owner_id", "author_id", "visibility"] {
+        assert!(response.get(obsolete).is_none(), "{obsolete}");
+    }
+    server.stop();
+    pool.close().await;
 }

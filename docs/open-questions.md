@@ -7,9 +7,9 @@ The decisions needed for the [first build](first-build.md) are settled. The refe
 | ID | Decision | Resolution |
 | --- | --- | --- |
 | Q01 | Dependency set and compiler baseline | [Tested library set and Rust 1.94.1](validation/reference-stack.md); the application toolchain and lockfile are committed. |
-| Q02 | Authentication and CLI login | [Keycloak 26.8.2 reference with code/PKCE](authentication.md), API audience, verified bootstrap subject, and headless token input. |
+| Q02 | Authentication and client credentials | [One required instance API key](authentication.md), bearer authentication on all `/v1` APIs, no identity provider or account bootstrap; cutover validation remains to be run. |
 | Q03 | S3 implementation/client | [SeaweedFS 4.54 and aws-sdk-s3 1.159.0](decisions/0009-reference-storage-and-dependencies.md), with signed staging, immutable promotion, and verified bytes. |
-| Q04 | Initial HTTP surface | [23 first-build operations](first-build.md), typed API draft 0.3.0, and explicit capability reporting. |
+| Q04 | Initial HTTP surface | [18 first-build operations](first-build.md), typed API draft 0.3.0, and explicit capability reporting. |
 | Q05 | Initial lease/retention/limits | [Sync defaults](sync.md): 24-hour upload lease, 15-minute renewed URLs, 30-day idempotency, 24-hour cleanup grace, 256 MiB files, and no automatic original expiry. |
 | Q08 | Native normalization fixtures | [Ten synthetic cases](../fixtures/README.md), with virtual native paths and schema-checked expectations. Actual adapter conformance is implementation work. |
 | Q09 | History, leaf, and exports | [Historical message view](normalized-content.md), explicit ancestry and inherited relations, native bundle first. |

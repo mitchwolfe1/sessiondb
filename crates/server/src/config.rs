@@ -11,8 +11,8 @@ pub struct Config {
     pub public_url: Url,
     pub database: Database,
     pub objects: Objects,
+    #[serde(default)]
     pub auth: Auth,
-    pub bootstrap: Option<Bootstrap>,
     #[serde(default)]
     pub workers: Workers,
     #[serde(default)]
@@ -55,19 +55,28 @@ fn download_ttl() -> u64 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Auth {
-    pub issuer: String,
-    pub audience: String,
-    pub cli_client_id: String,
-    #[serde(default)]
-    pub allow_insecure_http: bool,
+    #[serde(default = "api_key_env")]
+    pub api_key_env: String,
 }
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Bootstrap {
-    pub organization_slug: String,
-    pub organization_name: String,
-    pub owner_issuer: String,
-    pub owner_subject: String,
+fn api_key_env() -> String {
+    "SESSIONDB_API_KEY".into()
+}
+impl Default for Auth {
+    fn default() -> Self {
+        Self {
+            api_key_env: api_key_env(),
+        }
+    }
+}
+impl Auth {
+    pub fn api_key(&self) -> Result<String> {
+        let key = env::var(&self.api_key_env)
+            .context("API key environment variable is not set or is not valid UTF-8")?;
+        if key.is_empty() {
+            bail!("API key environment variable must not be empty");
+        }
+        Ok(key)
+    }
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -108,9 +117,6 @@ impl Config {
         if let Ok(url) = env::var("SESSIONDB_PUBLIC_URL") {
             value.public_url = url.parse().context("SESSIONDB_PUBLIC_URL")?;
         }
-        if let Ok(issuer) = env::var("SESSIONDB_OIDC_ISSUER") {
-            value.auth.issuer = issuer;
-        }
         if let Ok(endpoint) = env::var("SESSIONDB_S3_ENDPOINT") {
             value.objects.endpoint = Some(endpoint.parse().context("SESSIONDB_S3_ENDPOINT")?);
         }
@@ -122,6 +128,7 @@ impl Config {
         Ok(value)
     }
     pub fn validate(&self) -> Result<()> {
+        crate::auth::Authenticator::new(self.auth.clone())?;
         if self.objects.provider != "s3" {
             bail!("objects.provider must be s3");
         }
@@ -141,19 +148,8 @@ impl Config {
             bail!("upload URL lifetime must be 1..900 seconds and download lifetime 1..60 seconds");
         }
         require_secure_url(&self.public_url, true)?;
-        require_secure_url(
-            &self
-                .auth
-                .issuer
-                .parse()
-                .context("OIDC issuer must be an absolute URL")?,
-            self.auth.allow_insecure_http,
-        )?;
         if self.public_url.path() != "/" {
             bail!("public_url must contain only its scheme, host, and port");
-        }
-        if self.auth.audience.is_empty() || self.auth.cli_client_id.is_empty() {
-            bail!("OIDC audience and CLI client ID are required");
         }
         if self.workers.parse_concurrency == 0 || self.workers.parse_concurrency > 16 {
             bail!("parse_concurrency must be 1..16");
@@ -165,14 +161,6 @@ impl Config {
             || self.limits.max_file_bytes > 256 * 1024 * 1024
         {
             bail!("configured import limits must be within the advertised v1 maximums");
-        }
-        if let Some(b) = &self.bootstrap
-            && (b.owner_issuer != self.auth.issuer.as_str()
-                || b.owner_subject.is_empty()
-                || b.organization_slug.is_empty()
-                || b.organization_name.is_empty())
-        {
-            bail!("bootstrap requires the exact configured issuer, a subject, and an organization");
         }
         Ok(())
     }

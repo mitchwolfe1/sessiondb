@@ -25,14 +25,6 @@ services:
       - "127.0.0.1:58333:8333"
     volumes:
       - objects:/data
-  identity:
-    image: quay.io/keycloak/keycloak:26.8.2
-    command: ["start-dev", "--import-realm"]
-    ports:
-      - "127.0.0.1:58180:8080"
-    volumes:
-      - identity:/opt/keycloak/data
 volumes:
   postgres:
   objects:
-  identity:

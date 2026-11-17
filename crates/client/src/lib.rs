@@ -1,12 +1,11 @@
 //! Typed SessionDB API access. The CLI and applications share this HTTP boundary.
-pub mod auth;
-
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use reqwest::{Method, StatusCode};
+use reqwest::{
+    Method, StatusCode,
+    header::{AUTHORIZATION, HeaderValue},
+};
 use serde::{Serialize, de::DeserializeOwned};
 use sessiondb_types::*;
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
 use uuid::Uuid;
@@ -35,27 +34,22 @@ fn transport(error: reqwest::Error) -> Error {
     Error::Transport(error.without_url())
 }
 
-/// Applications can supply a refreshing credential source without coupling it to the CLI.
-#[async_trait]
-pub trait TokenProvider: Send + Sync {
-    async fn access_token(&self) -> Result<Option<String>>;
-}
-struct StaticToken(Option<String>);
-#[async_trait]
-impl TokenProvider for StaticToken {
-    async fn access_token(&self) -> Result<Option<String>> {
-        Ok(self.0.clone())
-    }
-}
-
 #[derive(Clone)]
 pub struct Client {
     base: Url,
     http: reqwest::Client,
-    credentials: Arc<dyn TokenProvider>,
+    authorization: HeaderValue,
 }
 impl Client {
-    pub fn new(server: &str, token: Option<String>, timeout: Duration) -> Result<Self> {
+    pub fn new(server: &str, api_key: String, timeout: Duration) -> Result<Self> {
+        if api_key.trim().is_empty() {
+            return Err(Error::Authentication("An API key is required.".into()));
+        }
+        let mut authorization =
+            HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|_| {
+                Error::Authentication("The API key contains invalid header characters.".into())
+            })?;
+        authorization.set_sensitive(true);
         let mut base =
             Url::parse(server).map_err(|_| Error::Configuration("Invalid server URL.".into()))?;
         secure_url(&base)?;
@@ -74,12 +68,8 @@ impl Client {
         Ok(Self {
             base,
             http,
-            credentials: Arc::new(StaticToken(token)),
+            authorization,
         })
-    }
-    pub fn with_token_provider(mut self, provider: Arc<dyn TokenProvider>) -> Self {
-        self.credentials = provider;
-        self
     }
     pub fn server(&self) -> &str {
         self.base.as_str()
@@ -111,10 +101,10 @@ impl Client {
             .map_err(|_| Error::Configuration("Invalid API path.".into()))?;
         let safe = method == Method::GET || key.is_some();
         for attempt in 0..3 {
-            let mut request = self.http.request(method.clone(), url.clone());
-            if let Some(token) = self.credentials.access_token().await? {
-                request = request.bearer_auth(token);
-            }
+            let mut request = self
+                .http
+                .request(method.clone(), url.clone())
+                .header(AUTHORIZATION, self.authorization.clone());
             if let Some(query) = query {
                 request = request.query(query);
             }
@@ -163,123 +153,65 @@ impl Client {
         self.request(Method::GET, path, Some(query), None::<&()>, None)
             .await
     }
-    fn org(org: Uuid, resource: &str) -> String {
-        format!("v1/organizations/{org}/{resource}")
-    }
 
     pub async fn info(&self) -> Result<ServerInfo> {
         self.get("v1/info").await
     }
-    pub async fn auth_config(&self) -> Result<AuthConfig> {
-        self.get("v1/auth/config").await
+    pub async fn sources(&self, options: &ListOptions) -> Result<Page<Source>> {
+        self.get_query("v1/sources", options).await
     }
-    pub async fn register_login(&self) -> Result<Me> {
-        self.request(
-            Method::POST,
-            "v1/auth/session",
-            None::<&()>,
-            None::<&()>,
-            None,
-        )
-        .await
-    }
-    pub async fn me(&self) -> Result<Me> {
-        self.get("v1/me").await
-    }
-    pub async fn organizations(&self, options: &ListOptions) -> Result<Page<Organization>> {
-        self.get_query("v1/organizations", options).await
-    }
-    pub async fn invite(&self, org: Uuid, input: &InvitationCreate) -> Result<Invitation> {
-        self.request(
-            Method::POST,
-            &Self::org(org, "invitations"),
-            None::<&()>,
-            Some(input),
-            None,
-        )
-        .await
-    }
-    pub async fn sources(&self, org: Uuid, options: &ListOptions) -> Result<Page<Source>> {
-        self.get_query(&Self::org(org, "sources"), options).await
-    }
-    pub async fn create_source(&self, org: Uuid, input: &SourceCreate) -> Result<Source> {
-        self.request(
-            Method::POST,
-            &Self::org(org, "sources"),
-            None::<&()>,
-            Some(input),
-            None,
-        )
-        .await
-    }
-    pub async fn source(&self, org: Uuid, id: Uuid) -> Result<Source> {
-        self.get(&Self::org(org, &format!("sources/{id}"))).await
-    }
-    pub async fn source_files(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        options: &ListOptions,
-    ) -> Result<Page<SourceFile>> {
-        self.get_query(&Self::org(org, &format!("sources/{id}/files")), options)
+    pub async fn create_source(&self, input: &SourceCreate) -> Result<Source> {
+        self.request(Method::POST, "v1/sources", None::<&()>, Some(input), None)
             .await
     }
-    pub async fn create_import(
-        &self,
-        org: Uuid,
-        manifest: &ImportManifest,
-        key: &str,
-    ) -> Result<Import> {
+    pub async fn source(&self, id: Uuid) -> Result<Source> {
+        self.get(&format!("v1/sources/{id}")).await
+    }
+    pub async fn source_files(&self, id: Uuid, options: &ListOptions) -> Result<Page<SourceFile>> {
+        self.get_query(&format!("v1/sources/{id}/files"), options)
+            .await
+    }
+    pub async fn create_import(&self, manifest: &ImportManifest, key: &str) -> Result<Import> {
         self.request(
             Method::POST,
-            &Self::org(org, "imports"),
+            "v1/imports",
             None::<&()>,
             Some(manifest),
             Some(key),
         )
         .await
     }
-    pub async fn import(&self, org: Uuid, id: Uuid) -> Result<Import> {
-        self.get(&Self::org(org, &format!("imports/{id}"))).await
+    pub async fn import(&self, id: Uuid) -> Result<Import> {
+        self.get(&format!("v1/imports/{id}")).await
     }
-    pub async fn complete_import(&self, org: Uuid, id: Uuid, key: &str) -> Result<Import> {
+    pub async fn complete_import(&self, id: Uuid, key: &str) -> Result<Import> {
         self.request(
             Method::POST,
-            &Self::org(org, &format!("imports/{id}/complete")),
+            &format!("v1/imports/{id}/complete"),
             None::<&()>,
             None::<&()>,
             Some(key),
         )
         .await
     }
-    pub async fn sessions(&self, org: Uuid, filter: &SessionFilter) -> Result<Page<Session>> {
-        self.get_query(&Self::org(org, "sessions"), filter).await
+    pub async fn sessions(&self, filter: &SessionFilter) -> Result<Page<Session>> {
+        self.get_query("v1/sessions", filter).await
     }
-    pub async fn session(&self, org: Uuid, id: Uuid) -> Result<Session> {
-        self.get(&Self::org(org, &format!("sessions/{id}"))).await
+    pub async fn session(&self, id: Uuid) -> Result<Session> {
+        self.get(&format!("v1/sessions/{id}")).await
     }
-    pub async fn messages(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        filter: &MessageFilter,
-    ) -> Result<Page<Message>> {
-        self.get_query(&Self::org(org, &format!("sessions/{id}/messages")), filter)
+    pub async fn messages(&self, id: Uuid, filter: &MessageFilter) -> Result<Page<Message>> {
+        self.get_query(&format!("v1/sessions/{id}/messages"), filter)
             .await
     }
-    pub async fn message(&self, org: Uuid, id: Uuid) -> Result<Message> {
-        self.get(&Self::org(org, &format!("messages/{id}"))).await
+    pub async fn message(&self, id: Uuid) -> Result<Message> {
+        self.get(&format!("v1/messages/{id}")).await
     }
-    pub async fn content(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        revision: Option<&str>,
-    ) -> Result<FullContent> {
+    pub async fn content(&self, id: Uuid, revision: Option<&str>) -> Result<FullContent> {
         let response = self
             .send(
                 Method::GET,
-                &Self::org(org, &format!("messages/{id}/content")),
+                &format!("v1/messages/{id}/content"),
                 None::<&()>,
                 None::<&()>,
                 None,
@@ -290,11 +222,11 @@ impl Client {
             &bounded_response(response, 300 * 1024 * 1024).await?,
         )?)
     }
-    pub async fn job(&self, org: Uuid, id: Uuid) -> Result<Job> {
-        self.get(&Self::org(org, &format!("jobs/{id}"))).await
+    pub async fn job(&self, id: Uuid) -> Result<Job> {
+        self.get(&format!("v1/jobs/{id}")).await
     }
-    pub async fn artifact(&self, org: Uuid, id: Uuid) -> Result<Artifact> {
-        self.get(&Self::org(org, &format!("artifacts/{id}"))).await
+    pub async fn artifact(&self, id: Uuid) -> Result<Artifact> {
+        self.get(&format!("v1/artifacts/{id}")).await
     }
 
     /// Upload with only the signed target headers, using a client with no API credentials.
@@ -332,29 +264,19 @@ impl Client {
         }
         Ok(())
     }
-    pub async fn export_to<W: AsyncWrite + Unpin>(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        writer: &mut W,
-    ) -> Result<u64> {
-        self.download(
-            &Self::org(org, &format!("sessions/{id}/export")),
-            None::<&()>,
-            writer,
-        )
-        .await
+    pub async fn export_to<W: AsyncWrite + Unpin>(&self, id: Uuid, writer: &mut W) -> Result<u64> {
+        self.download(&format!("v1/sessions/{id}/export"), None::<&()>, writer)
+            .await
     }
     pub async fn original_to<W: AsyncWrite + Unpin>(
         &self,
-        org: Uuid,
         source: Uuid,
         file: Uuid,
         generation: Option<Uuid>,
         writer: &mut W,
     ) -> Result<u64> {
         self.download(
-            &Self::org(org, &format!("sources/{source}/files/{file}/content")),
+            &format!("v1/sources/{source}/files/{file}/content"),
             Some(&[("generation_id", generation.map(|v| v.to_string()))]),
             writer,
         )
@@ -362,16 +284,11 @@ impl Client {
     }
     pub async fn artifact_to<W: AsyncWrite + Unpin>(
         &self,
-        org: Uuid,
         id: Uuid,
         writer: &mut W,
     ) -> Result<u64> {
-        self.download(
-            &Self::org(org, &format!("artifacts/{id}/content")),
-            None::<&()>,
-            writer,
-        )
-        .await
+        self.download(&format!("v1/artifacts/{id}/content"), None::<&()>, writer)
+            .await
     }
     async fn download<W: AsyncWrite + Unpin>(
         &self,
@@ -401,32 +318,16 @@ impl Client {
         writer.flush().await?;
         Ok(bytes)
     }
-    pub async fn wait_for_acceptance(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        timeout: Duration,
-    ) -> Result<Import> {
-        self.wait_import(org, id, timeout, true).await
+    pub async fn wait_for_acceptance(&self, id: Uuid, timeout: Duration) -> Result<Import> {
+        self.wait_import(id, timeout, true).await
     }
-    pub async fn wait_for_processing(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        timeout: Duration,
-    ) -> Result<Import> {
-        self.wait_import(org, id, timeout, false).await
+    pub async fn wait_for_processing(&self, id: Uuid, timeout: Duration) -> Result<Import> {
+        self.wait_import(id, timeout, false).await
     }
-    async fn wait_import(
-        &self,
-        org: Uuid,
-        id: Uuid,
-        timeout: Duration,
-        acceptance: bool,
-    ) -> Result<Import> {
+    async fn wait_import(&self, id: Uuid, timeout: Duration, acceptance: bool) -> Result<Import> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            let import = self.import(org, id).await?;
+            let import = self.import(id).await?;
             if (acceptance && import.accepted_at.is_some()) || import.status.terminal() {
                 return Ok(import);
             }
@@ -436,10 +337,10 @@ impl Client {
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
     }
-    pub async fn wait_for_job(&self, org: Uuid, id: Uuid, timeout: Duration) -> Result<Job> {
+    pub async fn wait_for_job(&self, id: Uuid, timeout: Duration) -> Result<Job> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            let job = self.job(org, id).await?;
+            let job = self.job(id).await?;
             if job.status.terminal() {
                 return Ok(job);
             }
@@ -496,16 +397,4 @@ async fn bounded_response(mut response: reqwest::Response, max: usize) -> Result
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
-}
-
-/// Credentials are serializable for an OS credential store; Debug intentionally omits secrets.
-#[derive(Clone, Serialize, serde::Deserialize)]
-pub struct Tokens {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub expires_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub subject: Option<String>,
-    #[serde(default)]
-    pub nonce: Option<String>,
 }

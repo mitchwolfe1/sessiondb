@@ -15,7 +15,7 @@ A message has a canonical role, recorded native role, origin, sequence, conversa
 | `tool_call` | `call_id`, `name`, `input` | A tool invocation. A missing native link ID is null. |
 | `tool_result` | `call_id`, `status`, `content` | Output blocks linked to an invocation when unambiguous. Status is success, error, or unknown. |
 | `json` | `value` | Explicit native structured JSON; all JSON values, including null, are valid. |
-| `artifact` | `artifact_id`, `media_type`, `kind` | A file/image/audio/video reference served through authorized artifact endpoints. |
+| `artifact` | `artifact_id`, `media_type`, `kind` | A file/image/audio/video reference served through instance-key-protected artifact endpoints. |
 | `unknown` | `native_type`, `data` | An unrecognized native block retained as opaque data. |
 | `content_reference` | `content_url`, `revision`, `block_index`, `original_type` | A bounded preview's reference to a full block; absent from full-content responses. |
 
@@ -51,9 +51,9 @@ Origins are `native_user`, `model`, `tool`, `harness`, or `unknown`. `native_use
 
 The default message list is historical data, including alternate branches. `leaf_id` selects conversation ancestry. Context edits do not delete old historical text, and compaction summaries/meta inputs are labeled harness-origin.
 
-An inherited parent rollout is a bounded relation, not duplicated into the child's own message list as fresh messages. `history_boundary` records the rollout ID and exclusive ordinal/byte boundary; the native legacy field named `thread_id` can actually identify a rollout. Clients can retrieve the authorized parent separately, and native bundles include authorized dependencies with a manifest. Unavailable dependencies are reported. Native Claude subagent files remain distinct even when they repeat the parent's session ID.
+An inherited parent rollout is a bounded relation, not duplicated into the child's own message list as fresh messages. `history_boundary` records the rollout ID and exclusive ordinal/byte boundary; the native legacy field named `thread_id` can actually identify a rollout. Clients can retrieve the parent separately with the same instance key, and native bundles include available dependencies with a manifest. Unavailable dependencies are reported. Native Claude subagent files remain distinct even when they repeat the parent's session ID.
 
-Optional message `source_refs` records identify file generations and exact native line/byte ranges. These references describe where content was recorded; they do not grant access to a whole original file.
+Optional message `source_refs` records identify file generations and exact native line/byte ranges. These references describe where content was recorded; original files use the same instance-key boundary as all data.
 
 ## Previews and expansion
 

@@ -10,9 +10,9 @@ Discover Codex under `CODEX_HOME` or `~/.codex`, including `sessions` and `archi
 
 Discovery identifies native stores. Enabling selected roots determines which sessions are uploaded; optional include/exclude filters operate on native file paths or session identifiers. With no such filter, eligible sessions in those stores are collected regardless of their recorded starting cwd, including sessions launched from a home directory.
 
-Register one source per account/device/harness/store root. The source has no project binding. A single source can contain unassigned sessions and sessions associated with different or multiple projects. Its default visibility initializes new sessions; later source updates never reset per-session sharing or catalog labels.
+Register one source per device/harness/store root. The source has no project binding. A single source can contain unassigned sessions and sessions associated with different or multiple projects. The device label and root describe provenance, not ownership. Later sync preserves catalog labels.
 
-Optional project rules supply initial `project_ids` as grouping metadata. No match produces an unassigned session, and several matches can produce several associations. A descriptor can carry those initial associations. Unavailable/archived labels are omitted with a classification warning instead of blocking valid original bytes; a malformed manifest is still a validation error. Labels are not permission grants, and later sync preserves existing associations.
+Optional project rules supply initial `project_ids` as grouping metadata. No match produces an unassigned session, and several matches can produce several associations. A descriptor can carry those initial associations. Unavailable/archived labels are omitted with a classification warning instead of blocking valid original bytes; a malformed manifest is still a validation error. Labels are classification only, and later sync preserves existing associations.
 
 Supporting artifacts are allowlisted through the adapter. Preserve their relative layout. A reference outside the configured source is reported as missing, unless the user separately allows that location. No credential/configuration directory is included merely because it sits beside a transcript.
 
@@ -28,16 +28,16 @@ For active JSONL, read a bounded snapshot through the last complete newline. Def
 
 ## Import lifecycle
 
-1. `POST /v1/organizations/{org_id}/imports` reserves a manifest for an owned source and returns signed staging-upload targets. Descriptors contain source-relative path, complete length, media type, SHA-256, expected version, and optional initial project labels.
+1. `POST /v1/imports` reserves a manifest for a registered source and returns signed staging-upload targets. Descriptors contain source-relative path, complete length, media type, SHA-256, expected version, and optional initial project labels.
 2. The client uploads the bounded native snapshots using each target's method and headers. New targets expire after 15 minutes or at the end of the import lease, whichever comes first. Before the lease ends, `GET /imports/{id}` can issue fresh targets for an awaiting upload.
 3. `POST /imports/{id}/complete` schedules durable verification/promotion work and returns `202` with status `verifying`. This acknowledges the request, not archival acceptance of the files. Repeating completion returns the same import/job identity. `job_id` remains the verification job; the import's status tracks later parsing separately.
 4. The worker copies each staging object to a new server-only immutable key, using the observed source ETag as a copy precondition. It streams the accepted copy to check its actual length and SHA-256. Later writes to a staging URL cannot change that accepted copy.
-5. The worker rechecks source access and expected versions and atomically commits the manifest's file updates, receipt, and parse job. It sets `accepted_at`; only then may the client advance its source checkpoint. A failed object/version check leaves every new file in that batch unaccepted and reports bounded file errors.
+5. The worker rechecks source existence and expected versions and atomically commits the manifest's file updates, receipt, and parse job. It sets `accepted_at`; only then may the client advance its source checkpoint. A failed object/version check leaves every new file in that batch unaccepted and reports bounded file errors.
 6. The client polls `GET /imports/{id}` until `accepted_at` is set or verification fails. Parsing and optional embedding proceed after acceptance; the client does not re-upload originals just because parsing is slow or fails.
 
 Import states are `awaiting_upload`, `verifying`, `queued`, `processing`, `ready`, `partial`, `failed`, and `expired`. `accepted_at: null` means originals have not been accepted. `failed` plus a non-null acceptance time can mean a later parser failure; the accepted originals remain retrievable. Atomic archival acceptance and partial parsing are separate results.
 
-Create/complete requests use an `Idempotency-Key`, retained for 30 days and scoped to organization/source/operation. The same request returns the same resource and effects, with its current status; transient upload URLs can be renewed. Reusing a key with different content returns `409`. A resumed client reconciles source versions when its saved request is older than receipt retention.
+Create/complete requests use an `Idempotency-Key`, retained for 30 days and scoped to source/operation within the instance. The same request returns the same resource and effects, with its current status; transient upload URLs can be renewed. Reusing a key with different content returns `409`. A resumed client reconciles source versions when its saved request is older than receipt retention.
 
 The upload lease is 24 hours from creation. Once expired, create a new manifest/key without advancing unaccepted checkpoints. Staging and unreferenced promotion objects are eligible for cleanup 24 hours after the import closes, with no active lease/reference. Accepted originals have no automatic expiry by default.
 
@@ -53,7 +53,7 @@ An expected-version conflict detected while creating a manifest returns `409`; o
 
 Native archive moves and copied files may create another source path. Keep their collected session relation explicit and avoid creating a second visible session when the adapter can prove an identical copy. Divergent copies remain visible as separate source variants; v1 does not merge competing conversation edits.
 
-Sync changes recorded native content only. It preserves manual project assignments, tags/title changes, and per-session visibility or grants. Classification therefore remains stable as a home-launched session continues to work in another repository.
+Sync changes recorded native content only. It preserves manual project assignments and tags/title changes. Classification therefore remains stable as a home-launched session continues to work in another repository.
 
 ## Missing files and deletion
 
@@ -61,9 +61,9 @@ Local deletion, provider cleanup, or an offline source does not delete server hi
 
 ## Retry and limits
 
-Retry connection errors, timeouts, `429`, and appropriate `5xx` responses with bounded exponential backoff, jitter, and `Retry-After`. Authentication failures pause the affected source and request sign-in. Permanent validation errors are shown with file-level detail and do not block unrelated sources.
+Retry connection errors, timeouts, `429`, and appropriate `5xx` responses with bounded exponential backoff, jitter, and `Retry-After`. Authentication failures pause the affected source and request a valid instance key. Permanent validation errors are shown with file-level detail and do not block unrelated sources.
 
-The proposed v1 defaults are at most 128 files per import, a 2 MiB manifest, and 256 MiB per file. Operators can configure lower organizational limits. Limits must be advertised by server metadata and checked before transfer. Large-file/multipart support is a later compatibility decision, not a reason to drop a file silently.
+The proposed v1 defaults are at most 128 files per import, a 2 MiB manifest, and 256 MiB per file. Operators can configure lower instance limits. Limits must be advertised by server metadata and checked before transfer. Large-file/multipart support is a later compatibility decision, not a reason to drop a file silently.
 
 `sessiondb sync status` reports last successful acceptance, pending files/bytes, paused sources, and bounded errors. Server parsing/indexing state is reported separately. It must be possible to distinguish an offline laptop, a failed upload, an unsupported native format, and embedding backlog.
 

@@ -36,7 +36,18 @@ impl LocalState {
             .max_connections(1)
             .connect_with(options)
             .await?;
-        sqlx::raw_sql("CREATE TABLE IF NOT EXISTS registrations(server TEXT NOT NULL,organization TEXT NOT NULL,device TEXT NOT NULL,harness TEXT NOT NULL,root TEXT NOT NULL,source_id TEXT NOT NULL,PRIMARY KEY(server,organization,device,harness,root)); CREATE TABLE IF NOT EXISTS pending(source_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(source_id TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,accepted_at TEXT NOT NULL,PRIMARY KEY(source_id,path));").execute(&pool).await?;
+        sqlx::raw_sql("CREATE TABLE IF NOT EXISTS registrations(server TEXT NOT NULL,device TEXT NOT NULL,harness TEXT NOT NULL,root TEXT NOT NULL,source_id TEXT NOT NULL,PRIMARY KEY(server,device,harness,root,source_id)); CREATE TABLE IF NOT EXISTS pending(source_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(source_id TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,accepted_at TEXT NOT NULL,PRIMARY KEY(source_id,path));").execute(&pool).await?;
+        let columns = sqlx::query("PRAGMA table_info(registrations)")
+            .fetch_all(&pool)
+            .await?;
+        if columns
+            .iter()
+            .any(|column| column.get::<String, _>("name") == "organization")
+        {
+            let mut tx = pool.begin().await?;
+            sqlx::raw_sql("ALTER TABLE registrations RENAME TO registrations_scoped; CREATE TABLE registrations(server TEXT NOT NULL,device TEXT NOT NULL,harness TEXT NOT NULL,root TEXT NOT NULL,source_id TEXT NOT NULL,PRIMARY KEY(server,device,harness,root,source_id)); INSERT OR IGNORE INTO registrations(server,device,harness,root,source_id) SELECT server,device,harness,root,source_id FROM registrations_scoped; DROP TABLE registrations_scoped;").execute(&mut *tx).await?;
+            tx.commit().await?;
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -47,24 +58,17 @@ impl LocalState {
     pub async fn registration(
         &self,
         server: &str,
-        org: Uuid,
         device: &str,
         harness: &str,
         root: &str,
     ) -> Result<Option<Uuid>> {
-        let value: Option<String>=sqlx::query_scalar("SELECT source_id FROM registrations WHERE server=? AND organization=? AND device=? AND harness=? AND root=?").bind(server).bind(org.to_string()).bind(device).bind(harness).bind(root).fetch_optional(&self.pool).await?;
+        let value: Option<String>=sqlx::query_scalar("SELECT source_id FROM registrations WHERE server=? AND device=? AND harness=? AND root=? ORDER BY EXISTS(SELECT 1 FROM pending WHERE pending.source_id=registrations.source_id) DESC,source_id LIMIT 1").bind(server).bind(device).bind(harness).bind(root).fetch_optional(&self.pool).await?;
         value
             .map(|v| v.parse().context("invalid source ID in local state"))
             .transpose()
     }
-    pub async fn register(
-        &self,
-        server: &str,
-        org: Uuid,
-        device: &str,
-        source: &Source,
-    ) -> Result<()> {
-        sqlx::query("INSERT INTO registrations(server,organization,device,harness,root,source_id) VALUES(?,?,?,?,?,?) ON CONFLICT(server,organization,device,harness,root) DO UPDATE SET source_id=excluded.source_id").bind(server).bind(org.to_string()).bind(device).bind(source.harness.as_str()).bind(&source.root).bind(source.id.to_string()).execute(&self.pool).await?;
+    pub async fn register(&self, server: &str, device: &str, source: &Source) -> Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO registrations(server,device,harness,root,source_id) VALUES(?,?,?,?,?)").bind(server).bind(device).bind(source.harness.as_str()).bind(&source.root).bind(source.id.to_string()).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn pending(&self, source: Uuid) -> Result<Option<Pending>> {

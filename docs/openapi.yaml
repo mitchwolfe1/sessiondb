@@ -3,8 +3,9 @@ info:
   title: SessionDB API
   version: 0.3.0-draft
   description: SessionDB design contract with typed normalized content, source-based
-    collection, optional project associations, and independent session access. The
-    first implementation subset is identified by x-first-build.
+    collection, optional project associations, and one instance-wide bearer API key.
+    All clients with the key have identical full access. The first implementation
+    subset is identified by x-first-build.
 servers:
 - url: https://sessions.example.com
   description: Illustrative deployment URL
@@ -20,11 +21,6 @@ tags:
 - name: jobs
 - name: changes
 - name: projects
-- name: authentication
-- name: organizations
-- name: members
-- name: teams
-- name: tokens
 - name: operations
 paths:
   /healthz:
@@ -73,8 +69,8 @@ paths:
       operationId: getServerInfo
       tags:
       - operations
-      summary: Read public version, capabilities, and limits
-      description: Read public version, capabilities, and limits
+      summary: Read version, capabilities, and limits
+      description: Requires the instance API key, like every /v1 operation.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -84,562 +80,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ServerInfo'
-      security: []
       x-first-build: true
       x-implemented: true
-  /v1/auth/config:
+  /v1/projects:
     parameters: []
-    get:
-      operationId: getAuthConfig
-      tags:
-      - authentication
-      summary: Read public authentication configuration
-      description: Read public authentication configuration
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthConfig'
-      security: []
-      x-first-build: true
-      x-implemented: true
-  /v1/auth/session:
-    parameters: []
-    post:
-      operationId: registerLogin
-      tags:
-      - authentication
-      summary: Register an authenticated login and claim matching invitations
-      description: Register an authenticated login and claim matching invitations
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Me'
-      x-first-build: true
-      x-implemented: true
-  /v1/me:
-    parameters: []
-    get:
-      operationId: getMe
-      tags:
-      - authentication
-      summary: Read current account and memberships
-      description: Read current account and memberships
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Me'
-      x-first-build: true
-      x-implemented: true
-  /v1/organizations:
-    parameters: []
-    get:
-      operationId: listOrganizations
-      tags:
-      - organizations
-      summary: List accessible organizations
-      description: List accessible organizations
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrganizationPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: true
-      x-implemented: true
-  /v1/organizations/{org_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: getOrganization
-      tags:
-      - organizations
-      summary: Read current organization
-      description: Read current organization
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Organization'
-      x-first-build: false
-      x-implemented: false
-    patch:
-      operationId: updateOrganization
-      tags:
-      - organizations
-      summary: Update organization display settings
-      description: Organization owner only.
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Organization'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrganizationPatch'
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/invitations:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: listInvitations
-      tags:
-      - members
-      summary: List organization invitations
-      description: List organization invitations
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InvitationPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: false
-      x-implemented: false
-    post:
-      operationId: createInvitation
-      tags:
-      - members
-      summary: Invite an organization member
-      description: Invite an organization member
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '201':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Invitation'
-          headers:
-            Location:
-              description: Created resource URL
-              schema:
-                type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InvitationCreate'
-      x-first-build: true
-      x-implemented: true
-  /v1/organizations/{org_id}/invitations/{invitation_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: invitation_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    delete:
-      operationId: revokeInvitation
-      tags:
-      - members
-      summary: Revoke pending invitation
-      description: Revoke pending invitation
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '204':
-          description: Success
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/members:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: listMembers
-      tags:
-      - members
-      summary: List organization memberships
-      description: List organization memberships
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MembershipPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/members/{user_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: user_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    patch:
-      operationId: updateMember
-      tags:
-      - members
-      summary: Update member role subject to owner rules
-      description: Update member role subject to owner rules
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Membership'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MembershipPatch'
-      x-first-build: false
-      x-implemented: false
-    delete:
-      operationId: removeMember
-      tags:
-      - members
-      summary: Remove membership and invalidate its access
-      description: Remove membership and invalidate its access
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '204':
-          description: Success
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/teams:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: listTeams
-      tags:
-      - teams
-      summary: List teams
-      description: List teams
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TeamPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: false
-      x-implemented: false
-    post:
-      operationId: createTeam
-      tags:
-      - teams
-      summary: Create a team
-      description: Create a team
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '201':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Team'
-          headers:
-            Location:
-              description: Created resource URL
-              schema:
-                type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TeamCreate'
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/teams/{team_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: team_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: getTeam
-      tags:
-      - teams
-      summary: Read a team
-      description: Read a team
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Team'
-      x-first-build: false
-      x-implemented: false
-    patch:
-      operationId: updateTeam
-      tags:
-      - teams
-      summary: Update a team
-      description: Update a team
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Team'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TeamPatch'
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/teams/{team_id}/members:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: team_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: listTeamMembers
-      tags:
-      - teams
-      summary: List team members
-      description: List team members
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TeamMemberPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/teams/{team_id}/members/{user_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: team_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: user_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    put:
-      operationId: addTeamMember
-      tags:
-      - teams
-      summary: Add an existing organization member to a team
-      description: Add an existing organization member to a team
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TeamMember'
-      x-first-build: false
-      x-implemented: false
-    delete:
-      operationId: removeTeamMember
-      tags:
-      - teams
-      summary: Remove a team membership
-      description: Remove a team membership
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '204':
-          description: Success
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/projects:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     get:
       operationId: listProjects
       tags:
       - projects
       summary: List logical project labels
-      description: Active organization members can list labels; session counts/results
-        still require session authorization.
+      description: List instance-wide classification labels.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -670,8 +120,7 @@ paths:
       tags:
       - projects
       summary: Create a logical project label
-      description: Any active organization member can create a label; it does not
-        grant session access.
+      description: Create an optional classification label in the shared collection.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -694,14 +143,8 @@ paths:
               $ref: '#/components/schemas/ProjectCreate'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/projects/{project_id}:
+  /v1/projects/{project_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: project_id
       in: path
       required: true
@@ -730,7 +173,7 @@ paths:
       tags:
       - projects
       summary: Update or archive a project label
-      description: Creator/admin operation. Archive stops new associations, not collection;
+      description: Archive stops new associations, not collection;
         existing sessions remain stored.
       responses:
         default:
@@ -749,116 +192,14 @@ paths:
               $ref: '#/components/schemas/ProjectPatch'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/tokens:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: listTokens
-      tags:
-      - tokens
-      summary: List permitted collection tokens without secret values
-      description: List permitted collection tokens without secret values
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TokenPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: false
-      x-implemented: false
-    post:
-      operationId: createToken
-      tags:
-      - tokens
-      summary: Create an application or source sync token
-      description: Rights are bounded by current issuer session access and optional
-        session_ids. sources:sync requires an owned source_id. Project labels are
-        not permission scopes.
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '201':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreatedToken'
-          headers:
-            Location:
-              description: Created resource URL
-              schema:
-                type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TokenCreate'
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/tokens/{token_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: token_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    delete:
-      operationId: revokeToken
-      tags:
-      - tokens
-      summary: Revoke a collection token
-      description: Revoke a collection token
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '204':
-          description: Success
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/sources:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/sources:
+    parameters: []
     get:
       operationId: listSources
       tags:
       - sources
-      summary: List permitted sources
-      description: List permitted sources
+      summary: List collection sources
+      description: List collection sources
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -892,9 +233,9 @@ paths:
       operationId: createSource
       tags:
       - sources
-      summary: Register an owned native harness store
-      description: No project or workspace binding. The source root is on the client
-        device; default visibility applies only to new sessions.
+      summary: Register a native harness store
+      description: No project or workspace binding. The source root is provenance on the
+        client device, not an access boundary.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -917,14 +258,8 @@ paths:
               $ref: '#/components/schemas/SourceCreate'
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/sources/{source_id}:
+  /v1/sources/{source_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: source_id
       in: path
       required: true
@@ -952,10 +287,8 @@ paths:
       operationId: updateSource
       tags:
       - sources
-      summary: Update source pause state, label, or default visibility
-      description: Interactive source owner/admin only. Root/harness are fixed. Default
-        visibility affects new sessions only; a sync-only token cannot change source
-        defaults.
+      summary: Update source pause state or label
+      description: Root and harness are fixed; all key holders can update mutable source metadata.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -973,14 +306,8 @@ paths:
               $ref: '#/components/schemas/SourcePatch'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/sources/{source_id}/files:
+  /v1/sources/{source_id}/files:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: source_id
       in: path
       required: true
@@ -1018,14 +345,8 @@ paths:
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/generations:
+  /v1/sources/{source_id}/files/{file_id}/generations:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: source_id
       in: path
       required: true
@@ -1069,14 +390,8 @@ paths:
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/content:
+  /v1/sources/{source_id}/files/{file_id}/content:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: source_id
       in: path
       required: true
@@ -1094,9 +409,7 @@ paths:
       tags:
       - sources
       summary: Download original bytes
-      description: Require source owner/admin or authorization for every session represented
-        in the file. A sync-only token can inspect file metadata but cannot read raw
-        content. Range offsets address original uncompressed bytes.
+      description: Require the instance API key. Range offsets address original uncompressed bytes.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1134,20 +447,14 @@ paths:
           type: string
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/imports:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/imports:
+    parameters: []
     get:
       operationId: listImports
       tags:
       - imports
-      summary: List permitted import batches
-      description: List permitted import batches
+      summary: List import batches
+      description: List import batches
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1218,14 +525,8 @@ paths:
               $ref: '#/components/schemas/ImportManifest'
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/imports/{import_id}:
+  /v1/imports/{import_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: import_id
       in: path
       required: true
@@ -1250,14 +551,8 @@ paths:
                 $ref: '#/components/schemas/Import'
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/imports/{import_id}/complete:
+  /v1/imports/{import_id}/complete:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: import_id
       in: path
       required: true
@@ -1294,20 +589,14 @@ paths:
           job. Retained for 30 days.
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/sessions:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/sessions:
+    parameters: []
     get:
       operationId: listSessions
       tags:
       - sessions
-      summary: List authorized sessions
-      description: List authorized sessions
+      summary: List sessions in the shared collection
+      description: List sessions in the shared collection
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1332,18 +621,6 @@ paths:
           type: string
         description: Opaque cursor bound to filters, ordering, and projection revision.
       - name: project_id
-        in: query
-        schema:
-          type: string
-          format: uuid
-        description: ''
-      - name: author_id
-        in: query
-        schema:
-          type: string
-          format: uuid
-        description: ''
-      - name: team_id
         in: query
         schema:
           type: string
@@ -1387,14 +664,8 @@ paths:
           default: false
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/sessions/{session_id}:
+  /v1/sessions/{session_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: session_id
       in: path
       required: true
@@ -1422,10 +693,9 @@ paths:
       operationId: updateSession
       tags:
       - sessions
-      summary: Update session metadata or explicit visibility
-      description: Owner/editor may replace title, tags, and project_ids. Only owner/admin
-        may change visibility. [] clears projects; omission preserves them. No classification
-        change alters sharing.
+      summary: Update session metadata
+      description: Replace title, tags, and project_ids. [] clears projects; omission preserves
+        them. Classification never restricts access.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1448,7 +718,7 @@ paths:
       tags:
       - sessions
       summary: Delete a session with source suppression
-      description: Session owner/admin only. Hide from queries immediately and queue
+      description: Hide from queries immediately and queue
         deletion; later sync does not resurrect it.
       responses:
         default:
@@ -1461,14 +731,8 @@ paths:
                 $ref: '#/components/schemas/Job'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/sessions/{session_id}/messages:
+  /v1/sessions/{session_id}/messages:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: session_id
       in: path
       required: true
@@ -1512,14 +776,8 @@ paths:
         description: ''
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/sessions/{session_id}/events:
+  /v1/sessions/{session_id}/events:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: session_id
       in: path
       required: true
@@ -1557,14 +815,8 @@ paths:
         description: Opaque cursor bound to filters, ordering, and projection revision.
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/sessions/{session_id}/export:
+  /v1/sessions/{session_id}/export:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: session_id
       in: path
       required: true
@@ -1576,7 +828,7 @@ paths:
       tags:
       - sessions
       summary: Export native files or a normalized projection
-      description: native yields a ZIP of original files and an authorized manifest;
+      description: native yields a ZIP of original files and a dependency manifest;
         leaf_id is valid only for normalized formats. Reject leaf_id with native as
         400.
       responses:
@@ -1611,14 +863,8 @@ paths:
         description: ''
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/messages/{message_id}:
+  /v1/messages/{message_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: message_id
       in: path
       required: true
@@ -1648,14 +894,8 @@ paths:
                 type: string
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/messages/{message_id}/content:
+  /v1/messages/{message_id}/content:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: message_id
       in: path
       required: true
@@ -1693,20 +933,14 @@ paths:
           returns 412.
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/search:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/search:
+    parameters: []
     post:
       operationId: searchMessages
       tags:
       - search
       summary: Search accessible sessions with optional project filters
-      description: Keyword is default. Semantic/hybrid use one enabled organization
+      description: Keyword is default. Semantic/hybrid use one enabled instance
         profile; no project filter is required. Project labels do not authorize results.
         Newest sort remains keyword-only in v1.
       responses:
@@ -1726,20 +960,14 @@ paths:
               $ref: '#/components/schemas/SearchRequest'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/embedding-profiles:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/embedding-profiles:
+    parameters: []
     get:
       operationId: listEmbeddingProfiles
       tags:
       - embeddings
-      summary: List permitted profile metadata without credentials
-      description: List permitted profile metadata without credentials
+      summary: List profile metadata without credentials
+      description: List profile metadata without credentials
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1769,8 +997,8 @@ paths:
       operationId: createEmbeddingProfile
       tags:
       - embeddings
-      summary: Configure an organization embedding profile
-      description: Organization administrator only. One enabled profile covers eligible
+      summary: Configure an instance embedding profile
+      description: One enabled profile covers eligible
         sessions including unassigned sessions.
       responses:
         default:
@@ -1794,14 +1022,8 @@ paths:
               $ref: '#/components/schemas/EmbeddingProfileCreate'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/embedding-profiles/{profile_id}:
+  /v1/embedding-profiles/{profile_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: profile_id
       in: path
       required: true
@@ -1830,7 +1052,7 @@ paths:
       tags:
       - embeddings
       summary: Enable or disable an embedding profile
-      description: At most one profile is enabled per organization; conflict returns
+      description: At most one profile is enabled per instance; conflict returns
         409. Model identity fields are immutable.
       responses:
         default:
@@ -1849,20 +1071,14 @@ paths:
               $ref: '#/components/schemas/EmbeddingProfilePatch'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/index-jobs:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/index-jobs:
+    parameters: []
     post:
       operationId: createIndexJob
       tags:
       - jobs
       summary: Request indexing with optional session/source/label filters
-      description: Administrator operation. Filters select work; project association
+      description: Filters select work; project association
         is not required for indexing.
       responses:
         default:
@@ -1881,14 +1097,8 @@ paths:
               $ref: '#/components/schemas/IndexJobCreate'
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/jobs/{job_id}:
+  /v1/jobs/{job_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: job_id
       in: path
       required: true
@@ -1899,8 +1109,8 @@ paths:
       operationId: getJob
       tags:
       - jobs
-      summary: Read an authorized job result
-      description: Read an authorized job result
+      summary: Read a job result
+      description: Read a job result
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1912,22 +1122,16 @@ paths:
                 $ref: '#/components/schemas/Job'
       x-first-build: true
       x-implemented: true
-  /v1/organizations/{org_id}/changes:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+  /v1/changes:
+    parameters: []
     get:
       operationId: listChanges
       tags:
       - changes
-      summary: Read currently authorized changes
+      summary: Read collection changes
       description: At-least-once delivery. Reclassification events include previous_project_ids;
-        label filters match previous or current associations. Grant changes require
-        relisting newly accessible sessions. Project filters never authorize events.
+        label filters match previous or current associations. All key holders can
+        read the feed; project filters only select classification metadata.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -1959,123 +1163,8 @@ paths:
         description: ''
       x-first-build: false
       x-implemented: false
-  /v1/organizations/{org_id}/sessions/{session_id}/grants:
+  /v1/artifacts/{artifact_id}:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: session_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      operationId: listSessionGrants
-      tags:
-      - sessions
-      summary: List explicit session grants
-      description: Session owner or organization administrator management. Project
-        labels do not grant access.
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionGrantPage'
-      parameters:
-      - name: limit
-        in: query
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 200
-          default: 50
-        description: ''
-      - name: cursor
-        in: query
-        schema:
-          type: string
-        description: Opaque cursor bound to filters, ordering, and projection revision.
-      x-first-build: false
-      x-implemented: false
-    post:
-      operationId: createSessionGrant
-      tags:
-      - sessions
-      summary: Grant session viewer/editor access to a user or team
-      description: Session owner or organization administrator management. Project
-        labels do not grant access.
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '201':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionGrant'
-          headers:
-            Location:
-              description: Created resource URL
-              schema:
-                type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SessionGrantCreate'
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/sessions/{session_id}/grants/{grant_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: session_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - name: grant_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    delete:
-      operationId: revokeSessionGrant
-      tags:
-      - sessions
-      summary: Revoke an explicit session grant
-      description: Session owner or organization administrator management. Project
-        labels do not grant access.
-      responses:
-        default:
-          $ref: '#/components/responses/Problem'
-        '204':
-          description: Success
-      x-first-build: false
-      x-implemented: false
-  /v1/organizations/{org_id}/artifacts/{artifact_id}:
-    parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: artifact_id
       in: path
       required: true
@@ -2087,7 +1176,7 @@ paths:
       tags:
       - messages
       summary: Read artifact metadata
-      description: Apply the associated session authorization. URLs are server-issued,
+      description: Require the instance API key. URLs are server-issued,
         never arbitrary native transcript URLs.
       responses:
         '200':
@@ -2100,14 +1189,8 @@ paths:
           $ref: '#/components/responses/Problem'
       x-first-build: false
       x-implemented: true
-  /v1/organizations/{org_id}/artifacts/{artifact_id}/content:
+  /v1/artifacts/{artifact_id}/content:
     parameters:
-    - name: org_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
     - name: artifact_id
       in: path
       required: true
@@ -2119,7 +1202,7 @@ paths:
       tags:
       - messages
       summary: Download artifact content
-      description: Apply the associated session authorization. URLs are server-issued,
+      description: Require the instance API key. URLs are server-issued,
         never arbitrary native transcript URLs.
       responses:
         '200':
@@ -2150,12 +1233,12 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Validated API-audience access token or member-issued scoped SessionDB
-        token; never an ID token. Project associations are not permission scopes.
+      description: Nonempty instance-wide API key from SESSIONDB_API_KEY. All key holders
+        have identical full access; no login, token exchange, scopes, or identity policy.
   responses:
     Problem:
-      description: HTTP problem details; see stable code and request_id. 401 authentication,
-        403 denied management, 404 absent/inaccessible, 409 conflict/capability, 413
+      description: HTTP problem details; see stable code and request_id. 401 missing/invalid API key,
+        404 absent resource, 409 conflict/capability, 413
         limit, 429 throttle, 503 dependency.
       content:
         application/problem+json:
@@ -2199,226 +1282,10 @@ components:
       - api_version
       - capabilities
       - limits
-    AuthConfig:
-      type: object
-      properties:
-        issuer:
-          type: string
-          format: uri
-        audience:
-          type: string
-        cli_client_id:
-          type: string
-        flows:
-          type: array
-          items:
-            type: string
-            enum:
-            - authorization_code_pkce
-      additionalProperties: true
-      required:
-      - issuer
-      - audience
-      - cli_client_id
-      - flows
-    Organization:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        slug:
-          type: string
-        name:
-          type: string
-      additionalProperties: true
-      required:
-      - id
-      - slug
-      - name
-    OrganizationPatch:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 200
-      additionalProperties: false
-      required:
-      - name
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        display_name:
-          type: string
-        email:
-          anyOf:
-          - type: string
-            format: email
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - id
-      - display_name
-    Membership:
-      type: object
-      properties:
-        user:
-          $ref: '#/components/schemas/User'
-        organization_id:
-          type: string
-          format: uuid
-        role:
-          type: string
-          enum:
-          - owner
-          - admin
-          - member
-        status:
-          type: string
-          enum:
-          - active
-          - disabled
-      additionalProperties: true
-      required:
-      - user
-      - organization_id
-      - role
-      - status
-    Me:
-      type: object
-      properties:
-        user:
-          $ref: '#/components/schemas/User'
-        memberships:
-          type: array
-          items:
-            $ref: '#/components/schemas/Membership'
-      additionalProperties: true
-      required:
-      - user
-      - memberships
-    MembershipPatch:
-      type: object
-      properties:
-        role:
-          type: string
-          enum:
-          - owner
-          - admin
-          - member
-      additionalProperties: false
-      required:
-      - role
-    Invitation:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        role:
-          type: string
-          enum:
-          - admin
-          - member
-        expires_at:
-          type: string
-          format: date-time
-        status:
-          type: string
-          enum:
-          - pending
-          - accepted
-          - revoked
-          - expired
-      additionalProperties: true
-      required:
-      - id
-      - email
-      - role
-      - status
-    InvitationCreate:
-      type: object
-      properties:
-        email:
-          type: string
-          format: email
-        role:
-          type: string
-          enum:
-          - admin
-          - member
-          default: member
-      additionalProperties: false
-      required:
-      - email
-    Team:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        organization_id:
-          type: string
-          format: uuid
-        slug:
-          type: string
-        name:
-          type: string
-      additionalProperties: true
-      required:
-      - id
-      - organization_id
-      - slug
-      - name
-    TeamCreate:
-      type: object
-      properties:
-        slug:
-          type: string
-          pattern: ^[a-z0-9][a-z0-9-]{0,62}$
-        name:
-          type: string
-      additionalProperties: false
-      required:
-      - slug
-      - name
-    TeamPatch:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 200
-      additionalProperties: false
-      required:
-      - name
-    TeamMember:
-      type: object
-      properties:
-        team_id:
-          type: string
-          format: uuid
-        user_id:
-          type: string
-          format: uuid
-      additionalProperties: true
-      required:
-      - team_id
-      - user_id
     Project:
       type: object
       properties:
         id:
-          type: string
-          format: uuid
-        organization_id:
           type: string
           format: uuid
         slug:
@@ -2435,17 +1302,12 @@ components:
           enum:
           - active
           - archived
-        creator_id:
-          type: string
-          format: uuid
       additionalProperties: true
       required:
       - id
-      - organization_id
       - slug
       - name
       - status
-      - creator_id
     ProjectCreate:
       type: object
       properties:
@@ -2479,121 +1341,6 @@ components:
             type: string
             format: uri
       additionalProperties: false
-    Token:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        source_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-        scopes:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            enum:
-            - sessions:read
-            - sessions:write
-            - sources:sync
-        expires_at:
-          type: string
-          format: date-time
-        revoked:
-          type: boolean
-        organization_id:
-          type: string
-          format: uuid
-        owner_id:
-          type: string
-          format: uuid
-        session_ids:
-          anyOf:
-          - type: array
-            items:
-              type: string
-              format: uuid
-            uniqueItems: true
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - id
-      - name
-      - source_id
-      - scopes
-      - expires_at
-      - revoked
-      - organization_id
-      - owner_id
-      - session_ids
-    TokenCreate:
-      type: object
-      properties:
-        name:
-          type: string
-        source_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-        scopes:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            enum:
-            - sessions:read
-            - sessions:write
-            - sources:sync
-        expires_at:
-          type: string
-          format: date-time
-        session_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-          uniqueItems: true
-          minItems: 1
-          description: Optional explicit read/write restriction. Omit for all sessions
-            currently accessible to the issuer.
-      additionalProperties: false
-      required:
-      - name
-      - scopes
-      - expires_at
-      allOf:
-      - if:
-          properties:
-            scopes:
-              contains:
-                const: sources:sync
-          required:
-          - scopes
-        then:
-          required:
-          - source_id
-          properties:
-            source_id:
-              type: string
-              format: uuid
-    CreatedToken:
-      allOf:
-      - $ref: '#/components/schemas/Token'
-      - type: object
-        properties:
-          token:
-            type: string
-        additionalProperties: true
-        required:
-        - token
     Harness:
       type: string
       enum:
@@ -2604,9 +1351,6 @@ components:
       type: object
       properties:
         id:
-          type: string
-          format: uuid
-        organization_id:
           type: string
           format: uuid
         harness:
@@ -2625,25 +1369,12 @@ components:
           minLength: 1
           description: Native harness store path on the source device; not a project
             directory.
-        default_visibility:
-          type: string
-          enum:
-          - private
-          - organization
-          default: private
-          description: Initial visibility for newly recognized sessions only.
-        owner_id:
-          type: string
-          format: uuid
       additionalProperties: true
       required:
       - id
-      - organization_id
       - harness
       - paused
       - root
-      - owner_id
-      - default_visibility
     SourceCreate:
       type: object
       properties:
@@ -2656,13 +1387,6 @@ components:
           minLength: 1
           description: Native harness store path on the source device; not a project
             directory.
-        default_visibility:
-          type: string
-          enum:
-          - private
-          - organization
-          default: private
-          description: Initial visibility for newly recognized sessions only.
       additionalProperties: false
       required:
       - harness
@@ -2672,7 +1396,6 @@ components:
       - harness: claude
         device_label: Ada laptop
         root: /home/ada/.claude/projects
-        default_visibility: private
     SourcePatch:
       type: object
       properties:
@@ -2680,11 +1403,6 @@ components:
           type: boolean
         device_label:
           type: string
-        default_visibility:
-          type: string
-          enum:
-          - private
-          - organization
       additionalProperties: false
     SourceFile:
       type: object
@@ -2865,9 +1583,6 @@ components:
         id:
           type: string
           format: uuid
-        organization_id:
-          type: string
-          format: uuid
         source_id:
           type: string
           format: uuid
@@ -2930,7 +1645,6 @@ components:
       additionalProperties: true
       required:
       - id
-      - organization_id
       - source_id
       - status
       - uploads
@@ -2940,7 +1654,6 @@ components:
       - upload_expires_at
       examples:
       - id: 88888888-8888-4888-8888-888888888888
-        organization_id: 11111111-1111-4111-8111-111111111111
         source_id: 55555555-5555-4555-8555-555555555555
         status: awaiting_upload
         uploads:
@@ -2956,7 +1669,6 @@ components:
         accepted_at: null
         upload_expires_at: '2026-11-16T12:00:00Z'
       - id: 88888888-8888-4888-8888-888888888888
-        organization_id: 11111111-1111-4111-8111-111111111111
         source_id: 55555555-5555-4555-8555-555555555555
         status: queued
         uploads: []
@@ -3028,12 +1740,6 @@ components:
         id:
           type: string
           format: uuid
-        organization_id:
-          type: string
-          format: uuid
-        author_id:
-          type: string
-          format: uuid
         harness:
           $ref: '#/components/schemas/Harness'
         native_session_id:
@@ -3075,19 +1781,9 @@ components:
             type: string
             format: uuid
           uniqueItems: true
-        owner_id:
-          type: string
-          format: uuid
-        visibility:
-          type: string
-          enum:
-          - private
-          - organization
       additionalProperties: true
       required:
       - id
-      - organization_id
-      - author_id
       - harness
       - native_session_id
       - title
@@ -3098,22 +1794,16 @@ components:
       - relations
       - warnings
       - project_ids
-      - owner_id
-      - visibility
       examples:
       - id: 66666666-6666-4666-8666-666666666666
-        organization_id: 11111111-1111-4111-8111-111111111111
         project_ids:
         - 22222222-2222-4222-8222-222222222222
-        owner_id: 44444444-4444-4444-8444-444444444444
-        author_id: 44444444-4444-4444-8444-444444444444
         harness: claude
         native_session_id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
         title: Payment retry investigation
         tags:
         - retries
         recorded_cwd: /home/ada
-        visibility: private
         started_at: '2026-11-15T12:00:00Z'
         updated_at: '2026-11-15T12:05:00Z'
         message_count: 8
@@ -3124,16 +1814,12 @@ components:
         relations: []
         warnings: []
       - id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
-        organization_id: 11111111-1111-4111-8111-111111111111
         project_ids: []
-        owner_id: 44444444-4444-4444-8444-444444444444
-        author_id: 44444444-4444-4444-8444-444444444444
         harness: codex
         native_session_id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
         title: Home directory session
         tags: []
         recorded_cwd: /home/ada
-        visibility: private
         started_at: '2026-11-15T12:10:00Z'
         updated_at: '2026-11-15T12:15:00Z'
         message_count: 2
@@ -3163,14 +1849,7 @@ components:
             format: uuid
           uniqueItems: true
           maxItems: 1000
-          description: Replacement set; omit to preserve and [] to clear. Never changes
-            sharing.
-        visibility:
-          type: string
-          enum:
-          - private
-          - organization
-          description: Owner/admin action, independent of project associations.
+          description: Replacement classification set; omit to preserve and [] to clear.
       additionalProperties: false
       examples:
       - project_ids:
@@ -3364,14 +2043,6 @@ components:
           items:
             type: string
             format: uuid
-        author_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
-        team_id:
-          type: string
-          format: uuid
         harnesses:
           type: array
           items:
@@ -3567,7 +2238,7 @@ components:
           excerpt: The retry test covers a temporary payment failure.
           retrieved_by:
           - keyword
-          url: https://sessions.example.com/v1/organizations/11111111-1111-4111-8111-111111111111/messages/77777777-7777-4777-8777-777777777777
+          url: https://sessions.example.com/v1/messages/77777777-7777-4777-8777-777777777777
         next_cursor: null
         mode: keyword
         coverage:
@@ -3626,7 +2297,7 @@ components:
       - name: Session semantic search
         provider: openai_compatible
         base_url: https://embeddings.example.com/v1
-        model: organization-embedding-model
+        model: instance-embedding-model
         model_revision: example-revision
         dimensions: 4096
         credential_ref: env:SESSIONDB_EMBEDDING_API_KEY
@@ -3675,9 +2346,6 @@ components:
           format: uuid
         credential_configured:
           type: boolean
-        organization_id:
-          type: string
-          format: uuid
       additionalProperties: true
       required:
       - id
@@ -3689,7 +2357,6 @@ components:
       - dimensions
       - enabled
       - credential_configured
-      - organization_id
     EmbeddingProfilePatch:
       type: object
       properties:
@@ -3875,86 +2542,11 @@ components:
       - type: about:blank
         title: Embedding search is not configured
         status: 409
-        detail: Configure and enable an embedding profile for this organization, or
+        detail: Configure and enable an embedding profile for this instance, or
           request keyword search.
-        instance: /v1/organizations/11111111-1111-4111-8111-111111111111/search
+        instance: /v1/search
         code: embedding_not_configured
         request_id: example-request-id
-    OrganizationPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Organization'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
-    InvitationPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Invitation'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
-    MembershipPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Membership'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
-    TeamPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Team'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
-    TeamMemberPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/TeamMember'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
     ProjectPage:
       type: object
       properties:
@@ -3962,21 +2554,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Project'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
-    TokenPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Token'
         next_cursor:
           anyOf:
           - type: string
@@ -4112,71 +2689,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Change'
-        next_cursor:
-          anyOf:
-          - type: string
-          - type: 'null'
-      additionalProperties: true
-      required:
-      - data
-      - next_cursor
-    SessionGrant:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        principal_type:
-          type: string
-          enum:
-          - user
-          - team
-        principal_id:
-          type: string
-          format: uuid
-        role:
-          type: string
-          enum:
-          - viewer
-          - editor
-        session_id:
-          type: string
-          format: uuid
-      additionalProperties: true
-      required:
-      - id
-      - principal_type
-      - principal_id
-      - role
-      - session_id
-    SessionGrantCreate:
-      type: object
-      properties:
-        principal_type:
-          type: string
-          enum:
-          - user
-          - team
-        principal_id:
-          type: string
-          format: uuid
-        role:
-          type: string
-          enum:
-          - viewer
-          - editor
-      additionalProperties: false
-      required:
-      - principal_type
-      - principal_id
-      - role
-    SessionGrantPage:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/SessionGrant'
         next_cursor:
           anyOf:
           - type: string

@@ -1,18 +1,14 @@
 use anyhow::{Context, Result, bail};
-use async_trait::async_trait;
-use chrono::Utc;
 use directories::{BaseDirs, ProjectDirs};
 use serde::{Deserialize, Serialize};
-use sessiondb_client::{Client, TokenProvider, Tokens};
-use sessiondb_types::{AuthConfig, Harness, ListOptions, Visibility};
+use sessiondb_client::Client;
+use sessiondb_types::Harness;
 use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
     time::Duration,
 };
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -30,7 +26,6 @@ pub struct FileConfig {
 #[serde(deny_unknown_fields)]
 pub struct ContextConfig {
     pub server: String,
-    pub organization: String,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,8 +33,6 @@ pub struct ConfiguredSource {
     pub context: String,
     pub harness: Harness,
     pub root: PathBuf,
-    #[serde(default)]
-    pub default_visibility: Visibility,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,99 +131,58 @@ pub fn device(config: &mut FileConfig) -> String {
         .clone()
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct StoredCredentials {
-    pub server: String,
-    pub issuer: String,
-    pub client_id: String,
-    pub tokens: Tokens,
+pub fn normalize_server(server: &str) -> Result<String> {
+    let mut url = url::Url::parse(server).map_err(|_| anyhow::anyhow!("invalid server URL"))?;
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.query().is_some()
+        || !matches!(url.path(), "" | "/")
+        || !(url.scheme() == "https"
+            || (url.scheme() == "http"
+                && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))))
+    {
+        bail!("use an HTTPS server origin, or loopback HTTP, without credentials");
+    }
+    url.set_path("/");
+    Ok(url.into())
 }
+
 fn entry(server: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new("sessiondb", server).context("open OS credential store")
+    keyring::Entry::new("sessiondb-api-key", server)
+        .map_err(|_| anyhow::anyhow!("could not open OS credential store"))
 }
-pub async fn store(credentials: StoredCredentials) -> Result<()> {
+pub async fn store(server: String, api_key: String) -> Result<()> {
     tokio::task::spawn_blocking(move || {
-        entry(&credentials.server)?
-            .set_password(&serde_json::to_string(&credentials)?)
-            .context("save credentials in the OS credential store")
+        entry(&server)?
+            .set_password(&api_key)
+            .map_err(|_| anyhow::anyhow!("could not save API key in OS credential store"))
     })
     .await?
 }
 pub async fn remove_credentials(server: String) -> Result<()> {
     tokio::task::spawn_blocking(move || match entry(&server)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e).context("remove OS credentials"),
+        Err(_) => bail!("could not remove API key from OS credential store"),
     })
     .await?
 }
 pub async fn authenticated(server: &str, timeout: Duration) -> Result<Client> {
-    let client = Client::new(server, None, timeout)?;
-    if let Ok(token) = std::env::var("SESSIONDB_TOKEN") {
-        if token.trim().is_empty() {
-            bail!("SESSIONDB_TOKEN is empty");
+    let server = normalize_server(server)?;
+    let api_key = match std::env::var("SESSIONDB_API_KEY") {
+        Ok(key) => key,
+        Err(std::env::VarError::NotUnicode(_)) => bail!("SESSIONDB_API_KEY must be valid UTF-8"),
+        Err(std::env::VarError::NotPresent) => {
+            let account = server.clone();
+            tokio::task::spawn_blocking(move || {
+                entry(&account)?.get_password().map_err(|_| {
+                    anyhow::anyhow!(
+                        "set SESSIONDB_API_KEY or save a key with sessiondb auth login --key-stdin"
+                    )
+                })
+            })
+            .await??
         }
-        return Ok(Client::new(server, Some(token), timeout)?);
-    }
-    let account = client.server().to_owned();
-    let stored: StoredCredentials =
-        tokio::task::spawn_blocking(move || -> Result<StoredCredentials> {
-            let secret = entry(&account)?
-                .get_password()
-                .context("sign in with sessiondb auth login, or set SESSIONDB_TOKEN")?;
-            serde_json::from_str(&secret)
-                .context("read saved credentials; sign in again if they are invalid")
-        })
-        .await??;
-    let auth = client.auth_config().await?;
-    if stored.server != client.server()
-        || stored.issuer != auth.issuer
-        || stored.client_id != auth.cli_client_id
-    {
-        bail!("the server's identity configuration changed; sign in again");
-    }
-    Ok(client.with_token_provider(Arc::new(RefreshingCredentials {
-        auth,
-        stored: Mutex::new(stored),
-    })))
-}
-struct RefreshingCredentials {
-    auth: AuthConfig,
-    stored: Mutex<StoredCredentials>,
-}
-#[async_trait]
-impl TokenProvider for RefreshingCredentials {
-    async fn access_token(&self) -> sessiondb_client::Result<Option<String>> {
-        let mut stored = self.stored.lock().await;
-        if stored
-            .tokens
-            .expires_at
-            .is_some_and(|t| t <= Utc::now() + chrono::Duration::seconds(30))
-        {
-            stored.tokens = sessiondb_client::auth::refresh(&self.auth, &stored.tokens).await?;
-            store(stored.clone()).await.map_err(|_| {
-                sessiondb_client::Error::Authentication(
-                    "Could not save refreshed credentials in the OS credential store.".into(),
-                )
-            })?;
-        }
-        Ok(Some(stored.tokens.access_token.clone()))
-    }
-}
-pub async fn organization(client: &Client, name: &str) -> Result<Uuid> {
-    let mut options = ListOptions::default();
-    loop {
-        let page = client.organizations(&options).await?;
-        if let Some(org) = page
-            .data
-            .iter()
-            .find(|o| o.slug == name || o.id.to_string() == name)
-        {
-            return Ok(org.id);
-        }
-        if page.next_cursor.is_none() {
-            break;
-        }
-        options.cursor = page.next_cursor;
-    }
-    bail!("organization {name} was not found among this account's memberships")
+    };
+    Ok(Client::new(&server, api_key, timeout)?)
 }

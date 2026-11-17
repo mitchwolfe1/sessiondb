@@ -1,64 +1,31 @@
 # Access control
 
-Session access is independent of project labels and directory matching. A session's owner, visibility, and explicit grants control reading and editing. Sources remain tied to the account and native store they collect.
+A SessionDB instance has one shared collection and one API key. Every correct-key client has identical full access to every resource and implemented operation. There are no accounts, organizations, owners, memberships, teams, per-session visibility, grants, or scoped credentials.
 
-Status: proposed shared-access roles with an accepted [authentication profile](authentication.md), replacing the earlier project-bound proposal through [0008](decisions/0008-collection-and-project-associations.md).
+Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md), superseding all earlier identity-based access proposals. [Authentication](authentication.md) defines key provisioning, request verification, and rotation.
 
-## Session access
+## Collection boundary
 
-New sources default to `private` visibility. A session with private visibility is readable by its owner, organization owners/admins, and explicitly granted users/teams. `organization` visibility additionally allows all active organization members to read it.
+Require bearer-key authentication on all `/v1` APIs, including capability discovery at `/v1/info`. Only liveness, readiness, and the static OpenAPI document are public. The same rule applies to original files, parsed content, artifacts, native exports, changes, search, and background job results. Planned resource APIs inherit it; they do not introduce separate privileges.
 
-A viewer grant permits reading, searching, and exporting. An editor grant also permits changing title, tags, and project associations. Only the session owner or an organization administrator can change visibility/grants or delete the session. Linking a parent/child session does not grant access to the linked session.
+A project is optional classification metadata, not a container or security boundary. Source IDs, device labels, harness names, and native paths describe provenance, not the caller's identity. All key holders can inspect unparsed originals and linked parent/dependency data. Missing dependencies remain explicit; there is no per-reader export omission policy.
 
-| Action | Reader | Editor | Session owner | Organization admin or owner |
-| --- | --- | --- | --- | --- |
-| Read, search, export accessible sessions | Yes | Yes | Yes | Yes |
-| Update title, tags, project associations | No | Yes | Yes | Yes |
-| Change visibility or user/team grants | No | No | Yes | Yes |
-| Delete a session | No | No | Yes | Yes |
-| Register a source | Active member | Active member | Active member | Yes |
-| Pause a source or read its unparsed originals | No | No | Source owner | Yes |
-| Configure embedding providers or organization-wide indexing | No | No | No | Yes |
+## Safe collection and deployment
 
-Every active member can create a logical project label. Its creator or an administrator can change/archive it. Project labels are organization metadata; viewing a project's name does not authorize reading any of its sessions. Project archive has no effect on native collection.
+The operator or client explicitly selects native stores to collect. Starting cwd and repository matching do not decide whether a session may be stored. Supporting-file allowlists avoid collecting unrelated credentials/configuration beside transcripts. Ingestion treats text as data and never executes recorded commands or follows arbitrary remote content URLs.
 
-## Membership and teams
+Use separate instances, databases, and object namespaces when independent collections must remain isolated. A read-only application cannot be safely given the same key with an assumption of reduced rights. Secure remote transport with HTTPS; keep storage private and protect metrics separately at the operator's network boundary.
 
-Organization roles are `owner`, `admin`, and `member`. Owners manage organization settings and owner membership. Admins manage teams and non-owner memberships and can manage/read all sessions in their organization. The last active owner cannot be removed or demoted.
+## Revocation and migration
 
-An account is identified by a validated issuer/subject. An administrator invites an email, and a `POST /v1/auth/session` login with a matching verified email claims the invitation. Read-only `GET /v1/me` creates no memberships. Removing membership invalidates its grants and credentials; already accepted data remains stored until explicitly deleted.
+Rotate the instance key to revoke API access for every old-key client, then distribute the replacement only to intended clients. There is no per-client revocation mechanism. Already issued signed downloads may remain usable for their documented maximum lifetime of 60 seconds; use API-proxied downloads when that exposure is unacceptable.
 
-Teams group memberships for explicit session grants. Project association is never an implicit grant to a team. Private and shared sessions can coexist in the same organization and reference the same project label.
+The cutover makes formerly isolated records accessible through the same key. It preserves accepted content and IDs while removing identity fields/tables. This is a breaking data-disclosure and client configuration/state change, not just a login simplification. See [upgrade guidance](operations.md#migrations-and-upgrades).
 
-## Sources and sync
+## Acceptance scenarios
 
-A source belongs to an account, device, harness, and native store root. It has no project binding. Its default visibility applies only when a new session is created; later sync preserves per-session access and classification edits.
-
-The user selects which native stores to collect and can add include/exclude filters. A starting directory outside a repository is not an exclusion by itself. Supporting-file allowlists avoid collecting credentials/configuration simply because they sit beside transcripts.
-
-Raw source listing and unparsed originals require source-owner/admin access. A session reader's native export includes only fully authorized files and artifacts. A file containing another inaccessible session is omitted; unrelated paths/content are not leaked through the warning.
-
-## Authentication and tokens
-
-Use a configured OIDC provider for human login and expiring revocable API tokens for automation. The CLI uses an external browser with Authorization Code/PKCE and a loopback redirect. The provider needs a registered public client and the SessionDB API audience. Validate access tokens rather than accepting an ID token as API authorization.
-
-The server exposes public login configuration at `/v1/auth/config`. The CLI uses the OS credential store or explicit token input/environment. Empty-installation bootstrap configures one exact trusted issuer/subject as the initial owner; changing bootstrap settings later grants no new privileges.
-
-A member-issued token can carry `sessions:read`, `sessions:write`, or `sources:sync`. Read/write rights are limited by the issuer's current session access and optional explicit `session_ids` restrictions. A sync token also binds one owned source and can inspect its own import/file state; a sync-only token cannot change source defaults or sharing. Source configuration uses the interactive owner/admin identity. Project filters are not token permission scopes. Tokens never grant organization administration.
-
-## Enforcement
-
-Apply organization membership and session authorization before list pagination, snippets, counts, keyword/vector retrieval, changes, exports, and artifact downloads. Jobs recheck the current caller before returning results. Indexes and result caches cannot authorize from stale grants.
-
-Use `401` for unauthenticated requests, `404` for inaccessible data, and `403` for a denied known management operation. Previously issued signed URLs can remain usable for their documented maximum lifetime of 60 seconds; proxy through SessionDB if immediate download revocation is required.
-
-Original transcripts can contain sensitive recorded content. Storage is private and authenticated. Ingestion treats text as data and never executes recorded commands or follows arbitrary remote content URLs. Any redaction mode explicitly identifies its output as a transformed copy.
-
-## Access scenarios
-
-- An unassigned private session is collected from a home-directory launch and is readable by its owner.
-- Assigning/removing project labels leaves its readers unchanged.
-- A session granted to a team appears in that team's authorized queries, including keyword and semantic search.
-- An editor can reclassify a session but cannot change sharing or delete it.
-- Revocation/membership removal affects all read paths and invalidates applicable tokens; new sync cannot reset the revoked grant.
-- A source token updates only its source and cannot grant itself session-read or organization rights.
+- Two independent clients with the same key see the same sessions, source files, artifacts, jobs, exports, and query results.
+- Project assignment, clearing labels, and native append do not alter access.
+- Missing/invalid keys fail on every data path and on `/v1/info`.
+- Health, readiness, and the static contract reveal no session content without a key.
+- Rotating the key rejects the old value on subsequent API requests.

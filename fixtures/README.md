@@ -16,7 +16,7 @@ The [manifest](manifest.json) records each harness/schema family, input files, v
 | `claude-subagent` | A child repeats the parent's native session ID but remains a distinct agent session |
 | `claude-compaction` | Historical text remains; generated summary/meta records have harness origin |
 | `codex-incomplete-tail` | Complete malformed lines are preserved, while an unfinished last line is deferred |
-| `pi-artifact` | Native inline PNG data becomes an authorized normalized artifact reference |
+| `pi-artifact` | Native inline PNG data becomes an instance-key-protected normalized artifact reference |
 | `codex-precision-unknown` | Large JSON integers, malformed argument fallback, and an unknown native extension |
 
 Fixtures model Codex 0.169.0, Claude Code 2.1.283, and Pi session format 3/client 1.5.0 shapes. The unknown-extension case intentionally tests forward-compatible handling. These are bounded contract examples, not a claim that an adapter has already passed against all versions.

@@ -1,4 +1,3 @@
-mod identity;
 pub(crate) mod imports;
 pub(crate) mod sessions;
 pub(crate) mod sources;
@@ -19,7 +18,7 @@ use axum::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sessiondb_types::{AuthConfig, FIRST_BUILD_OPERATIONS, Page, ServerInfo};
+use sessiondb_types::{FIRST_BUILD_OPERATIONS, Page, ServerInfo};
 use sqlx::Row;
 use std::{
     collections::BTreeMap,
@@ -29,97 +28,52 @@ use uuid::Uuid;
 
 pub fn router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
-        .route("/v1/auth/session", post(identity::login))
-        .route("/v1/me", get(identity::me))
-        .route("/v1/organizations", get(identity::organizations))
+        .route("/v1/info", get(info))
+        .route("/v1/sources", get(sources::list).post(sources::create))
         .route(
-            "/v1/organizations/{org_id}/invitations",
-            post(identity::invite).get(unsupported),
-        )
-        .route(
-            "/v1/organizations/{org_id}/sources",
-            get(sources::list).post(sources::create),
-        )
-        .route(
-            "/v1/organizations/{org_id}/sources/{source_id}",
+            "/v1/sources/{source_id}",
             get(sources::get).patch(unsupported),
         )
+        .route("/v1/sources/{source_id}/files", get(sources::files))
         .route(
-            "/v1/organizations/{org_id}/sources/{source_id}/files",
-            get(sources::files),
-        )
-        .route(
-            "/v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/content",
+            "/v1/sources/{source_id}/files/{file_id}/content",
             get(sources::content),
         )
+        .route("/v1/imports", post(imports::create).get(unsupported))
+        .route("/v1/imports/{import_id}", get(imports::get))
+        .route("/v1/imports/{import_id}/complete", post(imports::complete))
+        .route("/v1/sessions", get(sessions::list))
         .route(
-            "/v1/organizations/{org_id}/imports",
-            post(imports::create).get(unsupported),
-        )
-        .route(
-            "/v1/organizations/{org_id}/imports/{import_id}",
-            get(imports::get),
-        )
-        .route(
-            "/v1/organizations/{org_id}/imports/{import_id}/complete",
-            post(imports::complete),
-        )
-        .route("/v1/organizations/{org_id}/sessions", get(sessions::list))
-        .route(
-            "/v1/organizations/{org_id}/sessions/{session_id}",
+            "/v1/sessions/{session_id}",
             get(sessions::get).patch(unsupported).delete(unsupported),
         )
         .route(
-            "/v1/organizations/{org_id}/sessions/{session_id}/messages",
+            "/v1/sessions/{session_id}/messages",
             get(sessions::messages),
         )
+        .route("/v1/sessions/{session_id}/export", get(sessions::export))
+        .route("/v1/messages/{message_id}", get(sessions::message))
         .route(
-            "/v1/organizations/{org_id}/sessions/{session_id}/export",
-            get(sessions::export),
-        )
-        .route(
-            "/v1/organizations/{org_id}/messages/{message_id}",
-            get(sessions::message),
-        )
-        .route(
-            "/v1/organizations/{org_id}/messages/{message_id}/content",
+            "/v1/messages/{message_id}/content",
             get(sessions::full_content),
         )
+        .route("/v1/jobs/{job_id}", get(imports::job))
+        .route("/v1/artifacts/{artifact_id}", get(sessions::artifact))
         .route(
-            "/v1/organizations/{org_id}/jobs/{job_id}",
-            get(imports::job),
-        )
-        .route(
-            "/v1/organizations/{org_id}/artifacts/{artifact_id}",
-            get(sessions::artifact),
-        )
-        .route(
-            "/v1/organizations/{org_id}/artifacts/{artifact_id}/content",
+            "/v1/artifacts/{artifact_id}/content",
             get(sessions::artifact_content),
         );
     let mut protected = protected;
     for path in [
-        "/v1/organizations/{org_id}",
-        "/v1/organizations/{org_id}/projects",
-        "/v1/organizations/{org_id}/projects/{project_id}",
-        "/v1/organizations/{org_id}/teams",
-        "/v1/organizations/{org_id}/teams/{team_id}",
-        "/v1/organizations/{org_id}/teams/{team_id}/members",
-        "/v1/organizations/{org_id}/teams/{team_id}/members/{user_id}",
-        "/v1/organizations/{org_id}/members",
-        "/v1/organizations/{org_id}/members/{user_id}",
-        "/v1/organizations/{org_id}/invitations/{invitation_id}",
-        "/v1/organizations/{org_id}/tokens",
-        "/v1/organizations/{org_id}/tokens/{token_id}",
-        "/v1/organizations/{org_id}/search",
-        "/v1/organizations/{org_id}/changes",
-        "/v1/organizations/{org_id}/embedding-profiles",
-        "/v1/organizations/{org_id}/embedding-profiles/{profile_id}",
-        "/v1/organizations/{org_id}/index-jobs",
-        "/v1/organizations/{org_id}/sources/{source_id}/files/{file_id}/generations",
-        "/v1/organizations/{org_id}/sessions/{session_id}/events",
-        "/v1/organizations/{org_id}/sessions/{session_id}/grants",
-        "/v1/organizations/{org_id}/sessions/{session_id}/grants/{grant_id}",
+        "/v1/projects",
+        "/v1/projects/{project_id}",
+        "/v1/search",
+        "/v1/changes",
+        "/v1/embedding-profiles",
+        "/v1/embedding-profiles/{profile_id}",
+        "/v1/index-jobs",
+        "/v1/sources/{source_id}/files/{file_id}/generations",
+        "/v1/sessions/{session_id}/events",
     ] {
         protected = protected.route(path, any(unsupported));
     }
@@ -129,8 +83,6 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(|| async { Json(serde_json::json!({"status":"ok"})) }),
         )
         .route("/readyz", get(readiness))
-        .route("/v1/info", get(info))
-        .route("/v1/auth/config", get(auth_config))
         .route(
             "/openapi.yaml",
             get(|| async {
@@ -170,14 +122,6 @@ async fn info(State(state): State<Arc<AppState>>) -> Json<ServerInfo> {
         server_version: env!("CARGO_PKG_VERSION").into(),
         capabilities,
         limits: state.config.limits.clone(),
-    })
-}
-async fn auth_config(State(state): State<Arc<AppState>>) -> Json<AuthConfig> {
-    Json(AuthConfig {
-        issuer: state.config.auth.issuer.to_string(),
-        audience: state.config.auth.audience.clone(),
-        cli_client_id: state.config.auth.cli_client_id.clone(),
-        flows: vec!["authorization_code_pkce".into()],
     })
 }
 async fn readiness(State(state): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {

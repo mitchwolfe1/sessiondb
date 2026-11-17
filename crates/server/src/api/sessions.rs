@@ -1,42 +1,32 @@
 use super::*;
-use crate::auth::{Principal, is_admin, organization_role};
-use axum::{Extension, body::Body, http::HeaderMap};
+use axum::{body::Body, http::HeaderMap};
 use serde_json::json;
 use sessiondb_types::{Artifact, FullContent, Message, MessageFilter, Session, SessionFilter};
 use sqlx::{Postgres, QueryBuilder, postgres::PgRow};
 use tokio_util::io::ReaderStream;
 
-pub(crate) async fn readable(
-    state: &AppState,
-    org: Uuid,
-    id: Uuid,
-    p: &Principal,
-) -> ApiResult<PgRow> {
-    let admin = is_admin(organization_role(&state.pool, org, p).await?);
-    sqlx::query("SELECT * FROM sessions WHERE id=$1 AND organization_id=$2 AND (owner_id=$3 OR visibility='organization' OR $4)").bind(id).bind(org).bind(p.user_id()?).bind(admin).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)
+async fn read(state: &AppState, id: Uuid) -> ApiResult<PgRow> {
+    sqlx::query("SELECT * FROM sessions WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)
 }
-async fn document(state: &AppState, row: &PgRow, p: &Principal) -> ApiResult<Session> {
+async fn document(state: &AppState, row: &PgRow) -> ApiResult<Session> {
     let mut session: Session = row.get::<sqlx::types::Json<Session>, _>("document").0;
     for relation in &mut session.relations {
         if let Some(native) = &relation.native_reference {
             let candidates = sqlx::query(
-                "SELECT id FROM sessions WHERE organization_id=$1 AND owner_id=$2 AND harness=$3 AND native_key=$4 ORDER BY id LIMIT 2",
+                "SELECT id FROM sessions WHERE harness=$1 AND native_key=$2 ORDER BY id LIMIT 2",
             )
-            .bind(session.organization_id)
-            .bind(session.owner_id)
             .bind(session.harness.as_str())
             .bind(native)
             .fetch_all(&state.pool)
             .await?;
             if candidates.len() == 1 {
                 let id = candidates[0].get("id");
-                if readable(state, session.organization_id, id, p)
-                    .await
-                    .is_ok()
-                {
-                    relation.session_id = Some(id);
-                    relation.resolved = true;
-                }
+                relation.session_id = Some(id);
+                relation.resolved = true;
             }
         }
     }
@@ -44,26 +34,14 @@ async fn document(state: &AppState, row: &PgRow, p: &Principal) -> ApiResult<Ses
 }
 pub(super) async fn get(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Json<Session>> {
-    Ok(Json(
-        document(&state, &readable(&state, org, id, &p).await?, &p).await?,
-    ))
+    Ok(Json(document(&state, &read(&state, id).await?).await?))
 }
 pub(super) async fn list(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath(org): ApiPath<Uuid>,
     ApiQuery(mut filter): ApiQuery<SessionFilter>,
 ) -> ApiResult<Json<Page<Session>>> {
-    let admin = is_admin(organization_role(&state.pool, org, &p).await?);
-    if filter.team_id.is_some() {
-        return Err(ApiError::bad(
-            "unsupported_option",
-            "Team filters are not implemented by this server.",
-        ));
-    }
     if filter.project_id.is_some() && filter.unassigned == Some(true) {
         return Err(ApiError::bad(
             "incompatible_filters",
@@ -83,21 +61,11 @@ pub(super) async fn list(
     let size = limit(filter.limit)?;
     let value = filter.cursor.take();
     filter.limit = None;
-    let scope = scope(("sessions", org, p.user_id()?, &filter))?;
+    let scope = scope(("sessions", &filter))?;
     let cursor = decode_cursor(value.as_deref(), &scope)?;
-    let mut q =
-        QueryBuilder::<Postgres>::new("SELECT s.* FROM sessions s WHERE s.organization_id=");
-    q.push_bind(org)
-        .push(" AND (s.owner_id=")
-        .push_bind(p.user_id()?)
-        .push(" OR s.visibility='organization' OR ")
-        .push_bind(admin)
-        .push(")");
+    let mut q = QueryBuilder::<Postgres>::new("SELECT s.* FROM sessions s WHERE true");
     if let Some(h) = filter.harness {
         q.push(" AND s.harness=").push_bind(h.as_str());
-    }
-    if let Some(author) = filter.author_id {
-        q.push(" AND s.owner_id=").push_bind(author);
     }
     if let Some(project) = filter.project_id {
         q.push(" AND EXISTS(SELECT 1 FROM session_projects sp WHERE sp.session_id=s.id AND sp.project_id=").push_bind(project).push(")");
@@ -139,7 +107,7 @@ pub(super) async fn list(
     let more = rows.len() > size;
     let mut data = Vec::new();
     for row in rows.iter().take(size) {
-        data.push(document(&state, row, &p).await?);
+        data.push(document(&state, row).await?);
     }
     let next_cursor = if more {
         data.last()
@@ -159,13 +127,12 @@ pub(super) async fn list(
 }
 pub(super) async fn messages(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
     ApiQuery(filter): ApiQuery<MessageFilter>,
 ) -> ApiResult<Json<Page<Message>>> {
-    let session = readable(&state, org, id, &p).await?;
+    let session = read(&state, id).await?;
     let revision: String = session.get("revision");
-    let scope = scope(("messages", org, id, p.user_id()?, filter.leaf_id))?;
+    let scope = scope(("messages", id, filter.leaf_id))?;
     let cursor = decode_cursor(filter.cursor.as_deref(), &scope)?;
     let size = limit(filter.limit)?;
     if cursor
@@ -212,7 +179,7 @@ pub(super) async fn messages(
     let more = data.len() > size;
     data.truncate(size);
     for message in &mut data {
-        hydrate_message(message, state.config.public_url.as_str(), org);
+        hydrate_message(message, state.config.public_url.as_str());
     }
     let next_cursor = if more {
         data.last()
@@ -230,25 +197,26 @@ pub(super) async fn messages(
     };
     Ok(Json(Page { data, next_cursor }))
 }
-async fn message_row(state: &AppState, org: Uuid, id: Uuid, p: &Principal) -> ApiResult<PgRow> {
-    let row = sqlx::query("SELECT m.* FROM messages m JOIN sessions s ON s.id=m.session_id WHERE m.id=$1 AND s.organization_id=$2").bind(id).bind(org).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)?;
-    readable(state, org, row.get("session_id"), p).await?;
-    Ok(row)
+async fn message_row(state: &AppState, id: Uuid) -> ApiResult<PgRow> {
+    sqlx::query("SELECT * FROM messages WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)
 }
 pub(super) async fn message(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Response> {
-    let row = message_row(&state, org, id, &p).await?;
+    let row = message_row(&state, id).await?;
     let mut m: Message = row.get::<sqlx::types::Json<Message>, _>("document").0;
-    hydrate_message(&mut m, state.config.public_url.as_str(), org);
+    hydrate_message(&mut m, state.config.public_url.as_str());
     let etag = scope(&m)?;
     Ok(([(header::ETAG, format!("\"{etag}\""))], Json(m)).into_response())
 }
-fn hydrate_message(message: &mut Message, base: &str, org: Uuid) {
+fn hydrate_message(message: &mut Message, base: &str) {
     let url = format!(
-        "{}/v1/organizations/{org}/messages/{}/content",
+        "{}/v1/messages/{}/content",
         base.trim_end_matches('/'),
         message.id
     );
@@ -263,11 +231,10 @@ fn hydrate_message(message: &mut Message, base: &str, org: Uuid) {
 }
 pub(super) async fn full_content(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let row = message_row(&state, org, id, &p).await?;
+    let row = message_row(&state, id).await?;
     let m: Message = row.get::<sqlx::types::Json<Message>, _>("document").0;
     let etag = format!("\"{}\"", m.revision);
     if let Some(value) = headers.get(header::IF_MATCH)
@@ -298,8 +265,7 @@ pub(super) struct ExportOptions {
 }
 pub(super) async fn export(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
     ApiQuery(options): ApiQuery<ExportOptions>,
 ) -> ApiResult<Response> {
     if options.format.as_deref().is_some_and(|v| v != "native") || options.leaf_id.is_some() {
@@ -308,8 +274,8 @@ pub(super) async fn export(
             "This server supports native ZIP export without leaf_id.",
         ));
     }
-    let first = readable(&state, org, id, &p).await?;
-    let mut queue = vec![document(&state, &first, &p).await?];
+    let first = read(&state, id).await?;
+    let mut queue = vec![document(&state, &first).await?];
     let mut visited = std::collections::HashSet::new();
     let mut files = std::collections::BTreeMap::new();
     let mut warnings = Vec::new();
@@ -323,22 +289,18 @@ pub(super) async fn export(
         }
         let rows = sqlx::query("SELECT DISTINCT ON(f.id) f.id,f.source_id,f.path,g.id AS generation_id,g.object_key,g.byte_length,g.sha256 FROM session_files sf JOIN source_files f ON f.id=sf.file_id JOIN file_generations g ON g.id=sf.generation_id WHERE sf.session_id=$1 ORDER BY f.id,(g.id=f.generation_id) DESC,g.created_at DESC").bind(session.id).fetch_all(&state.pool).await?;
         for row in rows {
-            if file_readable(&state, org, row.get("id"), row.get("generation_id"), &p).await? {
-                files.insert(
-                    (
-                        row.get::<Uuid, _>("id"),
-                        row.get::<Uuid, _>("generation_id"),
-                    ),
-                    row,
-                );
-            } else {
-                warnings.push("unavailable_original");
-            }
+            files.insert(
+                (
+                    row.get::<Uuid, _>("id"),
+                    row.get::<Uuid, _>("generation_id"),
+                ),
+                row,
+            );
         }
         for relation in session.relations {
             if let Some(parent) = relation.session_id {
-                if let Ok(row) = readable(&state, org, parent, &p).await {
-                    queue.push(document(&state, &row, &p).await?);
+                if let Ok(row) = read(&state, parent).await {
+                    queue.push(document(&state, &row).await?);
                 }
             } else {
                 warnings.push("unavailable_dependency");
@@ -414,35 +376,18 @@ pub(super) async fn export(
         .insert(header::CONTENT_LENGTH, length.into());
     Ok(response)
 }
-pub(crate) async fn file_readable(
-    state: &AppState,
-    org: Uuid,
-    file: Uuid,
-    generation: Uuid,
-    p: &Principal,
-) -> ApiResult<bool> {
-    let admin = is_admin(organization_role(&state.pool, org, p).await?);
-    let row = sqlx::query("SELECT s.owner_id FROM source_files f JOIN sources s ON s.id=f.source_id WHERE f.id=$1 AND s.organization_id=$2").bind(file).bind(org).fetch_optional(&state.pool).await?;
-    let Some(row) = row else {
-        return Ok(false);
-    };
-    if admin || row.get::<Uuid, _>("owner_id") == p.user_id()? {
-        return Ok(true);
-    }
-    let result: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM session_files WHERE file_id=$1 AND generation_id=$2) AND NOT EXISTS(SELECT 1 FROM session_files sf JOIN sessions s ON s.id=sf.session_id WHERE sf.file_id=$1 AND sf.generation_id=$2 AND s.owner_id<>$3 AND s.visibility<>'organization')").bind(file).bind(generation).bind(p.user_id()?).fetch_one(&state.pool).await?;
-    Ok(result)
-}
-async fn artifact_row(state: &AppState, org: Uuid, id: Uuid, p: &Principal) -> ApiResult<PgRow> {
-    let row = sqlx::query("SELECT a.* FROM artifacts a JOIN sessions s ON s.id=a.session_id WHERE a.id=$1 AND s.organization_id=$2").bind(id).bind(org).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)?;
-    readable(state, org, row.get("session_id"), p).await?;
-    Ok(row)
+async fn artifact_row(state: &AppState, id: Uuid) -> ApiResult<PgRow> {
+    sqlx::query("SELECT * FROM artifacts WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(ApiError::not_found)
 }
 pub(super) async fn artifact(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Json<Artifact>> {
-    let row = artifact_row(&state, org, id, &p).await?;
+    let row = artifact_row(&state, id).await?;
     Ok(Json(Artifact {
         id,
         session_id: row.get("session_id"),
@@ -450,18 +395,17 @@ pub(super) async fn artifact(
         kind: row.get("kind"),
         byte_length: row.get::<i64, _>("byte_length") as u64,
         content_url: format!(
-            "{}/v1/organizations/{org}/artifacts/{id}/content",
+            "{}/v1/artifacts/{id}/content",
             state.config.public_url.as_str().trim_end_matches('/')
         ),
     }))
 }
 pub(super) async fn artifact_content(
     State(state): State<Arc<AppState>>,
-    Extension(p): Extension<Principal>,
-    ApiPath((org, id)): ApiPath<(Uuid, Uuid)>,
+    ApiPath(id): ApiPath<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let row = artifact_row(&state, org, id, &p).await?;
+    let row = artifact_row(&state, id).await?;
     super::sources::stream(
         &state,
         row.get("object_key"),

@@ -12,11 +12,11 @@ Status: product direction with proposed v1 behavior. See the [delivery plan](roa
 
 **Read and query sessions.** List and filter sessions, read messages and tool activity, inspect relationships, update titles/tags and optional project associations, and export original or normalized data.
 
-**Search history.** Search message content by keyword and filter by project, harness, author, or date. Configure an embedding provider to enable semantic or hybrid retrieval.
+**Search history.** Search message content by keyword and filter by project, harness, or date. Configure an embedding provider to enable semantic or hybrid retrieval.
 
 **Build on a common interface.** The CLI and SDK use a versioned HTTP API. Harness adapters normalize native differences while retaining the original data for export and future parsing improvements.
 
-**Run the service where it is needed.** The initial deployment uses a server, PostgreSQL, and an S3-compatible object store. User/team session sharing supports shared servers independently of project labels.
+**Run the service where it is needed.** The initial deployment uses a server, PostgreSQL, and an S3-compatible object store. One required instance-wide API key gives every correct-key client identical full access to the shared collection.
 
 ## Main workflow
 
@@ -36,16 +36,16 @@ The first end-to-end demonstration is a session moving from a native file into S
 | P02 | Codex, Claude Code, and Pi collection | Import supported native record shapes, including tool calls/results and later appends. |
 | P03 | Automatic sync | Backfill and watch mode recover after restarts or outages without duplicate sessions. |
 | P04 | Session access | List, filter, inspect messages and tool activity, edit title/tags, and export sessions. |
-| P13 | Optional project associations | Collect home-directory and unassigned sessions; add, replace, or clear multiple project labels without changing sharing. |
-| P05 | Keyword search | Search sessions and messages with project, harness, author, and date filters. |
+| P13 | Optional project associations | Collect home-directory and unassigned sessions; add, replace, or clear multiple project labels without changing instance access. |
+| P05 | Keyword search | Search sessions and messages with project, harness, and date filters. |
 | P06 | Optional embeddings | A configured provider supports semantic/hybrid search with visible coverage and job state. |
 | P07 | Conventional interfaces | Versioned REST/OpenAPI, predictable pagination/errors, CLI scripting, and a client SDK. |
 | P08 | Native files | Retrieve collected originals even when normalization is incomplete. |
 | P10 | Harness adapters | Add another harness through the same discovery/normalization boundary. |
 | P12 | Application integration | Applications such as hype-history consume sessions and search through the public API. |
 | P09 | Server deployment | Document installation, configuration, migrations, health, backup, and restore. |
-| P01 | Shared access | Session ownership, visibility, and user/team grants control access independently of project associations. |
-| P11 | Administration | Manage membership and sharing, revoke source credentials, and delete sessions. |
+| P01 | Shared access | One shared API key protects all data; all key holders have identical full access, independently of project associations. |
+| P11 | Administration | Rotate the instance key, configure storage/processing, and delete sessions; there is no account or per-source credential administration. |
 
 See [access control](access-control.md) for shared-server access settings.
 
@@ -59,7 +59,7 @@ Keep embeddings optional. Session storage, sync, reading, and keyword search rem
 
 ## Initial release boundaries
 
-V1 targets a self-hosted server on Linux and sync clients on Linux/macOS. It includes optional project grouping and session access management; deployment and account setup are covered by the server guides.
+V1 targets a self-hosted server on Linux and sync clients on Linux/macOS. It includes optional project grouping and instance-key authentication; deployment and credential setup are covered by the server guides.
 
 A browser application, hosted billing, native harness resume, write-back into local transcripts, deterministic execution replay, and model training are later work. Existing applications can add specialized briefing, memory, analytics, or evaluation behavior through the API.
 

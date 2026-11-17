@@ -21,7 +21,7 @@ flowchart LR
     X[hype-history and other applications] --> A
 ```
 
-PostgreSQL holds session data, search indexes, optional project metadata, session access settings, and job state. Original files and large artifacts live in an existing S3-compatible object store. SessionDB uses its object API for storage and its own session API for queries.
+PostgreSQL holds session data, search indexes, optional project metadata, and job state. Original files and large artifacts live in an existing S3-compatible object store. SessionDB uses its object API for storage and its own session API for queries.
 
 ## Rust workspace
 
@@ -31,9 +31,9 @@ The Cargo workspace contains these five packages:
 | --- | --- | --- |
 | `sessiondb-types` | Public resource/request/response types and API errors | Serialization and basic value types |
 | `sessiondb-adapters` | Harness discovery metadata and native transcript normalization | Types; no server or database |
-| `sessiondb-client` | Typed async HTTP SDK, authentication plumbing, pagination, and job access | Types and HTTP client |
+| `sessiondb-client` | Typed async HTTP SDK, static bearer-key authentication, pagination, and job access | Types and HTTP client |
 | `sessiondb-cli` | `sessiondb` binary, interactive ergonomics, local collection state, and sync | Client, adapters, types |
-| `sessiondb-server` | `sessiondb-server` binary, HTTP routes, authorization, persistence, search, and workers | Types, adapters, storage libraries |
+| `sessiondb-server` | `sessiondb-server` binary, HTTP routes, key verification, persistence, search, and workers | Types, adapters, storage libraries |
 
 Keep server concerns in modules initially: `api`, `auth`, `catalog`, `imports`, `objects`, `search`, `embeddings`, and `jobs`. Extract another crate only when there is a concrete reuse or dependency reason. The client must not depend on server internals.
 
@@ -41,7 +41,7 @@ The Rust 2024 edition and Cargo workspace conventions are the baseline. The pinn
 
 ## Implementation baseline
 
-Use Tokio/axum, serde, SQLx, reqwest, clap, the official AWS S3 client, and structured tracing. Use openidconnect for the CLI login protocol and jsonwebtoken for the API's JWT profile. The selected versions and successful dependency/protocol checks are recorded in [reference validation](validation/reference-stack.md).
+Use Tokio/axum, serde, SQLx, reqwest, clap, the official AWS S3 client, and structured tracing. Require the nonempty `SESSIONDB_API_KEY` and protect all `/v1` APIs with the same key. No external identity service is required. The historical dependency/protocol checks are recorded in [reference validation](validation/reference-stack.md).
 
 The initial tested compiler baseline is Rust 1.94.1 with the Rust 2024 edition. The workspace Cargo.lock and pinned toolchain record the actual dependency set. Use the tested baseline rather than choosing new latest versions independently.
 
@@ -82,9 +82,9 @@ An upload or scheduled completion is not archival acceptance. A background verif
 
 ## Consistency
 
-Catalog and membership reads use PostgreSQL. Session parsing, keyword indexing, and embedding are asynchronous. Responses include processing state so users can distinguish collection lag from search lag. Keyword results cover indexed accepted content; embedding coverage is a separate measure.
+Catalog reads use PostgreSQL. Session parsing, keyword indexing, and embedding are asynchronous. Responses include processing state so users can distinguish collection lag from search lag. Keyword results cover indexed accepted content; embedding coverage is a separate measure.
 
-The [sync protocol](sync.md) specifies retries and rewrites. The [data model](data-model.md) separates conversation branches from nested execution. All read paths apply [session authorization](access-control.md) before returning content, including search candidates and raw export access.
+The [sync protocol](sync.md) specifies retries and rewrites. The [data model](data-model.md) separates conversation branches from nested execution. All data paths require the [instance API key](access-control.md), including search and raw exports. Key holders share the complete collection.
 
 ## API and applications
 

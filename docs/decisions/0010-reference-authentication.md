@@ -1,6 +1,6 @@
 # Reference authentication
 
-Status: accepted. Date: 2026-11-16.
+Status: superseded by [0013](0013-instance-api-key.md). Date: 2026-11-16.
 
 ## Decision
 

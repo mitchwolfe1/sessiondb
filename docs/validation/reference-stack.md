@@ -1,10 +1,10 @@
 # Reference stack validation
 
-The first-build storage and authentication choices were checked on 2026-11-16 using disposable local services and synthetic data. These initial experiments ran outside the application checkout during the documentation phase. The repository now also contains the [initial implementation](../implementation.md) and its integration suite.
+Historical record: the original first-build storage and OIDC authentication choices were checked on 2026-11-16 using disposable local services and synthetic data. These initial experiments ran outside the application checkout during the documentation phase. The repository now also contains the [initial implementation](../implementation.md) and its integration suite.
 
-These results establish dependency and protocol compatibility. They do not claim that a SessionDB server, native adapter, or production performance benchmark has already run.
+These results establish historical dependency/protocol compatibility, not validation of the new instance-key model. [ADR 0013](../decisions/0013-instance-api-key.md) supersedes all OIDC assumptions below. Keycloak, browser probes, and identity libraries are no longer runtime prerequisites. No instance-key cutover tests were run for this documentation update; integrated results must be recorded separately after execution. These experiments did not exercise application adapters or production performance.
 
-## Selected components
+## Historically tested components
 
 | Component | Selected/tested version |
 | --- | --- |
@@ -18,9 +18,9 @@ These results establish dependency and protocol compatibility. They do not claim
 | Serialization | serde 1.0.229, serde_json 1.0.154 with `arbitrary_precision` and `raw_value` |
 | Identity libraries | openidconnect 4.1.0, jsonwebtoken 12.0.0 with the selected crypto backend |
 
-The temporary compatibility crate compiled the selected direct dependency set and ran the S3 probe on Rust 1.94.1. This is the initial tested minimum, not an inference from the workstation's default compiler. The application must commit its own Cargo.lock/toolchain when implementation begins. The OIDC library brings reqwest 0.12.28 alongside the main client's 0.13.5; use each library's correct HTTP interface rather than mixing their client types.
+The temporary compatibility crate compiled the selected direct dependency set and ran the S3 probe on Rust 1.94.1. This is the initial tested minimum, not an inference from the workstation's default compiler. The current application has its own committed Cargo.lock/toolchain. The superseded OIDC library brought reqwest 0.12.28 alongside the main client's 0.13.5; this was a historical compatibility observation, not a current dependency requirement.
 
-## Pinned reference images
+## Historical reference images
 
 ```text
 chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
@@ -50,7 +50,7 @@ Use `RequestChecksumCalculation::WhenRequired` and `ResponseChecksumValidation::
 
 SeaweedFS was selected as an existing single-node reference that passed the required operations. The official SDK gives the needed S3 signing controls. Other S3-compatible providers use the same checks before being listed as tested. Bucket versioning is not required for SessionDB's application file generations.
 
-## Authentication checks
+## Superseded OIDC authentication checks
 
 | Check | Result |
 | --- | --- |
@@ -66,9 +66,9 @@ SeaweedFS was selected as an existing single-node reference that passed the requ
 | Refresh token exchange | Passed |
 | Verified email needed for invitation matching | Present in reference configuration |
 
-The tests found two configuration/transport details worth retaining: OAuth errors return through the callback, and Keycloak's `basic` client scope supplies the subject claim. Login used a real browser, while a Python JWT reference validator checked signatures/claims and an advanced clock exercised expiry. The selected Rust identity dependencies compiled, but the actual SessionDB JWT and authorization implementation remains first-build work.
+The tests found two configuration/transport details worth retaining: OAuth errors return through the callback, and Keycloak's `basic` client scope supplies the subject claim. Login used a real browser, while a Python JWT reference validator checked signatures/claims and an advanced clock exercised expiry. The selected Rust identity dependencies compiled in that experiment; the implementation later exercised them as recorded in [historical first-build validation](first-build.md). They have since been removed by the instance-key cutover.
 
-The local issuer used development HTTP on localhost. Public deployments use HTTPS; this validation did not exercise a production TLS termination configuration. See [authentication](../authentication.md) for the selected runtime contract.
+The local issuer used development HTTP on localhost. Public deployments use HTTPS; this validation did not exercise a production TLS termination configuration. See [authentication](../authentication.md) for the replacement instance-key contract, not this historical OIDC setup.
 
 ## Sources
 
@@ -78,4 +78,4 @@ The local issuer used development HTTP on localhost. Public deployments use HTTP
 - [Keycloak loopback redirect implementation](https://github.com/keycloak/keycloak/blob/26.8.2/services/src/main/java/org/keycloak/protocol/oidc/utils/RedirectUtils.java).
 - [openidconnect](https://docs.rs/openidconnect/4.1.0/openidconnect/) and [jsonwebtoken](https://docs.rs/jsonwebtoken/12.0.0/jsonwebtoken/).
 
-Native fixture shapes and expected normalization are documented separately in [the fixture pack](../../fixtures/README.md). They are checked contract data; no adapter conformance is claimed before implementation.
+Native fixture shapes and expected normalization are documented separately in [the fixture pack](../../fixtures/README.md). Historical adapter conformance is recorded in [first-build validation](first-build.md); this reference-stack experiment itself did not test an adapter.

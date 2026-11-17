@@ -24,7 +24,7 @@ source .env
 set +a
 ```
 
-This creates private local credentials and starts PostgreSQL, an S3-compatible store, and an identity provider. The profile uses SeaweedFS and Keycloak as reference services; SessionDB communicates through S3 and OIDC. Their ports are bound to loopback and their data uses Compose volumes. The profile does not enable collection of any session store.
+This creates private local credentials and starts PostgreSQL and an S3-compatible store (SeaweedFS), and supplies the required `SESSIONDB_API_KEY` to the server and clients. No identity provider is needed. Their ports are bound to loopback and their data uses Compose volumes. The profile does not enable collection of any session store.
 
 Start the catalog and service:
 
@@ -33,17 +33,19 @@ sessiondb-server --config dev/server.toml migrate
 sessiondb-server --config dev/server.toml
 ```
 
-The API listens at `http://127.0.0.1:58080`. `GET /healthz`, `GET /readyz`, and `GET /v1/info` report liveness, dependency readiness, and actual capabilities. The checked-in contract is served at `/openapi.yaml`.
+The API listens at `http://127.0.0.1:58080`. `GET /healthz` and `GET /readyz` are public liveness/readiness probes. `GET /v1/info` reports actual capabilities only with the bearer API key. The checked-in contract is served at `/openapi.yaml`.
 
 In another terminal, add `target/debug` to PATH and connect:
 
 ```sh
-sessiondb auth login --server http://127.0.0.1:58080
-sessiondb context create local --organization local
+set -a
+source .env
+set +a
+sessiondb context create local --server http://127.0.0.1:58080
 sessiondb context use local
 ```
 
-The development login is `ada`; its generated password is `SESSIONDB_DEV_PASSWORD` in the private `.env` file. Login uses a browser and stores credentials in the OS credential store. `--no-browser` prints the authorization URL for manual opening. On a headless machine, supply an API-audience access token through `SESSIONDB_TOKEN`; member-issued API token provisioning is a later milestone. Credentials are never written into the ordinary client configuration.
+The private `.env` supplies the instance key; do not print or commit it. The server fails at startup if `SESSIONDB_API_KEY` is missing or empty. Environment-key clients need no login or OS credential-store session. Optionally, `sessiondb auth login --key-stdin` validates and saves a key in the OS store without a browser or network credential exchange. Credentials are never written into ordinary client configuration.
 
 ## Try synthetic sessions
 
@@ -73,15 +75,15 @@ Stop the development dependencies with:
 docker compose --env-file .env -f dev/compose.yaml down
 ```
 
-Volumes persist across stops. Removing these volumes resets the development database, object store, and identity provider.
+Volumes persist across stops. Removing these volumes resets the development database and object store.
 
 ## Existing infrastructure
 
-Use [the server configuration example](examples/server.toml) with an existing PostgreSQL database, S3 bucket, and compatible OIDC provider. Create the bucket before starting SessionDB. With AWS, omit the custom endpoint and explicit credential environment names to use the SDK credential chain, including instance/task roles. Custom S3 endpoints can use path-style addressing. `public_endpoint` can differ from the server's internal endpoint so signed upload URLs are reachable by clients.
+Use [the server configuration example](examples/server.toml) with an existing PostgreSQL database and S3 bucket. Provision a nonempty `SESSIONDB_API_KEY` securely in the server/client environments. Create the bucket before starting SessionDB. With AWS, omit the custom endpoint and explicit credential environment names to use the SDK credential chain, including instance/task roles. Custom S3 endpoints can use path-style addressing. `public_endpoint` can differ from the server's internal endpoint so signed upload URLs are reachable by clients.
 
-The initial OIDC access-token profile is RS256 with the configured issuer, subject, API audience, and expiry. [Authentication](authentication.md) describes provider setup and the tested Keycloak reference. Production uses HTTPS; the local profile explicitly enables loopback HTTP for its development issuer.
+[Authentication](authentication.md) describes the shared-key boundary. Remote deployments use HTTPS; loopback HTTP is a development option. The only external services required are PostgreSQL and S3.
 
-Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, `SESSIONDB_OIDC_ISSUER`, `SESSIONDB_S3_ENDPOINT`, and `SESSIONDB_S3_PUBLIC_ENDPOINT`. Database and explicit object credentials use the environment names in the configuration file. The container runs `sessiondb-server`; supply its configuration and run the `migrate` command before serving.
+Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, `SESSIONDB_S3_ENDPOINT`, and `SESSIONDB_S3_PUBLIC_ENDPOINT`. Database and explicit object credentials use the environment names in the configuration file. The container runs `sessiondb-server`; supply its configuration and run the `migrate` command before serving.
 
 ## Checks
 
@@ -99,7 +101,7 @@ cargo build --locked --workspace --bins
 cargo test --locked -p sessiondb-cli --test end_to_end -- --ignored
 ```
 
-It starts isolated services on allocated loopback ports, uses synthetic identities/transcripts, and removes its containers and volumes afterward. It exercises the real binaries and SDK, including access isolation, PKCE login/refresh, signed uploads, atomic acceptance, native export, append/rewrite behavior, lost responses, watch mode, outage recovery, expired job leases, restart persistence, and catalog backup/restore. Existing development services are not used by the suite.
+It starts isolated services on allocated loopback ports, uses a synthetic instance key and transcripts, and removes its containers and volumes afterward. It exercises the real binaries and SDK, including missing/invalid-key rejection, equal access for correct-key clients, signed uploads, atomic acceptance, native export, append/rewrite behavior, lost responses, watch mode, outage recovery, expired job leases, restart persistence, and catalog backup/restore. Existing development services are not used by the suite.
 
 Validate documentation contracts separately:
 

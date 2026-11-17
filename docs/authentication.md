@@ -1,49 +1,29 @@
 # Authentication
 
-Human CLI login uses OpenID Connect Authorization Code with PKCE S256. The first reference provider is Keycloak 26.8.2. Session access after login follows [access control](access-control.md), independently of project labels.
+SessionDB uses one instance-wide API key. Configure a nonempty `SESSIONDB_API_KEY` in the server environment; startup fails closed when it is missing or empty. Clients send `Authorization: Bearer <key>`. The key is a shared secret, not an identity, scoped credential, JWT, or expiring login session.
 
-Status: implemented first-build protocol. [Reference validation](validation/reference-stack.md) records the initial browser/provider checks. The implementation suite exercises the SDK's PKCE callback/refresh and the API's JWT and membership checks.
+Status: accepted clean cutover in [ADR 0013](decisions/0013-instance-api-key.md). Historical OIDC checks in [reference validation](validation/reference-stack.md) and [first-build validation](validation/first-build.md) do not verify this cutover. No cutover checks have been run as part of this documentation update.
 
-## Provider setup
+## Request boundary
 
-Configure a public `sessiondb-cli` client with Authorization Code enabled, direct password grants disabled, and PKCE S256 required. Use the `basic`, `profile`, and `email` client scopes. The reference test confirmed that omitting Keycloak's `basic` scope can omit the access token's subject claim.
+Every `/v1` endpoint, including `/v1/info`, requires the key before returning data or processing a request. `/healthz`, `/readyz`, and static `/openapi.yaml` are public. Missing, malformed, or incorrect bearer credentials return `401`; valid-key clients all have the same full access to the shared collection. There is no network login, discovery, refresh, account lookup, or credential-issuance API.
 
-Register `http://127.0.0.1/callback`. Keycloak's tested loopback handling accepts the requested dynamic port, so the CLI can bind an available port rather than depending on one fixed port being free. Do not register an unrestricted wildcard redirect.
+Use HTTPS for remote deployments. Explicit loopback HTTP remains available for local development. Verify the secret with a constant-time comparison. Never write it into logs, diagnostics, ordinary configuration, examples, URLs, or command-line arguments.
 
-Map `sessiondb-api` into the access-token audience only. The client-audience ID token is used to validate the CLI authentication response, not to authorize SessionDB API calls. The [realm example](examples/keycloak-realm.json) contains the reference client/scopes/mapper and no user passwords or client secret.
+## CLI and SDK
 
-The reference validation used a disposable local issuer. Production issuer/discovery/token endpoints use HTTPS. Existing providers can replace Keycloak when they satisfy this JWT access-token profile and the same interoperability checks; opaque access-token introspection is not v1 behavior.
+`SESSIONDB_API_KEY` is sufficient for every CLI operation. A context selects only a server URL. `sessiondb auth login --key-stdin` requires that flag, reads a supplied key, validates protected `/v1/info`, and saves it per normalized server URL in the OS credential store. It does not authenticate with a provider or exchange tokens. `SESSIONDB_API_KEY` overrides the saved key; an explicitly empty value fails without fallback. Logout removes only the local stored copy, not the environment value; status validates `/v1/info` and reports only the server/authenticated state, never the secret. See [CLI](cli.md) for the available interface.
 
-## Login sequence
+The Rust SDK requires `Client::new(server: &str, api_key: String, timeout: Duration)`. A missing/empty key is an error. It has no token provider, refresh task, or organization selection. Never forward the key to signed upload/download URLs: object requests receive only their server-provided headers.
 
-1. Read the server's public `/v1/auth/config`, then fetch and validate discovery for its exact configured issuer.
-2. Bind the callback listener to `127.0.0.1` on an available port. Generate fresh state, nonce, and a cryptographically random PKCE verifier; send its S256 challenge.
-3. Open the system browser at the authorization endpoint, requesting `openid profile email` for the public CLI client.
-4. Accept the callback only on the expected path and validate state. Handle `error`/`error_description` callbacks as failures; an OAuth failure can arrive through a redirect rather than a non-2xx browser page.
-5. Exchange the code with the verifier and exact redirect URI. Validate the ID token's signature, issuer, client audience, and nonce through the selected OIDC library.
-6. Present the API-audience access token to `POST /v1/auth/session`. The server validates it, registers the user, and claims matching active invitations using verified identity information.
-7. Store access/refresh credentials in the OS credential store. The context configuration holds the server and organization selection, not the tokens.
+## Provisioning and rotation
 
-A cancelled/failed browser flow expires after five minutes and releases the loopback listener. Refresh follows the provider's token endpoint and lifetime policy. A returned ID token is verified and must retain the original subject; a repeated nonce must match the initial login. A failed refresh asks for sign-in rather than falling back to another identity or an API-key billing path.
+Generate a strong random key in the operator's secret manager and distribute it through an appropriate secret channel. No initial owner or bootstrap account is needed. Keep the key external to PostgreSQL backups and client TOML files. To rotate, replace the server environment key and restart the service, then update all client environments or credential-store entries. There is one accepted key, not a dual-key compatibility window; holders of the old key lose API access together. Previously issued signed object URLs can remain usable until their short expiry.
 
-For a headless environment, `SESSIONDB_TOKEN` supplies an API-audience access token without OS credential storage. `sessiondb auth login --token-stdin` validates and saves a supplied token in that store. Member-issued scoped API tokens and device authorization are later flows.
+Anyone given the key can read every session and original, sync content, and invoke all implemented mutations. Do not distribute it to a consumer that should have read-only or partial access. Use separate instances when collection isolation is required; project labels and provenance are not access controls.
 
-## API token verification
+## Upgrade warning
 
-The first provider profile uses RS256 JWT access tokens. Require a valid signature and `iss`, `sub`, `aud`, and `exp`; the exact issuer and `sessiondb-api` audience must match the server configuration. Allow 30 seconds of clock skew. Reject ID tokens with the CLI audience, altered signatures, an unexpected algorithm, missing required claims, and expired tokens.
+The forward migration removes the former identity model without deleting accepted session/file/project/job data. Previously isolated content becomes one collection accessible to every correct-key client. Preserve backups and review this disclosure before migration. Existing object locations may retain opaque historical components; those names do not enforce isolation.
 
-Use discovered JWKS with a five-minute cache, refreshing once when an unfamiliar key ID appears. Do not accept keys embedded in an untrusted token or expand the allowed algorithms from a token header. `openidconnect` handles the CLI protocol/ID-token checks; `jsonwebtoken` handles the API JWT profile. Use the OIDC crate's own HTTP-client interface where its dependency version differs from the main SDK client.
-
-The chosen JWT profile is narrower than claiming support for every possible OIDC deployment. Another signing algorithm or token-introspection mode requires an explicit compatibility addition.
-
-## Bootstrap and automation
-
-On an empty installation, configuration names the initial organization and one exact issuer/subject that becomes its owner. Bootstrap is a one-time transaction. Later edits to that setting do not grant another owner. Obtain the subject from the identity-provider directory or a verified login, not from an unverified token body.
-
-Member-issued API tokens have a random 256-bit secret, a recognizable `sdb_` prefix, an explicit expiry, and a stored SHA-256 verifier. They are not passwords. The CLI's proposed default is 90 days, with a one-year maximum configurable downward by the server. Token creation returns the secret once; revocation and the issuer's current access are checked by the server.
-
-Read/write scopes and explicit session restrictions do not exceed that member's current rights. A sync credential also binds one owned source and cannot change sharing, source defaults, or organization membership. Source-token provisioning and rotation are later than the first human-login slice; the first one-shot sync can use the authenticated CLI credential.
-
-## Conformance
-
-The implementation must reproduce the reference checks for successful login, missing PKCE, wrong verifier, state/nonce validation, refresh, wrong audience/issuer, ID-token misuse, altered signatures, and expiry. Add missing-claim, key-rotation, cancellation, and membership-revocation tests against the actual server. Protocol validation is a starting point for those tests, not a replacement for them.
+Existing clients must update their API paths, DTOs, credential configuration, and local state format. Old organization contexts, login credentials, and identity-scoped sync state are not a compatibility mode. Follow [operations](operations.md#migrations-and-upgrades) and the current CLI migration behavior rather than silently reusing old state.

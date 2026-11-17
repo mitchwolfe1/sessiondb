@@ -1,6 +1,6 @@
 # Keyword search and optional embeddings
 
-Status: proposed. Date: 2026-11-15.
+Status: proposed; organization/permission assumptions superseded by [0013](0013-instance-api-key.md). Date: 2026-11-15.
 
 Profile scope is clarified by [0008](0008-collection-and-project-associations.md): a common enabled organization profile supports unassigned sessions and optional project filters.
 

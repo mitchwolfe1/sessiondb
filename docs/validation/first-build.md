@@ -1,6 +1,21 @@
 # First implementation validation
 
-The initial implementation was exercised on 2026-11-16 on Linux x86-64 with the pinned Rust 1.94.1 toolchain. Tests used synthetic identities/transcripts and disposable local services. No personal session store or model API was used.
+Historical record: the pre-cutover OIDC implementation was exercised on 2026-11-16 on Linux x86-64 with the pinned Rust 1.94.1 toolchain. Tests used synthetic identities/transcripts and disposable local services. No personal session store or model API was used.
+
+## Instance-key cutover status
+
+The authentication/authorization observations below belong to the superseded build described by ADR 0010. [ADR 0013](../decisions/0013-instance-api-key.md) removes that protocol and identity model.
+
+The instance-key build passes Clippy with warnings denied and the affected Rust package tests (seven tests passed; the two Docker integration scenarios are separate). The API/documentation checks pass for 37 target operations, 20 implemented operations, 13 API examples, and all documentation links. Markdown lint reports no issues. The simplified development launcher passes shell syntax and Compose configuration checks.
+
+Both Docker integration scenarios pass against the built server and CLI binaries with PostgreSQL and S3-compatible storage, without an identity provider:
+
+- Missing, empty, and incorrect keys are rejected; all data surfaces require authentication, and correct-key clients have equal access to sessions, related history, originals, and artifacts.
+- Replacing the instance key and restarting rejects previously configured clients while preserving stored data.
+- All three native harnesses, immutable acceptance, append/rewrite handling, native exports, large content, CLI watch/outage recovery, expired worker leases, and backup/restore still pass.
+- Upgrading a populated pre-cutover catalog preserves session/source UUIDs, manual metadata, original bytes, native exports, and pending staged uploads; obsolete identity fields are absent from session responses.
+
+The actual CLI help and credential-store login help were also inspected. Container release builds and additional platform/provider compatibility were not rerun for this cutover.
 
 ## Native formats
 
@@ -8,9 +23,9 @@ The initial implementation was exercised on 2026-11-16 on Linux x86-64 with the 
 
 ## Complete storage and client path
 
-The [Docker integration test](../../crates/cli/tests/end_to_end.rs) runs the real server and CLI binaries with PostgreSQL 18.4, S3-compatible storage, and a synthetic signed OIDC issuer. The SDK uses the same endpoints as the CLI.
+Before the cutover, the [Docker integration test](../../crates/cli/tests/end_to_end.rs) ran the real server and CLI binaries with PostgreSQL 18.4, S3-compatible storage, and a synthetic signed OIDC issuer. Its former identity coverage is listed below only as history; the current instance-key results are recorded above.
 
-Passing scenarios include:
+Historical passing scenarios included:
 
 - Required JWT claims, audience/issuer/signature/expiry rejection, verified-email invitations, and membership revocation.
 - SDK Authorization Code/PKCE callback, nonce checks, refresh, and rejection of a changed refreshed identity.
@@ -24,7 +39,7 @@ Passing scenarios include:
 - API/object-service restart, catalog dump/restore into a clean database, and client resynchronization without duplicate uploads.
 - Updated content URLs and representation ETags after changing the public server address.
 
-## Reference provider and container
+## Historical reference provider and container
 
 The SDK login example also completed a real Chromium login against Keycloak 26.8.2 using the local development profile. Login registered the synthetic initial owner, and refresh succeeded with the implemented ID-token checks. This check used an isolated browser session; credentials were not written into the client configuration.
 
@@ -36,7 +51,7 @@ The server container built in release mode and ran as its non-root user. Its rea
 
 ## GitHub Actions startup status
 
-Local checks pass, but GitHub Actions has not executed the hosted jobs. Both push and manual dispatch returned `startup_failure` with zero jobs and no step logs on 2026-11-16. The workflow also passes `actionlint`, and its action references resolve.
+At the time of this historical record, local checks passed but GitHub Actions had not executed the hosted jobs. Both push and manual dispatch returned `startup_failure` with zero jobs and no step logs on 2026-11-16. The workflow also passes `actionlint`, and its action references resolve.
 
 The active CI workflow is `420557309`. [A push run](https://github.com/mitchwolfe1/sessiondb/actions/runs/43948795214) instead references workflow `420557352`, whose API record has an empty name, path `BuildFailed`, and state `deleted`. GitHub rejects disabling that record because it is inactive. [Manual execution of the active workflow](https://github.com/mitchwolfe1/sessiondb/actions/runs/43948918264) also creates no jobs.
 

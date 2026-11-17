@@ -1,6 +1,6 @@
 # Collection and project associations
 
-Status: accepted direction. Date: 2026-11-15.
+Status: accepted direction; identity/access assumptions superseded by [0013](0013-instance-api-key.md). Date: 2026-11-15.
 
 ## Decision
 

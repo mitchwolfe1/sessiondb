@@ -1,27 +1,23 @@
-# Proposed client configuration. Tokens belong in the keychain or environment.
-current_context = "acme"
+# Proposed client configuration. The API key belongs in the OS store or SESSIONDB_API_KEY.
+current_context = "shared"
 
-[contexts.acme]
+[contexts.shared]
 server = "https://sessions.example.com"
-organization = "acme"
 
 [[sources]]
-context = "acme"
+context = "shared"
 harness = "codex"
 root = "~/.codex/sessions"
-default_visibility = "private"
 
 [[sources]]
-context = "acme"
+context = "shared"
 harness = "claude"
 root = "~/.claude/projects"
-default_visibility = "private"
 
 [[sources]]
-context = "acme"
+context = "shared"
 harness = "pi"
 root = "~/.pi/agent/sessions"
-default_visibility = "private"
 
 # Optional initial classification. Nonmatching sessions still sync unassigned.
 [[project_rules]]

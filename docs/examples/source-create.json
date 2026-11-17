@@ -1,6 +1,5 @@
 {
   "harness": "claude",
   "device_label": "Ada laptop",
-  "root": "/home/ada/.claude/projects",
-  "default_visibility": "private"
+  "root": "/home/ada/.claude/projects"
 }

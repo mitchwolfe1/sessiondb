@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 umask 077
 if [[ ! -f .env ]]; then
   python3 - <<'PY'
-import json, secrets
+import secrets
 from pathlib import Path
 database_password = secrets.token_hex(24)
 values = {
@@ -12,7 +12,7 @@ values = {
     'SESSIONDB_DATABASE_URL': f'postgres://sessiondb:{database_password}@127.0.0.1:55432/sessiondb',
     'SESSIONDB_DEV_S3_ACCESS_KEY': secrets.token_hex(16),
     'SESSIONDB_DEV_S3_SECRET_KEY': secrets.token_hex(32),
-    'SESSIONDB_DEV_PASSWORD': secrets.token_urlsafe(24),
+    'SESSIONDB_API_KEY': secrets.token_urlsafe(32),
 }
 Path('.env').write_text(''.join(f'{key}={value}\n' for key, value in values.items()))
 PY
@@ -20,36 +20,10 @@ fi
 set -a
 source .env
 set +a
-if [[ ! -f dev/.generated-realm.json ]]; then
-  python3 - <<'PY'
-import json, os
-from pathlib import Path
-realm = json.loads(Path('docs/examples/keycloak-realm.json').read_text())
-realm['realm'] = 'sessiondb'
-realm['users'] = [{
-    'id': '44444444-4444-4444-8444-444444444444',
-    'username': 'ada', 'enabled': True, 'email': 'ada@example.com',
-    'emailVerified': True, 'firstName': 'Ada', 'lastName': 'Example',
-    'credentials': [{'type': 'password', 'value': os.environ['SESSIONDB_DEV_PASSWORD'], 'temporary': False}],
-}]
-Path('dev/.generated-realm.json').write_text(json.dumps(realm))
-PY
+if [[ -z "${SESSIONDB_API_KEY:-}" ]]; then
+  printf '\nSESSIONDB_API_KEY=%s\n' "$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
 fi
-docker compose --env-file .env -f dev/compose.yaml run --rm --no-deps --user 0 --entrypoint /bin/bash -T identity -c 'mkdir -p /opt/keycloak/data/import; cat > /opt/keycloak/data/import/sessiondb.json; chown 1000:0 /opt/keycloak/data/import/sessiondb.json; chmod 600 /opt/keycloak/data/import/sessiondb.json' < dev/.generated-realm.json
+chmod 600 .env
 docker compose --env-file .env -f dev/compose.yaml up -d --wait
-python3 - <<'PY'
-import time, urllib.request
-deadline = time.monotonic() + 60
-while True:
-    try:
-        with urllib.request.urlopen('http://127.0.0.1:58180/realms/sessiondb/.well-known/openid-configuration', timeout=2) as response:
-            if response.status == 200:
-                break
-    except OSError:
-        pass
-    if time.monotonic() >= deadline:
-        raise SystemExit('The development identity provider did not become ready; inspect docker compose logs.')
-    time.sleep(0.5)
-PY
-printf '%s\n' 'Development services are ready. Credentials are in .env (username: ada).'
+printf '%s\n' 'Development PostgreSQL and object storage are ready. The shared API key is in .env.'
 printf '%s\n' 'Next: source .env with export enabled, build the workspace, run migrations, and start the server. See docs/development.md.'

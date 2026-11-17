@@ -23,7 +23,6 @@ use uuid::Uuid;
 pub async fn ensure_source(
     client: &Client,
     state: &LocalState,
-    org: Uuid,
     device: &str,
     configured: &ConfiguredSource,
 ) -> Result<Source> {
@@ -35,52 +34,37 @@ pub async fn ensure_source(
     }
     let root = root.to_str().context("native store root must be UTF-8")?;
     if let Some(id) = state
-        .registration(
-            client.server(),
-            org,
-            device,
-            configured.harness.as_str(),
-            root,
-        )
+        .registration(client.server(), device, configured.harness.as_str(), root)
         .await?
     {
-        match client.source(org, id).await {
+        match client.source(id).await {
             Ok(source) => return Ok(source),
             Err(sessiondb_client::Error::Problem(p)) if p.status == 404 => {}
             Err(e) => return Err(e.into()),
         }
     }
-    let me = client.me().await?;
     let mut options = ListOptions::default();
-    let source = loop {
-        let page = client.sources(org, &options).await?;
-        if let Some(source) = page.data.into_iter().find(|s| {
-            s.owner_id == me.user.id
-                && s.harness == configured.harness
-                && s.device_label == device
-                && s.root == root
-        }) {
-            break source;
-        }
-        if page.next_cursor.is_some() {
-            options.cursor = page.next_cursor;
-        } else {
-            break client
-                .create_source(
-                    org,
-                    &SourceCreate {
+    let source =
+        loop {
+            let page = client.sources(&options).await?;
+            if let Some(source) = page.data.into_iter().find(|s| {
+                s.harness == configured.harness && s.device_label == device && s.root == root
+            }) {
+                break source;
+            }
+            if page.next_cursor.is_some() {
+                options.cursor = page.next_cursor;
+            } else {
+                break client
+                    .create_source(&SourceCreate {
                         harness: configured.harness,
                         device_label: device.into(),
                         root: root.into(),
-                        default_visibility: configured.default_visibility,
-                    },
-                )
-                .await?;
-        }
-    };
-    state
-        .register(client.server(), org, device, &source)
-        .await?;
+                    })
+                    .await?;
+            }
+        };
+    state.register(client.server(), device, &source).await?;
     Ok(source)
 }
 pub fn lock(directory: &Path) -> Result<std::fs::File> {
@@ -94,15 +78,11 @@ pub fn lock(directory: &Path) -> Result<std::fs::File> {
         .context("another sync process is using this state directory")?;
     Ok(file)
 }
-async fn remote_files(
-    client: &Client,
-    org: Uuid,
-    source: Uuid,
-) -> Result<HashMap<String, SourceFile>> {
+async fn remote_files(client: &Client, source: Uuid) -> Result<HashMap<String, SourceFile>> {
     let mut options = ListOptions::default();
     let mut result = HashMap::new();
     loop {
-        let page = client.source_files(org, source, &options).await?;
+        let page = client.source_files(source, &options).await?;
         for file in page.data {
             result.insert(file.path.clone(), file);
         }
@@ -116,7 +96,6 @@ async fn remote_files(
 pub async fn source(
     client: &Client,
     state: &LocalState,
-    org: Uuid,
     source: &Source,
     options: &SyncOptions,
     quiet: bool,
@@ -128,14 +107,14 @@ pub async fn source(
     let batch = options.batch_files.clamp(1, limits.max_files_per_import);
     let mut accepted = 0;
     if let Some(pending) = state.pending(source.id).await? {
-        accepted += reconcile_pending(client, state, org, pending, options, quiet)
+        accepted += reconcile_pending(client, state, pending, options, quiet)
             .await?
             .results
             .len();
     }
     let mut deferred = 0;
     loop {
-        let remote = remote_files(client, org, source.id).await?;
+        let remote = remote_files(client, source.id).await?;
         let root = PathBuf::from(&source.root);
         let directory = state
             .directory
@@ -169,7 +148,7 @@ pub async fn source(
             import_id: None,
         };
         state.save_pending(&pending).await?;
-        accepted += reconcile_pending(client, state, org, pending, options, quiet)
+        accepted += reconcile_pending(client, state, pending, options, quiet)
             .await?
             .results
             .len();
@@ -179,14 +158,13 @@ pub async fn source(
 async fn reconcile_pending(
     client: &Client,
     state: &LocalState,
-    org: Uuid,
     pending: Pending,
     options: &SyncOptions,
     quiet: bool,
 ) -> Result<Import> {
     let source = pending.manifest.source_id;
     let directory = pending.directory.clone();
-    let result = resume(client, state, org, pending, options, quiet).await;
+    let result = resume(client, state, pending, options, quiet).await;
     if let Err(error) = &result
         && matches!(error.downcast_ref::<sessiondb_client::Error>(),Some(sessiondb_client::Error::Problem(p)) if p.status==404 || (p.status==409 && matches!(p.code.as_str(),"version_conflict"|"import_expired")))
     {
@@ -292,16 +270,15 @@ fn scan(
 async fn resume(
     client: &Client,
     state: &LocalState,
-    org: Uuid,
     mut pending: Pending,
     options: &SyncOptions,
     quiet: bool,
 ) -> Result<Import> {
     let mut import = if let Some(id) = pending.import_id {
-        client.import(org, id).await?
+        client.import(id).await?
     } else {
         let import = client
-            .create_import(org, &pending.manifest, &pending.create_key)
+            .create_import(&pending.manifest, &pending.create_key)
             .await?;
         pending.import_id = Some(import.id);
         state.save_pending(&pending).await?;
@@ -347,12 +324,12 @@ async fn resume(
             .try_collect::<Vec<_>>()
             .await?;
         import = client
-            .complete_import(org, import.id, &pending.complete_key)
+            .complete_import(import.id, &pending.complete_key)
             .await?;
     }
     if import.accepted_at.is_none() {
         import = client
-            .wait_for_acceptance(org, import.id, Duration::from_secs(900))
+            .wait_for_acceptance(import.id, Duration::from_secs(900))
             .await?;
     }
     let Some(accepted_at) = import.accepted_at else {

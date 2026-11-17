@@ -17,15 +17,8 @@ secret_key_env = "SESSIONDB_S3_SECRET_ACCESS_KEY"
 download_url_ttl_seconds = 60
 
 [auth]
-issuer = "https://identity.example.com/realms/acme"
-audience = "sessiondb-api"
-cli_client_id = "sessiondb-cli"
-
-[bootstrap]
-organization_slug = "acme"
-organization_name = "Acme Engineering"
-owner_issuer = "https://identity.example.com/realms/acme"
-owner_subject = "example-owner-subject"
+# Required nonempty environment secret; never put the key in this file.
+api_key_env = "SESSIONDB_API_KEY"
 
 [workers]
 parse_concurrency = 2

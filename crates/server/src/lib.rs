@@ -35,7 +35,6 @@ impl AppState {
             .await
             .context("connect to PostgreSQL")?;
         check_migrations(&pool).await?;
-        auth::bootstrap(&pool, config.bootstrap.as_ref()).await?;
         let objects = Arc::new(objects::S3Store::new(&config.objects).await?);
         let auth = Authenticator::new(config.auth.clone())?;
         Ok(Arc::new(Self {

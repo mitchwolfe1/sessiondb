@@ -1,6 +1,6 @@
 # Capability focused documentation
 
-Status: accepted. Date: 2026-11-15.
+Status: accepted; identity-feature assumptions superseded by [0013](0013-instance-api-key.md). Date: 2026-11-15.
 
 ## Decision
 

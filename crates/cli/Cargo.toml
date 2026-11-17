@@ -15,7 +15,6 @@ sessiondb-types.workspace = true
 sessiondb-client.workspace = true
 sessiondb-adapters.workspace = true
 anyhow.workspace = true
-async-trait.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 chrono.workspace = true
@@ -31,8 +30,8 @@ tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
 uuid.workspace = true
+url.workspace = true
 walkdir.workspace = true
-webbrowser.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -41,12 +40,7 @@ libc = "0.2"
 sessiondb-server = { path = "../server" }
 aws-sdk-s3.workspace = true
 axum.workspace = true
-base64.workspace = true
-jsonwebtoken.workspace = true
 reqwest.workspace = true
-rsa = { version = "0.9", features = ["pem"] }
-rand08 = { package = "rand", version = "0.8" }
-url.workspace = true
 zip.workspace = true
 
 [lints]

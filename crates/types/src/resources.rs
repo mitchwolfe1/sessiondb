@@ -16,10 +16,8 @@ macro_rules! string_enum {
     };
 }
 string_enum!(Harness { Codex => "codex", Claude => "claude", Pi => "pi" });
-string_enum!(#[derive(Default)] Visibility { #[default] Private => "private", Organization => "organization" });
 string_enum!(Role { User => "user", Assistant => "assistant", System => "system", Tool => "tool", Unknown => "unknown" });
 string_enum!(Origin { NativeUser => "native_user", Model => "model", Tool => "tool", Harness => "harness", Unknown => "unknown" });
-string_enum!(OrganizationRole { Owner => "owner", Admin => "admin", Member => "member" });
 string_enum!(ImportStatus { AwaitingUpload => "awaiting_upload", Verifying => "verifying", Queued => "queued", Processing => "processing", Ready => "ready", Partial => "partial", Failed => "failed", Expired => "expired" });
 string_enum!(JobStatus { Queued => "queued", Running => "running", Succeeded => "succeeded", Partial => "partial", Failed => "failed", Cancelled => "cancelled" });
 impl ImportStatus {
@@ -46,37 +44,6 @@ pub struct Page<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct User {
-    pub id: Uuid,
-    pub display_name: String,
-    pub email: Option<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Organization {
-    pub id: Uuid,
-    pub slug: String,
-    pub name: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Membership {
-    pub user: User,
-    pub organization_id: Uuid,
-    pub role: OrganizationRole,
-    pub status: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Me {
-    pub user: User,
-    pub memberships: Vec<Membership>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthConfig {
-    pub issuer: String,
-    pub audience: String,
-    pub cli_client_id: String,
-    pub flows: Vec<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
     pub api_version: String,
     pub server_version: String,
@@ -102,42 +69,18 @@ impl Default for Limits {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Invitation {
-    pub id: Uuid,
-    pub email: String,
-    pub role: String,
-    pub expires_at: DateTime<Utc>,
-    pub status: String,
-}
-fn member_role() -> String {
-    "member".into()
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InvitationCreate {
-    pub email: String,
-    #[serde(default = "member_role")]
-    pub role: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceCreate {
     pub harness: Harness,
     pub device_label: String,
     pub root: String,
-    #[serde(default)]
-    pub default_visibility: Visibility,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     pub id: Uuid,
-    pub organization_id: Uuid,
     pub harness: Harness,
     pub device_label: String,
     pub root: String,
-    pub default_visibility: Visibility,
-    pub owner_id: Uuid,
     pub paused: bool,
     pub last_synced_at: Option<DateTime<Utc>>,
 }
@@ -203,7 +146,6 @@ pub struct FileError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Import {
     pub id: Uuid,
-    pub organization_id: Uuid,
     pub source_id: Uuid,
     pub status: ImportStatus,
     pub uploads: Vec<UploadTarget>,
@@ -241,15 +183,11 @@ pub struct SessionRelation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
-    pub organization_id: Uuid,
-    pub author_id: Uuid,
-    pub owner_id: Uuid,
     pub harness: Harness,
     pub native_session_id: String,
     pub title: String,
     pub tags: Vec<String>,
     pub project_ids: Vec<Uuid>,
-    pub visibility: Visibility,
     pub recorded_cwd: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
@@ -351,8 +289,6 @@ pub struct SessionFilter {
     pub cursor: Option<String>,
     pub project_id: Option<Uuid>,
     pub unassigned: Option<bool>,
-    pub author_id: Option<Uuid>,
-    pub team_id: Option<Uuid>,
     pub harness: Option<Harness>,
     pub tag: Option<String>,
     pub after: Option<DateTime<Utc>>,
