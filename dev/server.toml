@@ -1,9 +1,6 @@
-# Local development only. Use HTTPS for remote connections.
+# Local development. dev/up creates the fixed credential environment variables in .env.
 listen = "127.0.0.1:58080"
 public_url = "http://127.0.0.1:58080"
-
-[database]
-url_env = "SESSIONDB_DATABASE_URL"
 
 [objects]
 provider = "s3"
@@ -11,8 +8,3 @@ endpoint = "http://127.0.0.1:58333"
 bucket = "sessiondb"
 region = "us-east-1"
 path_style = true
-access_key_env = "SESSIONDB_DEV_S3_ACCESS_KEY"
-secret_key_env = "SESSIONDB_DEV_S3_SECRET_KEY"
-
-[auth]
-api_key_env = "SESSIONDB_API_KEY"

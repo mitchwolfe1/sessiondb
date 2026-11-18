@@ -66,7 +66,7 @@ for path in [*ROOT.glob("docs/examples/*.toml"), ROOT / "dev/server.toml"]:
         assert "project_rules" not in config, "matching rules are not implemented"
     else:
         assert set(config) <= rust_fields(server_config, "Config")
-        assert config["auth"] == {"api_key_env": "SESSIONDB_API_KEY"}
+        assert "database" not in config and "auth" not in config
         assert set(config["objects"]) <= rust_fields(server_config, "Objects")
         assert not {"public_endpoint", "upload_url_ttl_seconds", "download_url_ttl_seconds"} & set(config["objects"])
         assert "workers" not in config and "bootstrap" not in config

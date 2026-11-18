@@ -14,11 +14,24 @@ Only the server needs the S3 endpoint. Sync clients upload through the API, and 
 
 ## Configuration and credentials
 
-Use TOML with `--config` and documented environment overrides. The [server example](examples/server.toml) reflects the current shape. `[limits]` contains only `max_file_bytes` (default 268435456); there are no worker or upload-lease settings. `[objects]` configures the server's endpoint, bucket, region, path style, and credential environment references.
+Use TOML with `--config` and documented environment overrides. The [server example](examples/server.toml) reflects the current shape. `[limits]` contains only `max_file_bytes` (default 268435456); there are no worker or upload-lease settings. `[objects]` configures the server's endpoint, bucket, region, and path style.
 
 `public_url` is the address clients use, not a requirement for internet exposure. Both HTTP and HTTPS are accepted without an extra insecure-mode flag. The server listener serves HTTP; setting an HTTPS `public_url` does not enable TLS. Use an external TLS terminator for HTTPS. Bind to the private interface or restrict its port with a firewall when serving HTTP.
 
-The operator provisions one strong shared key in `SESSIONDB_API_KEY`; `[auth] api_key_env = "SESSIONDB_API_KEY"` is the default environment reference, never a literal secret. Startup rejects an absent/empty key. There is no account bootstrap or external identity service. Every correct-key client can access all instance data and implemented mutations; use independent instances for isolation. See [authentication](authentication.md).
+Secrets use fixed environment variables, as defined in [ADR 0017](decisions/0017-fixed-secret-environment-variables.md):
+
+| Variable | Value |
+| --- | --- |
+| `SESSIONDB_DATABASE_URL` | Required PostgreSQL connection URL. |
+| `SESSIONDB_API_KEY` | Required nonempty shared instance key. |
+| `SESSIONDB_S3_ACCESS_KEY_ID` | Optional static S3 access key, paired with the secret below. |
+| `SESSIONDB_S3_SECRET_ACCESS_KEY` | Optional static S3 secret key, paired with the access key above. |
+
+Set both S3 variables or neither. If neither is set, the standard AWS credential chain is used, including instance/task roles. An incomplete or empty explicit pair fails instead of silently falling back.
+
+There are no `[database]` or `[auth]` TOML sections and no configurable secret-variable names. Supply secrets through the service/container environment or a protected environment file; SessionDB does not automatically load `.env` files. Do not put secret values in TOML.
+
+Provision one strong shared key securely. Startup rejects an absent/empty key. There is no account bootstrap or external identity service. Every correct-key client can access all instance data and implemented mutations; use independent instances for isolation. See [authentication](authentication.md).
 
 Clients use `Authorization: Bearer <key>`, via `SESSIONDB_API_KEY` or the optional OS credential store. Rotate by replacing the server key and restarting, then updating clients. There is no per-client revocation, scope restriction, refresh, or overlapping legacy-key mode. Do not put keys in arguments, logs, ordinary config, or object requests.
 

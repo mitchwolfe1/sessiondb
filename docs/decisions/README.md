@@ -20,5 +20,6 @@ Decision records explain choices that affect several SessionDB components. Requi
 | [0014 Sessions and synchronous files](0014-sessions-and-synchronous-files.md) | Accepted; permissive archival superseded by 0015 | Eleven domain tables, API-mediated per-file acceptance/recovery, no batch/job machinery |
 | [0015 Strict native records and simple reads](0015-strict-native-records-and-simple-reads.md) | Accepted | Whole-file rejection before storage; no read revisions or parser diagnostics |
 | [0016 HTTP on private networks](0016-http-private-networks.md) | Accepted | HTTP and HTTPS URLs; operator-managed network protection with the same required API key |
+| [0017 Fixed secret environment variables](0017-fixed-secret-environment-variables.md) | Accepted | Fixed database/API-key/S3 credential names; no secret-reference TOML fields or empty wrapper sections |
 
 An accepted direction does not mean every example field or default has been approved. Accept a proposed record after its assumptions and relevant open questions are reviewed. Supersede records with a new linked decision rather than erasing the rationale.

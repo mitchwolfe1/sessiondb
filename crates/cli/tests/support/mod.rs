@@ -260,18 +260,12 @@ impl Server {
             format!(
                 r#"listen = "{}"
 public_url = "{}"
-[database]
-url_env = "SESSIONDB_TEST_DATABASE"
 [objects]
 provider = "s3"
 endpoint = "{}"
 bucket = "sessiondb-test"
 region = "us-east-1"
 path_style = true
-access_key_env = "SESSIONDB_TEST_ACCESS"
-secret_key_env = "SESSIONDB_TEST_SECRET"
-[auth]
-api_key_env = "SESSIONDB_API_KEY"
 "#,
                 self.url.trim_start_matches("http://"),
                 self.url,
@@ -291,9 +285,9 @@ api_key_env = "SESSIONDB_API_KEY"
         command
             .arg("--config")
             .arg(&self.config)
-            .env("SESSIONDB_TEST_DATABASE", services.database_url(database))
-            .env("SESSIONDB_TEST_ACCESS", &services.access)
-            .env("SESSIONDB_TEST_SECRET", &services.secret)
+            .env("SESSIONDB_DATABASE_URL", services.database_url(database))
+            .env("SESSIONDB_S3_ACCESS_KEY_ID", &services.access)
+            .env("SESSIONDB_S3_SECRET_ACCESS_KEY", &services.secret)
             .env("SESSIONDB_API_KEY", &self.api_key)
             .env("AWS_EC2_METADATA_DISABLED", "true");
         command

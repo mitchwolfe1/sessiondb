@@ -9,19 +9,11 @@ use url::Url;
 pub struct Config {
     pub listen: SocketAddr,
     pub public_url: Url,
-    pub database: Database,
     pub objects: Objects,
-    #[serde(default)]
-    pub auth: Auth,
     #[serde(default)]
     pub limits: Limits,
     #[serde(default)]
     pub telemetry: Telemetry,
-}
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Database {
-    pub url_env: String,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,37 +25,9 @@ pub struct Objects {
     pub region: String,
     #[serde(default)]
     pub path_style: bool,
-    pub access_key_env: Option<String>,
-    pub secret_key_env: Option<String>,
 }
 fn region() -> String {
     "us-east-1".into()
-}
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Auth {
-    #[serde(default = "api_key_env")]
-    pub api_key_env: String,
-}
-fn api_key_env() -> String {
-    "SESSIONDB_API_KEY".into()
-}
-impl Default for Auth {
-    fn default() -> Self {
-        Self {
-            api_key_env: api_key_env(),
-        }
-    }
-}
-impl Auth {
-    pub fn api_key(&self) -> Result<String> {
-        let key = env::var(&self.api_key_env)
-            .context("API key environment variable is not set or is not valid UTF-8")?;
-        if key.is_empty() {
-            bail!("API key environment variable must not be empty");
-        }
-        Ok(key)
-    }
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -97,17 +61,12 @@ impl Config {
         Ok(value)
     }
     pub fn validate(&self) -> Result<()> {
-        crate::auth::Authenticator::new(self.auth.clone())?;
+        crate::auth::Authenticator::from_env()?;
         if self.objects.provider != "s3" {
             bail!("objects.provider must be s3");
         }
         if self.objects.bucket.is_empty() {
             bail!("objects.bucket is required");
-        }
-        if self.objects.access_key_env.is_some() != self.objects.secret_key_env.is_some() {
-            bail!(
-                "configure both object credential environment names or use the AWS credential chain"
-            );
         }
         validate_http_url(&self.public_url)?;
         if self.public_url.path() != "/" {
@@ -119,7 +78,11 @@ impl Config {
         Ok(())
     }
     pub fn database_url(&self) -> Result<String> {
-        env::var(&self.database.url_env).context("database URL environment variable is not set")
+        env::var("SESSIONDB_DATABASE_URL").map_err(|_| {
+            anyhow::anyhow!(
+                "SESSIONDB_DATABASE_URL must be set to a valid UTF-8 PostgreSQL connection URL"
+            )
+        })
     }
 }
 pub fn validate_http_url(url: &Url) -> Result<()> {

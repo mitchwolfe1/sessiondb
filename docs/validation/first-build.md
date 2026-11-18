@@ -1,5 +1,14 @@
 # First implementation validation
 
+## Fixed credential environment variables
+
+Server secrets now use fixed environment names. The `[database]`/`[auth]` sections and all secret-variable-name options have been removed from server configuration, examples, development tooling, and integration setup.
+
+- Clippy passes for the affected server/CLI packages with warnings denied, and all six affected-package tests pass.
+- Isolated-process cases cover missing/empty API keys, fixed S3 credentials, incomplete/empty S3 pairs, and leaving both S3 variables unset for the standard credential chain.
+- The real PostgreSQL/S3 integration passes with canonical database, API-key, and S3 environment variables and no secret-reference TOML fields, including migrations, sync, authentication, originals, recovery, and backup/restore.
+- Contract/example validation and Markdown lint pass. The development launcher passes shell syntax validation and the Compose profile renders with the canonical S3 names. The development services were not started by this check, and no real cloud-role credentials were exercised.
+
 ## Private-network HTTP
 
 HTTP and HTTPS origins are now accepted by the server, SDK, and CLI without a loopback-only restriction. The API key remains required.

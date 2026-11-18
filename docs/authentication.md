@@ -2,7 +2,7 @@
 
 SessionDB uses one instance-wide API key. Configure a nonempty `SESSIONDB_API_KEY` in the server environment; startup fails closed when it is missing or empty. Clients send `Authorization: Bearer <key>`. The key is a shared secret, not an identity, scoped credential, JWT, or expiring login session.
 
-Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md). [First-build validation](validation/first-build.md) records instance-key checks separately from historical OIDC observations.
+Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md), with fixed secret environment names in [ADR 0017](decisions/0017-fixed-secret-environment-variables.md). [First-build validation](validation/first-build.md) records instance-key checks separately from historical OIDC observations.
 
 ## Request boundary
 

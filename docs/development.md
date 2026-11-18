@@ -81,7 +81,7 @@ Volumes persist across stops. Removing these volumes resets the development data
 
 ## Existing infrastructure
 
-Use [the server configuration example](examples/server.toml) with PostgreSQL and an existing S3 bucket. Provision the instance key securely. With AWS, omit custom endpoint and explicit credential references to use the SDK chain, including instance/task roles. Custom endpoints can use path-style addressing. Only the server accesses S3; clients need only the API URL.
+Use [the server configuration example](examples/server.toml) with PostgreSQL and an existing S3 bucket. Provision the instance key securely. With AWS, omit the custom endpoint and leave both `SESSIONDB_S3_ACCESS_KEY_ID` and `SESSIONDB_S3_SECRET_ACCESS_KEY` unset to use the SDK credential chain, including instance/task roles. Custom endpoints can use path-style addressing. Only the server accesses S3; clients need only the API URL.
 
 [Authentication](authentication.md) describes the shared-key boundary. Both HTTP and HTTPS server URLs are supported; use HTTPS across untrusted networks. The only external services required are PostgreSQL and S3.
 
@@ -94,7 +94,9 @@ public_url = "http://athena:6767"
 
 Restrict port 6767 to the tailnet with a firewall, or replace the wildcard listen address with the host's Tailscale IP. The wildcard listens on every IPv4 interface. Tailscale encrypts traffic between peers; HTTP itself does not. The API key is still required.
 
-Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, and `SESSIONDB_S3_ENDPOINT`. Database/object secrets use configured environment names. Supply container configuration and run `migrate` before serving. Limits contain only `max_file_bytes`; no public S3 endpoint, presign TTL, or worker settings remain.
+Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, and `SESSIONDB_S3_ENDPOINT`. Secrets use the fixed `SESSIONDB_DATABASE_URL`, `SESSIONDB_API_KEY`, `SESSIONDB_S3_ACCESS_KEY_ID`, and `SESSIONDB_S3_SECRET_ACCESS_KEY` names; see [configuration and credentials](operations.md#configuration-and-credentials). No `[database]`, `[auth]`, or `*_env` TOML fields are needed. Supply container configuration and run `migrate` before serving. Limits contain only `max_file_bytes`; no public S3 endpoint, presign TTL, or worker settings remain.
+
+For an existing local development `.env`, rename `SESSIONDB_DEV_S3_ACCESS_KEY` to `SESSIONDB_S3_ACCESS_KEY_ID` and `SESSIONDB_DEV_S3_SECRET_KEY` to `SESSIONDB_S3_SECRET_ACCESS_KEY`, preserving their values. Do not regenerate credentials or remove persistent volumes to perform this rename.
 
 ## Checks
 

@@ -1,5 +1,5 @@
 use crate::{AppState, config::Objects};
-use anyhow::{Context, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use aws_sdk_s3::{
     Client,
@@ -11,7 +11,7 @@ use aws_sdk_s3::{
     primitives::ByteStream,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use std::{pin::Pin, time::Duration};
+use std::{env, pin::Pin, time::Duration};
 use tokio::io::AsyncRead;
 
 #[derive(Debug, thiserror::Error)]
@@ -59,6 +59,7 @@ impl S3Store {
         }
     }
     pub async fn new(config: &Objects) -> Result<Self> {
+        let credentials = credentials_from_env()?;
         let shared = aws_config::defaults(BehaviorVersion::v2026_11_10())
             .region(Region::new(config.region.clone()))
             .load()
@@ -74,14 +75,8 @@ impl S3Store {
                     .operation_timeout(Duration::from_secs(300))
                     .build(),
             );
-        if let (Some(access), Some(secret)) = (&config.access_key_env, &config.secret_key_env) {
-            builder = builder.credentials_provider(Credentials::new(
-                std::env::var(access).context("S3 access key environment is not set")?,
-                std::env::var(secret).context("S3 secret environment is not set")?,
-                None,
-                None,
-                "sessiondb-config",
-            ));
+        if let Some(credentials) = credentials {
+            builder = builder.credentials_provider(credentials);
         }
         if let Some(endpoint) = &config.endpoint {
             builder = builder.endpoint_url(endpoint.as_str());
@@ -90,6 +85,21 @@ impl S3Store {
             client: Client::from_conf(builder.build()),
             bucket: config.bucket.clone(),
         })
+    }
+}
+
+fn credentials_from_env() -> Result<Option<Credentials>> {
+    match (
+        env::var("SESSIONDB_S3_ACCESS_KEY_ID"),
+        env::var("SESSIONDB_S3_SECRET_ACCESS_KEY"),
+    ) {
+        (Err(env::VarError::NotPresent), Err(env::VarError::NotPresent)) => Ok(None),
+        (Ok(access), Ok(secret)) if !access.is_empty() && !secret.is_empty() => Ok(Some(
+            Credentials::new(access, secret, None, None, "sessiondb-environment"),
+        )),
+        _ => bail!(
+            "Set both SESSIONDB_S3_ACCESS_KEY_ID and SESSIONDB_S3_SECRET_ACCESS_KEY to nonempty UTF-8 values, or unset both to use the AWS credential chain"
+        ),
     }
 }
 
@@ -190,4 +200,65 @@ pub async fn cleanup(state: &AppState) -> Result<()> {
         anyhow::bail!("{failed} orphan objects could not be deleted; keys are logged");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::credentials_from_env;
+    use std::process::Command;
+
+    #[test]
+    fn s3_credentials_use_fixed_environment_names() {
+        const CHILD: &str = "SESSIONDB_S3_CREDENTIALS_TEST_CHILD";
+        if let Ok(case) = std::env::var(CHILD) {
+            let result = credentials_from_env();
+            match case.as_str() {
+                "unset" => assert!(result.unwrap().is_none()),
+                "pair" => {
+                    let credentials = result.unwrap().unwrap();
+                    assert_eq!(credentials.access_key_id(), "fixture-access");
+                    assert_eq!(credentials.secret_access_key(), "fixture-secret");
+                }
+                _ => assert!(result.is_err()),
+            }
+            return;
+        }
+        for case in ["unset", "pair", "access-only", "secret-only", "empty"] {
+            let mut child = Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "objects::tests::s3_credentials_use_fixed_environment_names",
+                ])
+                .env(CHILD, case)
+                .env_remove("SESSIONDB_S3_ACCESS_KEY_ID")
+                .env_remove("SESSIONDB_S3_SECRET_ACCESS_KEY");
+            if matches!(case, "pair" | "access-only" | "empty") {
+                child.env(
+                    "SESSIONDB_S3_ACCESS_KEY_ID",
+                    if case == "empty" {
+                        ""
+                    } else {
+                        "fixture-access"
+                    },
+                );
+            }
+            if matches!(case, "pair" | "secret-only" | "empty") {
+                child.env(
+                    "SESSIONDB_S3_SECRET_ACCESS_KEY",
+                    if case == "empty" {
+                        ""
+                    } else {
+                        "fixture-secret"
+                    },
+                );
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "S3 credential case {case}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 }

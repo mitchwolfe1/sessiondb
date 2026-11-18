@@ -1,9 +1,8 @@
 use crate::{
     AppState,
-    config::Auth,
     error::{ApiError, ApiResult},
 };
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, header},
@@ -18,8 +17,10 @@ pub struct Authenticator {
     key_digest: [u8; 32],
 }
 impl Authenticator {
-    pub fn new(config: Auth) -> Result<Self> {
-        Self::from_key(&config.api_key()?)
+    pub fn from_env() -> Result<Self> {
+        let key = std::env::var("SESSIONDB_API_KEY")
+            .map_err(|_| anyhow!("SESSIONDB_API_KEY must be set and contain valid UTF-8"))?;
+        Self::from_key(&key)
     }
 
     pub fn from_key(key: &str) -> Result<Self> {

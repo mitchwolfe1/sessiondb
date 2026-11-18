@@ -1,12 +1,5 @@
-use sessiondb_server::config::{Auth, Config, validate_http_url};
+use sessiondb_server::config::{Config, validate_http_url};
 use std::process::Command;
-
-#[test]
-fn auth_defaults_to_the_instance_key_environment_variable() {
-    let auth: Auth = toml::from_str("").unwrap();
-    assert_eq!(auth.api_key_env, "SESSIONDB_API_KEY");
-    assert!(toml::from_str::<Auth>("issuer = 'https://identity.example.com'").is_err());
-}
 
 #[test]
 fn configuration_uses_only_per_file_upload_limits() {
@@ -32,17 +25,15 @@ fn configuration_uses_only_per_file_upload_limits() {
 #[test]
 fn configuration_requires_a_nonempty_instance_key() {
     const CHILD: &str = "SESSIONDB_CONFIGURATION_TEST_CHILD";
-    const KEY: &str = "SESSIONDB_CONFIGURATION_TEST_KEY";
+    const KEY: &str = "SESSIONDB_API_KEY";
     if let Ok(case) = std::env::var(CHILD) {
-        let mut config: Config =
+        let config: Config =
             toml::from_str(include_str!("../../../docs/examples/server.toml")).unwrap();
-        config.auth.api_key_env = KEY.into();
         let result = config.validate();
         if case == "valid" {
             result.unwrap();
         } else {
-            let error = result.unwrap_err().to_string();
-            assert!(error.contains("API key"), "{error}");
+            assert!(result.is_err());
         }
         return;
     }
