@@ -1,5 +1,7 @@
 # Normalized message contract
 
+Historical boundary: [ADR 0015](0015-strict-native-records-and-simple-reads.md) supersedes the permissive archival, parser-diagnostic, and conditional-read assumptions below. Other native semantics and per-file write-CAS/recovery decisions remain in force.
+
 Status: accepted. Date: 2026-11-16.
 
 ## Decision

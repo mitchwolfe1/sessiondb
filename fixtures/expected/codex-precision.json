@@ -1,0 +1,50 @@
+{
+  "case": "codex-precision",
+  "sessions": [
+    {
+      "key": "main",
+      "native_session_id": "c0000000-0000-4000-8000-000000000006",
+      "recorded_cwd": "/home/ada",
+      "project_ids": [],
+      "messages": [
+        {
+          "key": "call",
+          "role": "assistant",
+          "origin": "model",
+          "native_ids": ["precision-call"],
+          "parent_key": null,
+          "content": [
+            {
+              "type": "tool_call",
+              "call_id": "precision-id",
+              "name": "fixture_echo",
+              "input": {
+                "encoding": "json",
+                "value": {"value": 18446744073709551617}
+              }
+            }
+          ]
+        },
+        {
+          "key": "result",
+          "role": "tool",
+          "origin": "tool",
+          "native_ids": ["line:3"],
+          "parent_key": "call",
+          "content": [
+            {
+              "type": "tool_result",
+              "call_id": "precision-id",
+              "status": "unknown",
+              "content": [
+                {"type": "json", "value": {"value": 18446744073709551617}}
+              ]
+            }
+          ]
+        }
+      ],
+      "events": [],
+      "relations": []
+    }
+  ]
+}

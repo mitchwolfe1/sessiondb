@@ -1,7 +1,10 @@
 use super::*;
 use axum::{body::Body, http::HeaderMap};
 use serde_json::json;
-use sessiondb_types::{Artifact, FullContent, Message, MessageFilter, Session, SessionFilter};
+use sessiondb_types::{
+    Artifact, ContentBlock, ContentReference, FullContent, FullContentBlock, Message,
+    MessageFilter, PREVIEW_BYTES, ReferenceType, Session, SessionFilter,
+};
 use sqlx::{Postgres, QueryBuilder, postgres::PgRow};
 use tokio_util::io::ReaderStream;
 
@@ -12,10 +15,34 @@ async fn read(state: &AppState, id: Uuid) -> ApiResult<PgRow> {
         .await?
         .ok_or_else(ApiError::not_found)
 }
-async fn document(state: &AppState, row: &PgRow) -> ApiResult<Session> {
-    let mut session: Session = row.get::<sqlx::types::Json<Session>, _>("document").0;
+async fn session(state: &AppState, row: &PgRow) -> ApiResult<Session> {
+    let id: Uuid = row.try_get("id")?;
+    let project_ids = sqlx::query_scalar(
+        "SELECT project_id FROM session_projects WHERE session_id=$1 ORDER BY project_id",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut session = Session {
+        id,
+        harness: row
+            .try_get::<String, _>("harness")?
+            .parse()
+            .map_err(ApiError::internal)?,
+        native_session_id: row.try_get("native_session_id")?,
+        title: row.try_get("title")?,
+        tags: row.try_get("tags")?,
+        project_ids,
+        recorded_cwd: row.try_get("recorded_cwd")?,
+        started_at: row.try_get("started_at")?,
+        updated_at: row.try_get("updated_at")?,
+        message_count: row.try_get::<i64, _>("message_count")? as u64,
+        relations: row.try_get::<sqlx::types::Json<_>, _>("relations")?.0,
+    };
     for relation in &mut session.relations {
         if let Some(native) = &relation.native_reference {
+            relation.session_id = None;
+            relation.resolved = false;
             let candidates = sqlx::query(
                 "SELECT id FROM sessions WHERE harness=$1 AND native_key=$2 ORDER BY id LIMIT 2",
             )
@@ -36,7 +63,7 @@ pub(super) async fn get(
     State(state): State<Arc<AppState>>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Json<Session>> {
-    Ok(Json(document(&state, &read(&state, id).await?).await?))
+    Ok(Json(session(&state, &read(&state, id).await?).await?))
 }
 pub(super) async fn list(
     State(state): State<Arc<AppState>>,
@@ -74,8 +101,7 @@ pub(super) async fn list(
         q.push(" AND NOT EXISTS(SELECT 1 FROM session_projects sp WHERE sp.session_id=s.id)");
     }
     if let Some(tag) = &filter.tag {
-        q.push(" AND s.document->'tags' @> ")
-            .push_bind(sqlx::types::Json(json!([tag])));
+        q.push(" AND ").push_bind(tag).push("=ANY(s.tags)");
     }
     if let Some(after) = filter.after {
         q.push(" AND s.updated_at>=").push_bind(after);
@@ -107,7 +133,7 @@ pub(super) async fn list(
     let more = rows.len() > size;
     let mut data = Vec::new();
     for row in rows.iter().take(size) {
-        data.push(document(&state, row).await?);
+        data.push(session(&state, row).await?);
     }
     let next_cursor = if more {
         data.last()
@@ -116,7 +142,6 @@ pub(super) async fn list(
                     scope,
                     id: s.id,
                     time: Some(s.updated_at),
-                    revision: None,
                 })
             })
             .transpose()?
@@ -130,20 +155,10 @@ pub(super) async fn messages(
     ApiPath(id): ApiPath<Uuid>,
     ApiQuery(filter): ApiQuery<MessageFilter>,
 ) -> ApiResult<Json<Page<Message>>> {
-    let session = read(&state, id).await?;
-    let revision: String = session.get("revision");
+    read(&state, id).await?;
     let scope = scope(("messages", id, filter.leaf_id))?;
     let cursor = decode_cursor(filter.cursor.as_deref(), &scope)?;
     let size = limit(filter.limit)?;
-    if cursor
-        .as_ref()
-        .is_some_and(|c| c.revision.as_deref() != Some(&revision))
-    {
-        return Err(ApiError::conflict(
-            "cursor_stale",
-            "The session changed. Restart this message listing.",
-        ));
-    }
     let mut sequence = -1;
     if let Some(c) = &cursor {
         sequence = sqlx::query_scalar::<_, i64>(
@@ -153,7 +168,7 @@ pub(super) async fn messages(
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
-        .ok_or_else(|| ApiError::conflict("cursor_stale", "Restart this message listing."))?;
+        .ok_or_else(|| ApiError::bad("invalid_cursor", "The cursor has no ordering position."))?;
     }
     if let Some(leaf) = filter.leaf_id {
         let exists: bool = sqlx::query_scalar(
@@ -168,19 +183,16 @@ pub(super) async fn messages(
         }
     }
     let rows = if let Some(leaf) = filter.leaf_id {
-        sqlx::query("WITH RECURSIVE ancestry AS (SELECT id,document,ARRAY[id] AS visited FROM messages WHERE id=$1 AND session_id=$2 UNION ALL SELECT m.id,m.document,a.visited||m.id FROM messages m JOIN ancestry a ON m.id=(a.document->>'conversation_parent_id')::uuid WHERE m.session_id=$2 AND NOT m.id=ANY(a.visited)) SELECT m.document FROM messages m JOIN ancestry a ON a.id=m.id WHERE m.sequence>$3 ORDER BY m.sequence,m.id LIMIT $4").bind(leaf).bind(id).bind(sequence).bind(size as i64+1).fetch_all(&state.pool).await?
+        sqlx::query("WITH RECURSIVE ancestry AS (SELECT id,conversation_parent_id,ARRAY[id] AS visited FROM messages WHERE id=$1 AND session_id=$2 UNION ALL SELECT m.id,m.conversation_parent_id,a.visited||m.id FROM messages m JOIN ancestry a ON m.id=a.conversation_parent_id WHERE m.session_id=$2 AND NOT m.id=ANY(a.visited)) SELECT m.* FROM messages m JOIN ancestry a ON a.id=m.id WHERE m.sequence>$3 ORDER BY m.sequence,m.id LIMIT $4").bind(leaf).bind(id).bind(sequence).bind(size as i64+1).fetch_all(&state.pool).await?
     } else {
-        sqlx::query("SELECT document FROM messages WHERE session_id=$1 AND sequence>$2 ORDER BY sequence,id LIMIT $3").bind(id).bind(sequence).bind(size as i64+1).fetch_all(&state.pool).await?
+        sqlx::query("SELECT * FROM messages WHERE session_id=$1 AND sequence>$2 ORDER BY sequence,id LIMIT $3").bind(id).bind(sequence).bind(size as i64+1).fetch_all(&state.pool).await?
     };
-    let mut data: Vec<Message> = rows
-        .into_iter()
-        .map(|r| r.get::<sqlx::types::Json<Message>, _>("document").0)
-        .collect();
-    let more = data.len() > size;
-    data.truncate(size);
-    for message in &mut data {
-        hydrate_message(message, state.config.public_url.as_str());
-    }
+    let more = rows.len() > size;
+    let data = rows
+        .iter()
+        .take(size)
+        .map(|row| message_preview(row, state.config.public_url.as_str()))
+        .collect::<ApiResult<Vec<_>>>()?;
     let next_cursor = if more {
         data.last()
             .map(|m| {
@@ -188,7 +200,6 @@ pub(super) async fn messages(
                     scope,
                     id: m.id,
                     time: None,
-                    revision: Some(revision),
                 })
             })
             .transpose()?
@@ -209,52 +220,94 @@ pub(super) async fn message(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Response> {
     let row = message_row(&state, id).await?;
-    let mut m: Message = row.get::<sqlx::types::Json<Message>, _>("document").0;
-    hydrate_message(&mut m, state.config.public_url.as_str());
-    let etag = scope(&m)?;
-    Ok(([(header::ETAG, format!("\"{etag}\""))], Json(m)).into_response())
+    let m = message_preview(&row, state.config.public_url.as_str())?;
+    Ok(Json(m).into_response())
 }
-fn hydrate_message(message: &mut Message, base: &str) {
-    let url = format!(
-        "{}/v1/messages/{}/content",
-        base.trim_end_matches('/'),
-        message.id
-    );
-    if message.truncated {
-        message.content_url = Some(url.clone());
-    }
-    for block in &mut message.content {
-        if let sessiondb_types::ContentBlock::Reference(reference) = block {
-            reference.content_url = url.clone();
+fn message_preview(row: &PgRow, base: &str) -> ApiResult<Message> {
+    let mut message = Message {
+        id: row.try_get("id")?,
+        session_id: row.try_get("session_id")?,
+        role: row
+            .try_get::<String, _>("role")?
+            .parse()
+            .map_err(ApiError::internal)?,
+        native_role: row.try_get("native_role")?,
+        origin: row
+            .try_get::<String, _>("origin")?
+            .parse()
+            .map_err(ApiError::internal)?,
+        sequence: row.try_get::<i64, _>("sequence")? as u64,
+        timestamp: row.try_get("recorded_at")?,
+        conversation_parent_id: row.try_get("conversation_parent_id")?,
+        content: Vec::new(),
+        truncated: false,
+        content_url: None,
+        provider_response_id: row.try_get("provider_response_id")?,
+        model: row.try_get("model")?,
+        provider_usage: row
+            .try_get::<Option<sqlx::types::Json<_>>, _>("provider_usage")?
+            .map(|value| value.0),
+        source_refs: row.try_get::<sqlx::types::Json<_>, _>("source_refs")?.0,
+    };
+    let blocks: Vec<FullContentBlock> = row.try_get::<sqlx::types::Json<_>, _>("content")?.0;
+    let mut used = 2;
+    for (index, block) in blocks.into_iter().enumerate() {
+        let separator = usize::from(!message.content.is_empty());
+        let len = encoded_len(&block)?;
+        if used + separator + len <= PREVIEW_BYTES {
+            message.content.push(ContentBlock::Full(block));
+            used += separator + len;
+        } else {
+            message.truncated = true;
+            let url = message.content_url.get_or_insert_with(|| {
+                format!(
+                    "{}/v1/messages/{}/content",
+                    base.trim_end_matches('/'),
+                    message.id
+                )
+            });
+            let reference = ContentReference {
+                block_type: ReferenceType::ContentReference,
+                content_url: url.clone(),
+                block_index: index,
+                original_type: block.kind().into(),
+            };
+            let len = encoded_len(&reference)?;
+            if used + separator + len > PREVIEW_BYTES {
+                break;
+            }
+            message.content.push(ContentBlock::Reference(reference));
+            used += separator + len;
         }
     }
+    Ok(message)
+}
+
+fn encoded_len(value: &impl Serialize) -> ApiResult<usize> {
+    struct Counter(usize);
+    impl std::io::Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter(0);
+    serde_json::to_writer(&mut counter, value)?;
+    Ok(counter.0)
 }
 pub(super) async fn full_content(
     State(state): State<Arc<AppState>>,
     ApiPath(id): ApiPath<Uuid>,
-    headers: HeaderMap,
 ) -> ApiResult<Response> {
     let row = message_row(&state, id).await?;
-    let m: Message = row.get::<sqlx::types::Json<Message>, _>("document").0;
-    let etag = format!("\"{}\"", m.revision);
-    if let Some(value) = headers.get(header::IF_MATCH)
-        && !value.to_str().is_ok_and(|s| {
-            s.split(',')
-                .any(|candidate| candidate.trim() == etag || candidate.trim() == "*")
-        })
-    {
-        return Err(ApiError::new(
-            StatusCode::PRECONDITION_FAILED,
-            "revision_changed",
-            "Reload the message before expanding content.",
-        ));
-    }
     let full = FullContent {
         message_id: id,
-        revision: m.revision,
-        content: row.get::<sqlx::types::Json<_>, _>("full_content").0,
+        content: row.try_get::<sqlx::types::Json<_>, _>("content")?.0,
     };
-    Ok(([(header::ETAG, etag)], Json(full)).into_response())
+    Ok(Json(full).into_response())
 }
 
 #[derive(Deserialize)]
@@ -275,19 +328,14 @@ pub(super) async fn export(
         ));
     }
     let first = read(&state, id).await?;
-    let mut queue = vec![document(&state, &first).await?];
+    let mut queue = vec![session(&state, &first).await?];
     let mut visited = std::collections::HashSet::new();
     let mut files = std::collections::BTreeMap::new();
-    let mut warnings = Vec::new();
     while let Some(session) = queue.pop() {
         if !visited.insert(session.id) {
             continue;
         }
-        if visited.len() > 128 {
-            warnings.push("dependency_limit");
-            break;
-        }
-        let rows = sqlx::query("SELECT DISTINCT ON(f.id) f.id,f.source_id,f.path,g.id AS generation_id,g.object_key,g.byte_length,g.sha256 FROM session_files sf JOIN source_files f ON f.id=sf.file_id JOIN file_generations g ON g.id=sf.generation_id WHERE sf.session_id=$1 ORDER BY f.id,(g.id=f.generation_id) DESC,g.created_at DESC").bind(session.id).fetch_all(&state.pool).await?;
+        let rows = sqlx::query("SELECT DISTINCT ON(f.id) f.id,f.source_id,f.path,g.id AS generation_id,g.object_key,o.byte_length,o.sha256 FROM session_files sf JOIN source_files f ON f.id=sf.file_id JOIN file_generations g ON g.id=sf.generation_id JOIN objects o ON o.object_key=g.object_key WHERE sf.session_id=$1 ORDER BY f.id,(g.id=f.generation_id) DESC,g.created_at DESC").bind(session.id).fetch_all(&state.pool).await?;
         for row in rows {
             files.insert(
                 (
@@ -299,11 +347,11 @@ pub(super) async fn export(
         }
         for relation in session.relations {
             if let Some(parent) = relation.session_id {
-                if let Ok(row) = read(&state, parent).await {
-                    queue.push(document(&state, &row).await?);
+                match read(&state, parent).await {
+                    Ok(row) => queue.push(self::session(&state, &row).await?),
+                    Err(error) if error.status == StatusCode::NOT_FOUND => {}
+                    Err(error) => return Err(error),
                 }
-            } else {
-                warnings.push("unavailable_dependency");
             }
         }
     }
@@ -312,7 +360,7 @@ pub(super) async fn export(
     let mut manifest_files = Vec::new();
     for (index, row) in files.values().enumerate() {
         let path: String = row.get("path");
-        if !super::imports::valid_path(&path) {
+        if !super::sources::valid_path(&path) {
             return Err(ApiError::internal("invalid catalog path"));
         }
         let local = directory.path().join(index.to_string());
@@ -333,11 +381,8 @@ pub(super) async fn export(
         manifest_files.push(json!({"file_id":row.get::<Uuid,_>("id"),"source_id":source_id,"generation_id":generation,"path":path,"archive_path":archive_path,"byte_length":row.get::<i64,_>("byte_length"),"sha256":row.get::<String,_>("sha256")}));
         entries.push((local, archive_path));
     }
-    warnings.sort();
-    warnings.dedup();
-    let manifest = serde_json::to_vec_pretty(
-        &json!({"version":1,"session_id":id,"files":manifest_files,"warnings":warnings}),
-    )?;
+    let manifest =
+        serde_json::to_vec_pretty(&json!({"version":1,"session_id":id,"files":manifest_files}))?;
     let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
         use std::io::{Seek, Write};
         let mut archive = zip::ZipWriter::new(tempfile::tempfile()?);
@@ -377,7 +422,7 @@ pub(super) async fn export(
     Ok(response)
 }
 async fn artifact_row(state: &AppState, id: Uuid) -> ApiResult<PgRow> {
-    sqlx::query("SELECT * FROM artifacts WHERE id=$1")
+    sqlx::query("SELECT a.*,o.byte_length FROM artifacts a JOIN objects o ON o.object_key=a.object_key WHERE a.id=$1")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?

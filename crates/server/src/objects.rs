@@ -1,4 +1,4 @@
-use crate::config::Objects;
+use crate::{AppState, config::Objects};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::{
@@ -8,32 +8,22 @@ use aws_sdk_s3::{
         ResponseChecksumValidation,
     },
     error::ProvideErrorMetadata,
-    presigning::PresigningConfig,
     primitives::ByteStream,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use chrono::Utc;
-use sessiondb_types::{FileDescriptor, UploadTarget};
-use sha2::{Digest, Sha256};
 use std::{pin::Pin, time::Duration};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::AsyncRead;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ObjectError {
     #[error("object is missing")]
     Missing,
-    #[error("object changed before promotion")]
+    #[error("immutable object key already exists")]
     Precondition,
     #[error("object byte range is invalid")]
     InvalidRange,
     #[error("object storage is unavailable")]
     Unavailable,
-    #[error("object exceeds the configured limit")]
-    TooLarge,
-}
-pub struct ObjectMeta {
-    pub byte_length: u64,
-    pub etag: String,
 }
 pub struct ObjectBody {
     pub reader: Pin<Box<dyn AsyncRead + Send>>,
@@ -41,33 +31,29 @@ pub struct ObjectBody {
     pub content_range: Option<String>,
 }
 
-/// Object storage operations needed by imports and authorized content delivery.
+/// Immutable storage writes and authorized content delivery.
 #[async_trait]
 pub trait BlobStore: Send + Sync {
     async fn check(&self) -> Result<(), ObjectError>;
-    async fn sign_upload(
+    async fn get(&self, key: &str, range: Option<&str>) -> Result<ObjectBody, ObjectError>;
+    async fn put(
         &self,
         key: &str,
-        file: &FileDescriptor,
-        seconds: u64,
-    ) -> Result<UploadTarget, ObjectError>;
-    async fn head(&self, key: &str) -> Result<ObjectMeta, ObjectError>;
-    async fn copy(&self, source: &str, destination: &str, etag: &str) -> Result<(), ObjectError>;
-    async fn get(&self, key: &str, range: Option<&str>) -> Result<ObjectBody, ObjectError>;
-    async fn put(&self, key: &str, bytes: Vec<u8>, media_type: &str) -> Result<(), ObjectError>;
+        bytes: Vec<u8>,
+        media_type: &str,
+        sha256: &str,
+    ) -> Result<(), ObjectError>;
     async fn delete(&self, key: &str) -> Result<(), ObjectError>;
 }
 
 pub struct S3Store {
     client: Client,
-    public_client: Client,
     bucket: String,
 }
 impl S3Store {
     /// Use an explicitly configured SDK client, including for integration environments.
     pub fn from_client(client: Client, bucket: impl Into<String>) -> Self {
         Self {
-            public_client: client.clone(),
             client,
             bucket: bucket.into(),
         }
@@ -100,13 +86,8 @@ impl S3Store {
         if let Some(endpoint) = &config.endpoint {
             builder = builder.endpoint_url(endpoint.as_str());
         }
-        let client = Client::from_conf(builder.clone().build());
-        if let Some(endpoint) = &config.public_endpoint {
-            builder = builder.endpoint_url(endpoint.as_str());
-        }
         Ok(Self {
-            client,
-            public_client: Client::from_conf(builder.build()),
+            client: Client::from_conf(builder.build()),
             bucket: config.bucket.clone(),
         })
     }
@@ -131,68 +112,6 @@ impl BlobStore for S3Store {
             .map_err(|_| ObjectError::Unavailable)?;
         Ok(())
     }
-    async fn sign_upload(
-        &self,
-        key: &str,
-        file: &FileDescriptor,
-        seconds: u64,
-    ) -> Result<UploadTarget, ObjectError> {
-        let checksum =
-            STANDARD.encode(hex::decode(&file.sha256).map_err(|_| ObjectError::Unavailable)?);
-        let signed = self
-            .public_client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .content_type(&file.media_type)
-            .content_length(file.byte_length as i64)
-            .checksum_sha256(checksum)
-            .presigned(
-                PresigningConfig::expires_in(Duration::from_secs(seconds))
-                    .map_err(|_| ObjectError::Unavailable)?,
-            )
-            .await
-            .map_err(|_| ObjectError::Unavailable)?;
-        Ok(UploadTarget {
-            path: file.path.clone(),
-            method: "PUT".into(),
-            url: signed.uri().into(),
-            headers: signed
-                .headers()
-                .map(|(k, v)| (k.to_owned(), v.to_owned()))
-                .collect(),
-            expires_at: Utc::now() + chrono::Duration::seconds(seconds as i64),
-        })
-    }
-    async fn head(&self, key: &str) -> Result<ObjectMeta, ObjectError> {
-        let head = self
-            .client
-            .head_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
-            .await
-            .map_err(|e| object_error(e.as_service_error().and_then(ProvideErrorMetadata::code)))?;
-        Ok(ObjectMeta {
-            byte_length: head
-                .content_length()
-                .filter(|v| *v >= 0)
-                .ok_or(ObjectError::Unavailable)? as u64,
-            etag: head.e_tag().ok_or(ObjectError::Unavailable)?.into(),
-        })
-    }
-    async fn copy(&self, source: &str, destination: &str, etag: &str) -> Result<(), ObjectError> {
-        self.client
-            .copy_object()
-            .bucket(&self.bucket)
-            .key(destination)
-            .copy_source(format!("{}/{source}", self.bucket))
-            .copy_source_if_match(etag)
-            .send()
-            .await
-            .map_err(|e| object_error(e.as_service_error().and_then(ProvideErrorMetadata::code)))?;
-        Ok(())
-    }
     async fn get(&self, key: &str, range: Option<&str>) -> Result<ObjectBody, ObjectError> {
         let response = self
             .client
@@ -214,8 +133,14 @@ impl BlobStore for S3Store {
             content_range,
         })
     }
-    async fn put(&self, key: &str, bytes: Vec<u8>, media_type: &str) -> Result<(), ObjectError> {
-        let checksum = STANDARD.encode(Sha256::digest(&bytes));
+    async fn put(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        media_type: &str,
+        sha256: &str,
+    ) -> Result<(), ObjectError> {
+        let checksum = STANDARD.encode(hex::decode(sha256).map_err(|_| ObjectError::Unavailable)?);
         self.client
             .put_object()
             .bucket(&self.bucket)
@@ -241,23 +166,28 @@ impl BlobStore for S3Store {
     }
 }
 
-pub async fn read_bounded(
-    store: &dyn BlobStore,
-    key: &str,
-    max: u64,
-) -> Result<Vec<u8>, ObjectError> {
-    let body = store.get(key, None).await?;
-    if body.byte_length > max {
-        return Err(ObjectError::TooLarge);
+/// Remove old unreferenced catalog entries atomically, then delete their immutable bytes.
+pub async fn cleanup(state: &AppState) -> Result<()> {
+    let keys: Vec<String> = sqlx::query_scalar(
+        "DELETE FROM objects o WHERE o.object_key IN (
+            SELECT candidate.object_key FROM objects candidate
+            WHERE candidate.created_at < now() - interval '24 hours'
+              AND NOT EXISTS (SELECT 1 FROM file_generations g WHERE g.object_key=candidate.object_key)
+              AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.object_key=candidate.object_key)
+            ORDER BY candidate.created_at LIMIT 128 FOR UPDATE SKIP LOCKED
+        ) RETURNING o.object_key",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    let mut failed = 0;
+    for key in keys {
+        if let Err(error) = state.objects.delete(&key).await {
+            tracing::error!(object_key=%key, %error, "orphan object deletion failed");
+            failed += 1;
+        }
     }
-    let mut bytes = Vec::new();
-    body.reader
-        .take(max + 1)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(|_| ObjectError::Unavailable)?;
-    if bytes.len() as u64 > max {
-        return Err(ObjectError::TooLarge);
+    if failed > 0 {
+        anyhow::bail!("{failed} orphan objects could not be deleted; keys are logged");
     }
-    Ok(bytes)
+    Ok(())
 }

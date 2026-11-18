@@ -1,6 +1,6 @@
 # First build scope
 
-Status: accepted storage slice; identity operations/count superseded by [0013](0013-instance-api-key.md). Date: 2026-11-16.
+Status: historical storage slice; operation count/auth superseded by [0013](0013-instance-api-key.md), ingestion/counts by [0014](0014-sessions-and-synchronous-files.md). Date: 2026-11-16. The 23-operation selection below is historical, not the current API.
 
 ## Decision
 

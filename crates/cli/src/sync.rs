@@ -6,17 +6,13 @@ use anyhow::{Context, Result, bail};
 use futures_util::{StreamExt, TryStreamExt};
 use serde_json::json;
 use sessiondb_client::Client;
-use sessiondb_types::{
-    FileDescriptor, Harness, Import, ImportManifest, ImportStatus, ListOptions, Source,
-    SourceCreate, SourceFile,
-};
+use sessiondb_types::{FileUpload, Harness, ListOptions, Source, SourceCreate, SourceFile};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
-    time::Duration,
 };
 use uuid::Uuid;
 
@@ -26,15 +22,15 @@ pub async fn ensure_source(
     device: &str,
     configured: &ConfiguredSource,
 ) -> Result<Source> {
-    let root = expand(&configured.root)?
-        .canonicalize()
-        .context("native store root does not exist")?;
-    if !root.is_dir() {
-        bail!("native store root must be a directory");
-    }
-    let root = root.to_str().context("native store root must be UTF-8")?;
+    let root = expand(&configured.root)?;
+    let configured_root = root.to_str().context("native store root must be UTF-8")?;
     if let Some(id) = state
-        .registration(client.server(), device, configured.harness.as_str(), root)
+        .registration(
+            client.server(),
+            device,
+            configured.harness.as_str(),
+            configured_root,
+        )
         .await?
     {
         match client.source(id).await {
@@ -43,6 +39,13 @@ pub async fn ensure_source(
             Err(e) => return Err(e.into()),
         }
     }
+    let root = root
+        .canonicalize()
+        .context("native store root does not exist")?;
+    if !root.is_dir() {
+        bail!("native store root must be a directory");
+    }
+    let root = root.to_str().context("native store root must be UTF-8")?;
     let mut options = ListOptions::default();
     let source =
         loop {
@@ -100,88 +103,53 @@ pub async fn source(
     options: &SyncOptions,
     quiet: bool,
 ) -> Result<serde_json::Value> {
-    if source.paused {
-        bail!("source {} is paused", source.id);
-    }
+    // Resolve saved snapshots before later local bytes can replace them.
+    let mut accepted = resume(
+        client,
+        state,
+        state.pending(source.id).await?,
+        options,
+        quiet,
+    )
+    .await?;
     let limits = client.info().await?.limits;
-    let batch = options.batch_files.clamp(1, limits.max_files_per_import);
-    let mut accepted = 0;
-    if let Some(pending) = state.pending(source.id).await? {
-        accepted += reconcile_pending(client, state, pending, options, quiet)
-            .await?
-            .results
-            .len();
-    }
-    let mut deferred = 0;
-    loop {
-        let remote = remote_files(client, source.id).await?;
-        let root = PathBuf::from(&source.root);
-        let directory = state
-            .directory
-            .join("pending")
-            .join(Uuid::new_v4().to_string());
-        let dir = directory.clone();
-        let scan = match tokio::task::spawn_blocking(move || {
-            scan(&root, &remote, &dir, batch, limits.max_file_bytes)
-        })
-        .await?
-        {
-            Ok(scan) => scan,
-            Err(error) => {
-                std::fs::remove_dir_all(&directory).ok();
-                return Err(error);
-            }
-        };
-        deferred = deferred.max(scan.deferred);
-        if scan.files.is_empty() {
-            std::fs::remove_dir_all(&directory).ok();
-            break;
+    let remote = remote_files(client, source.id).await?;
+    let root = PathBuf::from(&source.root);
+    let source_id = source.id;
+    let directory = state
+        .directory
+        .join("pending")
+        .join(Uuid::new_v4().to_string());
+    let dir = directory.clone();
+    let scan = match tokio::task::spawn_blocking(move || {
+        scan(&root, source_id, &remote, &dir, limits.max_file_bytes)
+    })
+    .await?
+    {
+        Ok(scan) => scan,
+        Err(error) => {
+            remove_snapshot_dir(state, &directory)?;
+            return Err(error);
         }
-        let pending = Pending {
-            manifest: ImportManifest {
-                source_id: source.id,
-                files: scan.files,
-            },
-            directory,
-            create_key: Uuid::new_v4().to_string(),
-            complete_key: Uuid::new_v4().to_string(),
-            import_id: None,
-        };
-        state.save_pending(&pending).await?;
-        accepted += reconcile_pending(client, state, pending, options, quiet)
-            .await?
-            .results
-            .len();
+    };
+    let deferred = scan.deferred;
+    if scan.files.is_empty() {
+        remove_snapshot_dir(state, &directory)?;
+    } else {
+        state.save_pending(&scan.files).await?;
+        accepted += resume(client, state, scan.files, options, quiet).await?;
     }
     Ok(json!({"source_id":source.id,"accepted_files":accepted,"deferred_tail_files":deferred}))
 }
-async fn reconcile_pending(
-    client: &Client,
-    state: &LocalState,
-    pending: Pending,
-    options: &SyncOptions,
-    quiet: bool,
-) -> Result<Import> {
-    let source = pending.manifest.source_id;
-    let directory = pending.directory.clone();
-    let result = resume(client, state, pending, options, quiet).await;
-    if let Err(error) = &result
-        && matches!(error.downcast_ref::<sessiondb_client::Error>(),Some(sessiondb_client::Error::Problem(p)) if p.status==404 || (p.status==409 && matches!(p.code.as_str(),"version_conflict"|"import_expired")))
-    {
-        state.clear_pending(source).await?;
-        remove_snapshot_dir(state, &directory)?;
-    }
-    result
-}
 struct Scan {
-    files: Vec<FileDescriptor>,
+    files: Vec<Pending>,
     deferred: usize,
 }
 fn scan(
     root: &Path,
+    source: Uuid,
     remote: &HashMap<String, SourceFile>,
     directory: &Path,
-    batch: usize,
     max_bytes: u64,
 ) -> Result<Scan> {
     if !root.is_dir() {
@@ -241,10 +209,11 @@ fn scan(
         {
             continue;
         }
+        let snapshot_path = directory.join(files.len().to_string());
         let mut snapshot = OpenOptions::new()
             .create_new(true)
             .write(true)
-            .open(directory.join(files.len().to_string()))?;
+            .open(&snapshot_path)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -252,110 +221,91 @@ fn scan(
         }
         snapshot.write_all(prefix)?;
         snapshot.sync_all()?;
-        files.push(FileDescriptor {
-            path: relative.clone(),
-            byte_length: prefix.len() as u64,
-            sha256,
-            media_type: "application/x-ndjson".into(),
-            expected_version: remote.get(&relative).map(|f| f.version.clone()),
-            project_ids: vec![],
+        files.push(Pending {
+            source_id: source,
+            metadata: FileUpload {
+                path: relative.clone(),
+                byte_length: prefix.len() as u64,
+                sha256,
+                expected_version: remote.get(&relative).map(|f| f.version.clone()),
+                project_ids: vec![],
+            },
+            snapshot: snapshot_path,
         });
-        if files.len() >= batch {
-            break;
-        }
     }
+    // Make the snapshot names durable before SQLite starts referring to them.
+    std::fs::File::open(directory)?.sync_all()?;
+    std::fs::File::open(
+        directory
+            .parent()
+            .context("snapshot directory has no parent")?,
+    )?
+    .sync_all()?;
     Ok(Scan { files, deferred })
 }
 
 async fn resume(
     client: &Client,
     state: &LocalState,
-    mut pending: Pending,
+    pending: Vec<Pending>,
     options: &SyncOptions,
     quiet: bool,
-) -> Result<Import> {
-    let mut import = if let Some(id) = pending.import_id {
-        client.import(id).await?
-    } else {
-        let import = client
-            .create_import(&pending.manifest, &pending.create_key)
-            .await?;
-        pending.import_id = Some(import.id);
-        state.save_pending(&pending).await?;
-        import
-    };
-    if import.accepted_at.is_none()
-        && matches!(import.status, ImportStatus::Failed | ImportStatus::Expired)
-    {
-        state.clear_pending(pending.manifest.source_id).await?;
-        remove_snapshot_dir(state, &pending.directory)?;
-        bail!(
-            "import {} was not accepted ({}); the next sync will reconcile and retry",
-            import.id,
-            import.status
-        );
-    }
-    if import.accepted_at.is_none() && import.status == ImportStatus::AwaitingUpload {
-        if !quiet {
-            eprintln!(
-                "Uploading {} file(s) for source {}",
-                pending.manifest.files.len(),
-                pending.manifest.source_id
-            );
-        }
-        futures_util::stream::iter(import.uploads.iter())
-            .map(|target| {
-                let pending = &pending;
-                async move {
-                    let index = pending
-                        .manifest
-                        .files
-                        .iter()
-                        .position(|f| f.path == target.path)
-                        .context("upload target is not in the manifest")?;
-                    let file = tokio::fs::File::open(pending.directory.join(index.to_string()))
-                        .await
-                        .context("pending snapshot is missing")?;
-                    client.upload(target, file).await?;
-                    Ok::<(), anyhow::Error>(())
+) -> Result<usize> {
+    futures_util::stream::iter(pending)
+        .map(|pending| async move {
+            let file = tokio::fs::File::open(&pending.snapshot)
+                .await
+                .context("pending snapshot is missing")?;
+            let receipt = match client
+                .upload_file(pending.source_id, &pending.metadata, file)
+                .await
+            {
+                Ok(receipt) => receipt,
+                Err(sessiondb_client::Error::Problem(problem))
+                    if problem.status == 400 && problem.code == "unsupported_native_record" =>
+                {
+                    state.reject(&pending).await?;
+                    remove_snapshot(state, &pending.snapshot)?;
+                    return Err(sessiondb_client::Error::Problem(problem).into());
                 }
-            })
-            .buffer_unordered(options.upload_concurrency.clamp(1, 16))
-            .try_collect::<Vec<_>>()
-            .await?;
-        import = client
-            .complete_import(import.id, &pending.complete_key)
-            .await?;
+                Err(error) => return Err(error.into()),
+            };
+            state.accept(&pending, &receipt).await?;
+            remove_snapshot(state, &pending.snapshot)?;
+            if !quiet {
+                eprintln!(
+                    "Accepted {} for source {}",
+                    pending.metadata.path, pending.source_id
+                );
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .buffer_unordered(options.upload_concurrency.clamp(1, 16))
+        .try_fold(0, |accepted, ()| async move { Ok(accepted + 1) })
+        .await
+}
+fn remove_snapshot(state: &LocalState, snapshot: &Path) -> Result<()> {
+    let directory = snapshot.parent().context("snapshot has no parent")?;
+    if directory.parent() != Some(state.directory.join("pending").as_path()) {
+        bail!("pending snapshot path is outside the state directory");
     }
-    if import.accepted_at.is_none() {
-        import = client
-            .wait_for_acceptance(import.id, Duration::from_secs(900))
-            .await?;
+    match std::fs::remove_file(snapshot) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
-    let Some(accepted_at) = import.accepted_at else {
-        state.clear_pending(pending.manifest.source_id).await?;
-        remove_snapshot_dir(state, &pending.directory)?;
-        bail!(
-            "import {} failed before acceptance; originals remain local",
-            import.id
-        );
-    };
-    if import.results.len() != pending.manifest.files.len() {
-        bail!("acceptance receipt is incomplete; retaining pending state");
+    match std::fs::remove_dir(directory) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
     }
-    state
-        .accept(
-            pending.manifest.source_id,
-            &import.results,
-            &pending.manifest,
-            accepted_at,
-        )
-        .await?;
-    remove_snapshot_dir(state, &pending.directory)?;
-    if !quiet {
-        eprintln!("Accepted import {} ({})", import.id, import.status);
-    }
-    Ok(import)
 }
 fn remove_snapshot_dir(state: &LocalState, directory: &Path) -> Result<()> {
     let parent = state.directory.join("pending");

@@ -1,84 +1,51 @@
 # Data model
 
-Sessions are the primary records. Messages, tool calls, events, and artifacts describe their contents. Sources describe where native files are collected. Projects provide optional grouping independently of collection and access.
+SessionDB stores conversations and their original native files. A **session** contains **messages**, structural **events**, and **artifacts**. Optional **projects** label sessions. A **source** records which client harness store supplied a file; **file generations** preserve native rewrites. **Objects** describe immutable S3 bytes used by originals and artifacts.
 
-Status: proposed logical schema, incorporating [the session-first design](decisions/0008-collection-and-project-associations.md). This is not a database migration.
+Status: accepted and implemented in the single [initial migration](../crates/server/migrations/0001_catalog.sql). [ADR 0014](decisions/0014-sessions-and-synchronous-files.md) records the sessions-first design and synchronous file contract.
 
-## Session model
+## Catalog tables
 
-```mermaid
-erDiagram
-    SOURCE ||--o{ SOURCE_FILE : collects
-    SOURCE_FILE ||--o{ FILE_GENERATION : preserves
-    SOURCE_FILE }o--o{ SESSION : provides
-    SESSION ||--o{ MESSAGE : contains
-    SESSION ||--o{ SESSION_EVENT : records
-    SESSION ||--o{ ARTIFACT : references
-    SESSION ||--o{ SESSION_PROJECT : has
-    PROJECT ||--o{ SESSION_PROJECT : groups
-```
-
-A source file can contribute records to a session, and a session can depend on several files or related sessions. A session can have no project associations or several. Native copies and inherited history remain distinguishable in the catalog.
-
-## Resources
-
-| Resource | Main fields and behavior |
+| Table | Purpose |
 | --- | --- |
-| Session | Harness/native ID, title, tags, `project_ids`, recorded cwd, start/activity times, source links, and processing state. |
-| Message | Session, canonical/native role, origin, typed content, revision, recorded time, sequence, native references, and optional conversation parent. |
-| Tool call | Call ID/name, explicitly JSON or text input, source message, and linked result when available; links are scoped to the originating session/source. |
-| Session event | Compaction, model change, context edit, branch marker, or another recorded event, retaining native type and source reference. |
-| Session relation | Parent/child, fork, delegation, or inherited-context reference, with an explicit resolution state. |
-| Artifact | File/image/large content reference, media type, size, and instance-key-protected content. |
-| Source | Device label, harness, native store root, and last successful sync. No project binding. |
-| Project | ID, slug, name, optional repository URLs and status `active` or `archived`. A logical label within the instance. |
-| Session project | A unique session/project association. Changing it does not change native files or instance access. |
-| Job | Kind, optional source/session/project filters, state, progress, attempts, timestamps, and bounded errors. |
+| `sessions` | Conversation identity, source/native key, title, tags, recorded cwd, times, count, and native relations. |
+| `messages` | Ordered conversation records: canonical/native role, origin, ancestry, full typed content, provider metadata, and source references. |
+| `session_events` | Compaction, context edits, model changes, and other structural native events. |
+| `artifacts` | Session-linked image/file/audio/video metadata and an object reference; binary media types belong here. |
+| `projects` | Optional labels with unique slug and name, not an access or archive lifecycle. Repository URLs remain a planned API extension. |
+| `session_projects` | Unique session/project pairs; the only persisted project association set. |
+| `sources` | Harness, device label, native store root, and last sync time; unique by harness/device/root. |
+| `source_files` | Unique source-relative paths, current generation and upload version. |
+| `file_generations` | Immutable original-object references; a verified append advances the reference in the same generation, while a rewrite starts a new generation. |
+| `session_files` | Links conversations to the contributing file generations, including inherited native dependencies. |
+| `objects` | Unique S3 key, SHA-256, byte length, and creation time. |
 
-## Collection and directory metadata
+Ordinary metadata uses explicit columns, foreign keys, and uniqueness constraints. JSON is reserved for variable typed content, native relations, usage, source references, and event payloads. There are no duplicate session/message/event `document` blobs. Message previews and content URLs are generated at read time from the one full `messages.content` value. Object hashes and lengths are stored once in `objects`, not repeated in original/artifact rows.
 
-Sources identify configured harness session stores, such as `~/.codex/sessions`. The recorded starting cwd is an attribute of a session, not its collection boundary or project identity. A session started in `/home/ada` can work on Payments in `/home/ada/work/payments` and later be assigned that project.
+## Conversations and native history
 
-Native IDs help identify sessions within a harness, but do not replace source bindings. Claude subagents can repeat their parent's native session ID. Copies from different sources may differ, and divergent files are not silently combined.
+A source file can contribute to several sessions; one session can require several native files. Claude subagents can repeat their parent's native session ID, so source/native bindings matter. Proven copies remain explicit and divergent copies are not silently merged. Native roles describe recorded data, not proof of human authorship.
 
-An imported file may identify no session yet, one session, or inherited records. Archive the file and report parsing state independently. Unknown native formats remain retrievable by any correct-key client even before a session can be normalized.
+Messages contain typed text, available reasoning, tool calls/results, JSON and artifact references. [Normalized content](normalized-content.md) defines their wire shapes. `conversation_parent_id` describes branching independently of tool/delegation relationships. The default historical view includes alternate branches; `leaf_id` selects ancestry. Compaction/context edits remain events, not invented provider requests. Exact replay and native harness resume are not promised.
 
-Source IDs, device labels, native paths, and harness metadata retain provenance, not a caller identity or ownership claim. Native user-role data can be tool output or injected context; wire role does not prove human authorship.
+## Collection and projects
 
-## Project associations
+Sources identify client session stores, not projects or callers. Starting cwd is session metadata: a session launched in `/home/ada` can be unassigned or associated with several repositories. Clients decide when to start or stop collection; the server has no `sources.paused` switch.
 
-`project_ids` is always an array; `[]` means unassigned. `PATCH` with a replacement array sets associations, omission preserves them, and an empty array clears them. Multiple project matches are valid.
+`project_ids: []` means unassigned. The join table stores associations, not a duplicate JSON array. Optional initial labels must exist; unavailable labels reject the request before storage. Append sync preserves existing title, tags, and projects. Project administration, matching rules, and metadata PATCH APIs remain planned; see [project associations](project-associations.md).
 
-Explicit configured rules may supply initial associations at first import. A nonmatch never blocks collection. Later sync updates recorded content but does not reset project labels or title/tags chosen in the catalog. Repository metadata and referenced paths can provide suggestions without becoming authoritative classification.
+## Original files and acceptance
 
-Projects are searchable grouping metadata, not security containers. Every key holder can list their names and query the same shared collection. See [project associations](project-associations.md).
+One authenticated [file upload](sync.md) verifies actual length/hash and fully parses before registering/storing immutable bytes, then commits file/catalog state before HTTP 200. Native transcripts are JSONL, so there is no per-transcript MIME column. Artifacts retain their actual MIME types.
 
-## Messages and events
+Every supplied native record must be supported and valid. A malformed or unsupported record rejects the whole file with HTTP 400 before any object registration, storage, or catalog publication. Only accepted valid originals are retained; previous accepted state remains unchanged on rejection.
 
-Content is a typed list of text, available reasoning, tool call, tool result, structured JSON, artifact reference, and unknown/native blocks. [Normalized content](normalized-content.md) defines the schemas and provider rules. Missing reasoning or timestamps remain unknown. Unknown blocks retain native type and opaque data, with message references locating the original records.
+Byte-changing uploads receive a new version. Verified prefix growth keeps the generation ID; rewrites preserve prior generations. Source references address original uncompressed line/byte ranges. Old append objects become unreferenced only after publication of the replacement; preserved rewrites stay protected.
 
-Conversation ancestry and operation nesting are separate fields. `conversation_parent_id` describes branching. A delegated operation or tool invocation has its own relationship; adjacent timestamps alone do not establish it.
+## Storage and access
 
-The default message endpoint returns historical records in deterministic recorded order, including alternate branches. `leaf_id` selects a known message's ancestry. Compaction and context edits remain structural events; v1 does not promise exact provider-request reconstruction or deterministic replay.
+Every data surface uses the one instance API key; sources and projects are provenance/classification, not access partitions. All correct-key clients share the collection.
 
-The API returns bounded previews with `truncated` and a content URL where needed. Full normalized content and native export provide separate expansion paths.
+PostgreSQL transactions publish one file's accepted state. S3/network I/O happens outside them. Objects use fresh never-reused keys and are recorded before upload so crashes leave tracked orphans rather than published missing bytes. Only old unreferenced objects are eligible for periodic cleanup; object lifecycle/status columns, import tables, and job queues are unnecessary.
 
-## Original files
-
-A source-relative file has accepted generations, each with a current immutable object reference, complete byte length, digest, and collection time. Verified prefix growth advances that generation; a rewrite preserves the preceding generation and starts another.
-
-Source references address original uncompressed line/byte ranges. A newer verified append includes earlier referenced ranges. Old append snapshots can be collected once no explicit pin/export needs them; rewrite generations follow retention policy. See [sync](sync.md) and [operations](operations.md).
-
-Source roots, unparsed files, and linked native dependencies are accessible to all correct-key clients. Files need no per-session authorization partition; missing dependencies remain explicit.
-
-## Shared access
-
-A single nonempty instance API key protects all data. There are no identity tables, owner fields, visibility, memberships, or grants in the active model. Every key holder has full access; projects only classify sessions. See [access control](access-control.md).
-
-## Storage and deletion
-
-Use PostgreSQL foreign keys, uniqueness constraints, UTC timestamps and transactional changes. Public IDs are opaque UUIDs; native IDs remain strings. Provider-specific fields remain native metadata rather than becoming top-level fields for every harness.
-
-Archiving a project stops new associations to that label. It does not stop source collection, delete sessions, or remove existing associations. Any key holder can use implemented session deletion: it disappears from queries immediately and cleanup removes derived content and exclusively referenced objects asynchronously.
-
-Deletion suppresses its existing source bindings so ordinary sync does not recreate it. The client receives a `suppressed` receipt and leaves the native local file intact. Restore/reimport requires a separate explicit contract.
+There is no atomic multi-file acceptance. Clients save pending snapshots and checkpoint each successful receipt separately. Local file disappearance never deletes server history. Session deletion and suppression remain planned and need their own complete contract; the current schema does not pretend to implement them.

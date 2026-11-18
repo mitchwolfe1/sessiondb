@@ -3,16 +3,19 @@
   "title": "SessionDB normalization expectations",
   "type": "object",
   "required": [
-    "case",
-    "sessions"
+    "case"
+  ],
+  "oneOf": [
+    { "required": ["sessions"], "not": { "required": ["error"] } },
+    { "required": ["error"], "not": { "required": ["sessions"] } }
   ],
   "additionalProperties": false,
   "properties": {
     "case": {
       "type": "string"
     },
-    "capture": {
-      "type": "object"
+    "error": {
+      "const": "unsupported_native_record"
     },
     "sessions": {
       "type": "array",
@@ -89,12 +92,6 @@
         },
         "provider_usage": {
           "type": "object"
-        },
-        "warnings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
         }
       }
     },

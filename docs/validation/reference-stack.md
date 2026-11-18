@@ -4,6 +4,8 @@ Historical record: the original first-build storage and OIDC authentication choi
 
 These results establish historical dependency/protocol compatibility, not validation of the new instance-key model. [ADR 0013](../decisions/0013-instance-api-key.md) supersedes all OIDC assumptions below. Keycloak, browser probes, and identity libraries are no longer runtime prerequisites. No instance-key cutover tests were run for this documentation update; integrated results must be recorded separately after execution. These experiments did not exercise application adapters or production performance.
 
+[ADR 0014](../decisions/0014-sessions-and-synchronous-files.md) also supersedes client signed uploads, promotion, and job finalization. Storage experiments below are retained as evidence of tested primitives, not the active ingestion protocol. Current clients access only the API; S3 endpoints and credentials are server-only.
+
 ## Historically tested components
 
 | Component | Selected/tested version |
@@ -46,7 +48,7 @@ The storage service used a temporary persisted data directory and only a loopbac
 | Delete followed by absent-object HEAD | Passed |
 | JSON integer beyond u64 survives selected serialization | Passed exact digit round-trip |
 
-Use `RequestChecksumCalculation::WhenRequired` and `ResponseChecksumValidation::WhenRequired` explicitly, while supplying SHA-256 for uploads and verifying accepted bytes. This avoids accidentally depending on another provider's optional default checksum algorithm. Send every header returned with a presigned request; a URL alone is not always the full request.
+The historical probe used explicit required-only checksum settings with SHA-256. Its presigned requests needed every returned header. These are experiment details, not instructions for current clients to construct object requests; current upload verification and S3 access happen on the server.
 
 SeaweedFS was selected as an existing single-node reference that passed the required operations. The official SDK gives the needed S3 signing controls. Other S3-compatible providers use the same checks before being listed as tested. Bucket versioning is not required for SessionDB's application file generations.
 

@@ -3,7 +3,7 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
-use sessiondb_types::{FileError, Problem};
+use sessiondb_types::Problem;
 use uuid::Uuid;
 
 tokio::task_local! { pub static REQUEST_ID: String; }
@@ -13,7 +13,6 @@ pub struct ApiError {
     pub status: StatusCode,
     pub code: &'static str,
     pub detail: String,
-    pub errors: Vec<FileError>,
 }
 pub type ApiResult<T> = Result<T, ApiError>;
 impl ApiError {
@@ -22,7 +21,6 @@ impl ApiError {
             status,
             code,
             detail: detail.into(),
-            errors: vec![],
         }
     }
     pub fn bad(code: &'static str, detail: impl Into<String>) -> Self {
@@ -88,7 +86,6 @@ impl IntoResponse for ApiError {
             code: self.code.into(),
             request_id,
             instance: None,
-            errors: self.errors,
         };
         (
             self.status,

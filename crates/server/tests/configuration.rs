@@ -9,6 +9,27 @@ fn auth_defaults_to_the_instance_key_environment_variable() {
 }
 
 #[test]
+fn configuration_uses_only_per_file_upload_limits() {
+    let config: Config =
+        toml::from_str(include_str!("../../../docs/examples/server.toml")).unwrap();
+    assert_eq!(config.limits.max_file_bytes, 268_435_456);
+    assert!(toml::from_str::<sessiondb_types::Limits>("max_files_per_import = 2").is_err());
+    assert!(
+        toml::from_str::<sessiondb_server::config::Objects>(
+            "provider = 's3'\nbucket = 'sessions'\nupload_url_ttl_seconds = 60"
+        )
+        .is_err()
+    );
+    assert!(
+        toml::from_str::<Config>(&format!(
+            "{}\n[workers]\nparse_concurrency = 2\n",
+            include_str!("../../../docs/examples/server.toml"),
+        ))
+        .is_err()
+    );
+}
+
+#[test]
 fn configuration_requires_a_nonempty_instance_key() {
     const CHILD: &str = "SESSIONDB_CONFIGURATION_TEST_CHILD";
     const KEY: &str = "SESSIONDB_CONFIGURATION_TEST_KEY";

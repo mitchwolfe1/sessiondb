@@ -37,9 +37,8 @@ walkdir.workspace = true
 libc = "0.2"
 
 [dev-dependencies]
-sessiondb-server = { path = "../server" }
 aws-sdk-s3.workspace = true
-axum.workspace = true
+sqlx = { workspace = true, features = ["postgres"] }
 reqwest.workspace = true
 zip.workspace = true
 

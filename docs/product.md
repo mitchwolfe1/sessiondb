@@ -38,7 +38,7 @@ The first end-to-end demonstration is a session moving from a native file into S
 | P04 | Session access | List, filter, inspect messages and tool activity, edit title/tags, and export sessions. |
 | P13 | Optional project associations | Collect home-directory and unassigned sessions; add, replace, or clear multiple project labels without changing instance access. |
 | P05 | Keyword search | Search sessions and messages with project, harness, and date filters. |
-| P06 | Optional embeddings | A configured provider supports semantic/hybrid search with visible coverage and job state. |
+| P06 | Optional embeddings | Planned semantic/hybrid search with explicit profile and visible coverage; no index-job workflow API. |
 | P07 | Conventional interfaces | Versioned REST/OpenAPI, predictable pagination/errors, CLI scripting, and a client SDK. |
 | P08 | Native files | Retrieve collected originals even when normalization is incomplete. |
 | P10 | Harness adapters | Add another harness through the same discovery/normalization boundary. |
@@ -55,7 +55,7 @@ Preserve original session files and make the parsed model rebuildable. Native br
 
 Use familiar interfaces and components: standard HTTP, PostgreSQL, S3-compatible storage, conventional CLI behavior, and operating-system service managers. Extend the service through focused adapter/provider interfaces.
 
-Keep embeddings optional. Session storage, sync, reading, and keyword search remain useful without a model endpoint. Expose collection and indexing state so a pending upload, partial parse, and embedding backlog are distinguishable.
+Keep embeddings optional. Session storage, sync, reading, and keyword search remain useful without a model endpoint. Expose collection and indexing state so a pending upload and embedding backlog are distinguishable.
 
 ## Initial release boundaries
 

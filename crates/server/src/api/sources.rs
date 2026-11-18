@@ -15,7 +15,6 @@ pub(crate) fn source(row: &PgRow) -> ApiResult<Source> {
             .map_err(ApiError::internal)?,
         device_label: row.get("device_label"),
         root: row.get("root"),
-        paused: row.get("paused"),
         last_synced_at: row.get("last_synced_at"),
     })
 }
@@ -53,21 +52,14 @@ pub(super) async fn create(
             "A source needs a device label and native store root.",
         ));
     }
-    let mut tx = state.pool.begin().await?;
-    // Legacy sources with identical provenance keep their IDs; serialize registration
-    // rather than imposing a new uniqueness constraint on migrated records.
-    sqlx::query("LOCK TABLE sources IN SHARE ROW EXCLUSIVE MODE")
-        .execute(&mut *tx)
-        .await?;
-    let row = sqlx::query("INSERT INTO sources(id,harness,device_label,root) SELECT $1,$2,$3,$4 WHERE NOT EXISTS(SELECT 1 FROM sources WHERE harness=$2 AND device_label=$3 AND root=$4) RETURNING *")
-        .bind(Uuid::new_v4()).bind(input.harness.as_str()).bind(&input.device_label).bind(&input.root).fetch_optional(&mut *tx).await?;
+    let row = sqlx::query("INSERT INTO sources(id,harness,device_label,root) VALUES($1,$2,$3,$4) ON CONFLICT(harness,device_label,root) DO NOTHING RETURNING *")
+        .bind(Uuid::new_v4()).bind(input.harness.as_str()).bind(&input.device_label).bind(&input.root).fetch_optional(&state.pool).await?;
     let row = row.ok_or_else(|| {
         ApiError::conflict(
             "source_exists",
             "This native store is already registered for the device.",
         )
     })?;
-    tx.commit().await?;
     let result = source(&row)?;
     let location = format!(
         "{}/v1/sources/{}",
@@ -102,20 +94,31 @@ pub(super) async fn files(
     let scope = scope(("files", id))?;
     let cursor = decode_cursor(o.cursor.as_deref(), &scope)?;
     let size = limit(o.limit)?;
-    let rows = sqlx::query("SELECT * FROM source_files WHERE source_id=$1 AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT $3").bind(id).bind(cursor.map(|c| c.id)).bind(size as i64+1).fetch_all(&state.pool).await?;
-    let data = rows.iter().map(file).collect();
+    let rows = sqlx::query("SELECT f.*,o.byte_length,o.sha256 FROM source_files f JOIN file_generations g ON g.id=f.generation_id JOIN objects o ON o.object_key=g.object_key WHERE f.source_id=$1 AND ($2::uuid IS NULL OR f.id>$2) ORDER BY f.id LIMIT $3").bind(id).bind(cursor.map(|c| c.id)).bind(size as i64+1).fetch_all(&state.pool).await?;
+    let data = rows.iter().map(file).collect::<ApiResult<Vec<_>>>()?;
     Ok(Json(page(data, size, scope, |f| f.id)?))
 }
-pub(crate) fn file(r: &PgRow) -> SourceFile {
-    SourceFile {
-        id: r.get("id"),
-        source_id: r.get("source_id"),
-        path: r.get("path"),
-        generation_id: r.get("generation_id"),
-        version: r.get("version"),
-        byte_length: r.get::<i64, _>("byte_length") as u64,
-        sha256: r.get("sha256"),
-    }
+pub(crate) fn file(row: &PgRow) -> ApiResult<SourceFile> {
+    Ok(SourceFile {
+        id: row.try_get("id")?,
+        source_id: row.try_get("source_id")?,
+        path: row.try_get("path")?,
+        generation_id: row.try_get("generation_id")?,
+        version: row.try_get("version")?,
+        byte_length: row.try_get::<i64, _>("byte_length")? as u64,
+        sha256: row.try_get("sha256")?,
+    })
+}
+
+pub(crate) fn valid_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4096
+        && !value.starts_with('/')
+        && !value.contains('\\')
+        && !value.chars().any(char::is_control)
+        && value
+            .split('/')
+            .all(|p| !p.is_empty() && p != "." && p != "..")
 }
 
 #[derive(Deserialize)]
@@ -129,11 +132,11 @@ pub(super) async fn content(
     ApiQuery(o): ApiQuery<ContentOptions>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let row = sqlx::query("SELECT g.object_key,g.byte_length FROM source_files f JOIN file_generations g ON g.file_id=f.id AND g.id=COALESCE($3,f.generation_id) WHERE f.id=$1 AND f.source_id=$2").bind(file_id).bind(source_id).bind(o.generation_id).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)?;
+    let row = sqlx::query("SELECT g.object_key FROM source_files f JOIN file_generations g ON g.file_id=f.id AND g.id=COALESCE($3,f.generation_id) WHERE f.id=$1 AND f.source_id=$2").bind(file_id).bind(source_id).bind(o.generation_id).fetch_optional(&state.pool).await?.ok_or_else(ApiError::not_found)?;
     stream(
         &state,
         row.get("object_key"),
-        "application/octet-stream",
+        "application/x-ndjson",
         &headers,
     )
     .await

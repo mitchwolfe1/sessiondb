@@ -1,6 +1,6 @@
 # Rust workspace and server architecture
 
-Status: accepted for the first build; identity-library assumptions superseded by [0013](0013-instance-api-key.md). Date: 2026-11-15. Validated baseline: 2026-11-16.
+Status: workspace accepted; historical import/job/worker execution below superseded by [0014](0014-sessions-and-synchronous-files.md), identity by [0013](0013-instance-api-key.md). Date: 2026-11-15. Historical baseline: 2026-11-16.
 
 ## Decision
 

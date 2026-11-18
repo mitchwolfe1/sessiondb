@@ -6,7 +6,7 @@ Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md), superseding 
 
 ## Collection boundary
 
-Require bearer-key authentication on all `/v1` APIs, including capability discovery at `/v1/info`. Only liveness, readiness, and the static OpenAPI document are public. The same rule applies to original files, parsed content, artifacts, native exports, changes, search, and background job results. Planned resource APIs inherit it; they do not introduce separate privileges.
+Require bearer authentication on all `/v1` APIs, including info, file uploads, originals, messages, artifacts, native exports, and planned search/changes. Only liveness, readiness, and static OpenAPI are public. Planned resources inherit the same boundary.
 
 A project is optional classification metadata, not a container or security boundary. Source IDs, device labels, harness names, and native paths describe provenance, not the caller's identity. All key holders can inspect unparsed originals and linked parent/dependency data. Missing dependencies remain explicit; there is no per-reader export omission policy.
 
@@ -18,11 +18,11 @@ Use separate instances, databases, and object namespaces when independent collec
 
 ## Revocation
 
-Rotate the instance key to revoke API access for every old-key client, then distribute the replacement only to intended clients. There is no per-client revocation mechanism. Already issued signed downloads may remain usable for their documented maximum lifetime of 60 seconds; use API-proxied downloads when that exposure is unacceptable.
+Rotate the instance key to revoke subsequent API requests for every old-key client, then distribute the replacement securely. There is no per-client revocation. Downloads proxy through the API; no signed-download lifetime is configured.
 
 ## Acceptance scenarios
 
-- Two independent clients with the same key see the same sessions, source files, artifacts, jobs, exports, and query results.
+- Two independent correct-key clients see the same sessions, source files, artifacts, exports, and query results.
 - Project assignment, clearing labels, and native append do not alter access.
 - Missing/invalid keys fail on every data path and on `/v1/info`.
 - Health, readiness, and the static contract reveal no session content without a key.

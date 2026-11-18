@@ -3,13 +3,21 @@ use sessiondb_types::{ToolInput, ToolOutputBlock, ToolStatus};
 
 pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
     let header = records
-        .iter()
-        .find(|r| str_at(&r.value, "type") == Some("session_meta"))
+        .first()
+        .filter(|r| str_at(&r.value, "type") == Some("session_meta"))
         .ok_or(AdapterError::Unsupported)?;
-    let p = &header.value["payload"];
-    let id = str_at(p, "id").ok_or(AdapterError::Unsupported)?;
-    let mut session = native_session(id, str_at(p, "cwd"), p.get("timestamp").and_then(timestamp));
-    if let Some(parent) = str_at(p, "forked_from_id") {
+    let p = object(required(&header.value, "payload", header)?, header)?;
+    let id = required_str(p, "id", header)?;
+    if id.is_empty() {
+        return Err(invalid(header, "empty native session identifier"));
+    }
+    let mut session = native_session(
+        id,
+        optional_str(p, "cwd", header)?,
+        p.get("timestamp").and_then(timestamp),
+    );
+    validate_timestamp(p, header)?;
+    if let Some(parent) = optional_str(p, "forked_from_id", header)? {
         session.relations.push(NativeRelation {
             relation_type: "fork".into(),
             native_reference: parent.into(),
@@ -17,141 +25,153 @@ pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
         });
     }
     if let Some(base) = p.get("history_base") {
-        if let (Some(rollout_id), Some(end_ordinal_exclusive), Some(end_byte_offset)) = (
-            str_at(base, "thread_id"),
-            base["end_ordinal_exclusive"].as_u64(),
-            base["end_byte_offset"].as_u64(),
-        ) {
-            session.relations.push(NativeRelation {
-                relation_type: "inherited_context".into(),
-                native_reference: rollout_id.into(),
-                history_boundary: Some(HistoryBoundary {
-                    rollout_id: rollout_id.into(),
-                    end_ordinal_exclusive,
-                    end_byte_offset,
-                }),
-            });
-        } else {
-            session.warnings.push("invalid_history_boundary".into());
+        let base = object(base, header)?;
+        let rollout_id = required_str(base, "thread_id", header)?;
+        if rollout_id.is_empty() {
+            return Err(invalid(header, "invalid inherited history reference"));
         }
+        let end_ordinal_exclusive = base["end_ordinal_exclusive"]
+            .as_u64()
+            .ok_or_else(|| invalid(header, "invalid inherited history cutoff"))?;
+        let end_byte_offset = base["end_byte_offset"]
+            .as_u64()
+            .ok_or_else(|| invalid(header, "invalid inherited history cutoff"))?;
+        session.relations.push(NativeRelation {
+            relation_type: "inherited_context".into(),
+            native_reference: rollout_id.into(),
+            history_boundary: Some(HistoryBoundary {
+                rollout_id: rollout_id.into(),
+                end_ordinal_exclusive,
+                end_byte_offset,
+            }),
+        });
     }
     let mut parent = None;
-    for record in records {
-        let p = &record.value["payload"];
-        match str_at(&record.value, "type").unwrap_or("") {
-            "session_meta" => continue,
+    for record in records.iter().skip(1) {
+        let p = object(required(&record.value, "payload", record)?, record)?;
+        let kind = required_str(&record.value, "type", record)?;
+        match kind {
             "response_item" => {
-                let kind = str_at(p, "type").unwrap_or("unknown");
-                let mut warning = None;
+                let kind = required_str(p, "type", record)?;
                 let (r, content) = match kind {
                     "message" => (
-                        role(str_at(p, "role").unwrap_or("unknown")),
-                        blocks(&p["content"]),
+                        role(required_str(p, "role", record)?, record)?,
+                        blocks(required(p, "content", record)?, record)?,
                     ),
                     "function_call" | "custom_tool_call" => {
                         let input = if kind == "custom_tool_call" {
-                            ToolInput::Text(str_at(p, "input").unwrap_or("").into())
-                        } else if let Some(args) = str_at(p, "arguments") {
-                            match serde_json::from_str(args) {
-                                Ok(v) => ToolInput::Json(v),
-                                Err(_) => {
-                                    warning = Some("invalid_tool_arguments_json".into());
-                                    ToolInput::Text(args.into())
-                                }
-                            }
+                            ToolInput::Text(required_str(p, "input", record)?.into())
                         } else {
-                            ToolInput::Json(p["arguments"].clone())
+                            let arguments = required(p, "arguments", record)?;
+                            ToolInput::Json(if let Some(args) = arguments.as_str() {
+                                serde_json::from_str(args).map_err(|_| {
+                                    invalid(record, "invalid function arguments JSON")
+                                })?
+                            } else {
+                                arguments.clone()
+                            })
                         };
                         (
                             Role::Assistant,
                             vec![FullContentBlock::ToolCall {
-                                call_id: str_at(p, "call_id").map(str::to_owned),
-                                name: str_at(p, "name").unwrap_or("unknown").into(),
+                                call_id: optional_str(p, "call_id", record)?.map(str::to_owned),
+                                name: required_str(p, "name", record)?.into(),
                                 input,
                             }],
                         )
                     }
                     "function_call_output" | "custom_tool_call_output" => {
-                        let output = if let Some(text) = p["output"].as_str() {
-                            vec![ToolOutputBlock::Text { text: text.into() }]
-                        } else {
-                            vec![ToolOutputBlock::Json {
-                                value: p["output"].clone(),
-                            }]
-                        };
+                        let value = required(p, "output", record)?;
+                        let output = outputs(value, record)?;
                         (
                             Role::Tool,
                             vec![FullContentBlock::ToolResult {
-                                call_id: str_at(p, "call_id").map(str::to_owned),
+                                call_id: optional_str(p, "call_id", record)?.map(str::to_owned),
                                 status: ToolStatus::Unknown,
                                 content: output,
                             }],
                         )
                     }
                     "reasoning" => {
-                        let mut content = blocks(&p["summary"]);
-                        content.extend(blocks(&p["content"]));
-                        for block in &mut content {
-                            if let FullContentBlock::Text { text } = block {
-                                *block = FullContentBlock::Reasoning {
-                                    text: text.clone(),
-                                    redacted: false,
-                                };
+                        let mut content = Vec::new();
+                        for key in ["summary", "content"] {
+                            if let Some(value) = p.get(key).filter(|v| !v.is_null()) {
+                                for block in blocks(value, record)? {
+                                    if let FullContentBlock::Text { text } = block {
+                                        content.push(FullContentBlock::Reasoning {
+                                            text,
+                                            redacted: false,
+                                        });
+                                    }
+                                }
                             }
                         }
-                        if let Some(data) = p.get("encrypted_content").filter(|v| !v.is_null()) {
-                            content.push(FullContentBlock::Unknown {
-                                native_type: "encrypted_reasoning".into(),
-                                data: data.clone(),
+                        if optional_str(p, "encrypted_content", record)?.is_some() {
+                            content.push(FullContentBlock::Reasoning {
+                                text: String::new(),
+                                redacted: true,
                             });
+                            session.events.push(event(record, "encrypted_reasoning"));
                         }
                         (Role::Assistant, content)
                     }
-                    _ => {
-                        session.events.push(event(record, kind));
-                        session
-                            .warnings
-                            .push(format!("unknown_response_item:{kind}"));
-                        continue;
-                    }
+                    _ => return Err(invalid(record, "unsupported response item kind")),
                 };
                 let mut m = message(record, r, origin(r), parent.clone(), content);
                 m.native_role = str_at(p, "role").unwrap_or(r.as_str()).into();
-                if let Some(w) = warning {
-                    m.warnings.push(w);
-                }
                 parent = Some(m.key.clone());
                 session.messages.push(m);
             }
             "event_msg" => {
-                let kind = str_at(p, "type").unwrap_or("unknown");
-                if !matches!(kind, "agent_message" | "user_message" | "agent_reasoning") {
-                    session.events.push(event(record, kind));
-                }
+                let kind = required_str(p, "type", record)?;
+                session.events.push(event(record, kind));
             }
-            kind => session.events.push(event(record, kind)),
+            "turn_context" | "compacted" => session.events.push(event(record, kind)),
+            _ => return Err(invalid(record, "unsupported outer record kind")),
         }
     }
     Ok(session)
 }
 
-fn blocks(value: &Value) -> Vec<FullContentBlock> {
-    let Some(items) = value.as_array() else {
-        return vec![];
-    };
+fn blocks(value: &Value, record: &Record) -> Result<Vec<FullContentBlock>, AdapterError> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| invalid(record, "expected a content array"))?;
     items
         .iter()
         .map(|b| {
-            let kind = str_at(b, "type").unwrap_or("unknown");
+            let kind = required_str(b, "type", record)?;
             match kind {
                 "input_text" | "output_text" | "text" | "summary_text" | "reasoning_text" => {
-                    FullContentBlock::text(str_at(b, "text").unwrap_or(""))
+                    Ok(FullContentBlock::text(required_str(b, "text", record)?))
                 }
-                _ => FullContentBlock::Unknown {
-                    native_type: kind.into(),
-                    data: b.clone(),
-                },
+                _ => Err(invalid(record, "unsupported content block kind")),
             }
         })
         .collect()
+}
+
+fn outputs(value: &Value, record: &Record) -> Result<Vec<ToolOutputBlock>, AdapterError> {
+    if let Some(text) = value.as_str() {
+        return Ok(vec![ToolOutputBlock::Text { text: text.into() }]);
+    }
+    if let Some(items) = value.as_array()
+        && items.iter().any(|item| item.get("type").is_some())
+    {
+        return items
+            .iter()
+            .map(|item| match required_str(item, "type", record)? {
+                "text" | "input_text" | "output_text" => Ok(ToolOutputBlock::Text {
+                    text: required_str(item, "text", record)?.into(),
+                }),
+                _ => Err(invalid(record, "unsupported tool output block kind")),
+            })
+            .collect();
+    }
+    if value.get("type").is_some() {
+        return Err(invalid(record, "unsupported tool output shape"));
+    }
+    Ok(vec![ToolOutputBlock::Json {
+        value: value.clone(),
+    }])
 }

@@ -11,22 +11,14 @@ endpoint = "https://objects.example.com"
 bucket = "sessiondb"
 region = "us-east-1"
 path_style = true
-upload_url_ttl_seconds = 900
 access_key_env = "SESSIONDB_S3_ACCESS_KEY_ID"
 secret_key_env = "SESSIONDB_S3_SECRET_ACCESS_KEY"
-download_url_ttl_seconds = 60
 
 [auth]
 # Required nonempty environment secret; never put the key in this file.
 api_key_env = "SESSIONDB_API_KEY"
 
-[workers]
-parse_concurrency = 2
-embedding_concurrency = 2
-
 [limits]
-max_files_per_import = 128
-max_manifest_bytes = 2097152
 max_file_bytes = 268435456
 
 [telemetry]

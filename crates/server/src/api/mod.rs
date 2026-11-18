@@ -1,4 +1,3 @@
-pub(crate) mod imports;
 pub(crate) mod sessions;
 pub(crate) mod sources;
 
@@ -13,35 +12,29 @@ use axum::{
     http::{StatusCode, header, request::Parts},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{any, get, post},
+    routing::{any, get},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sessiondb_types::{FIRST_BUILD_OPERATIONS, Page, ServerInfo};
 use sqlx::Row;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, atomic::Ordering},
-};
+use std::sync::{Arc, atomic::Ordering};
 use uuid::Uuid;
 
 pub fn router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         .route("/v1/info", get(info))
         .route("/v1/sources", get(sources::list).post(sources::create))
+        .route("/v1/sources/{source_id}", get(sources::get))
         .route(
-            "/v1/sources/{source_id}",
-            get(sources::get).patch(unsupported),
+            "/v1/sources/{source_id}/files",
+            get(sources::files).post(crate::ingest::upload),
         )
-        .route("/v1/sources/{source_id}/files", get(sources::files))
         .route(
             "/v1/sources/{source_id}/files/{file_id}/content",
             get(sources::content),
         )
-        .route("/v1/imports", post(imports::create).get(unsupported))
-        .route("/v1/imports/{import_id}", get(imports::get))
-        .route("/v1/imports/{import_id}/complete", post(imports::complete))
         .route("/v1/sessions", get(sessions::list))
         .route(
             "/v1/sessions/{session_id}",
@@ -57,7 +50,6 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/messages/{message_id}/content",
             get(sessions::full_content),
         )
-        .route("/v1/jobs/{job_id}", get(imports::job))
         .route("/v1/artifacts/{artifact_id}", get(sessions::artifact))
         .route(
             "/v1/artifacts/{artifact_id}/content",
@@ -71,7 +63,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         "/v1/changes",
         "/v1/embedding-profiles",
         "/v1/embedding-profiles/{profile_id}",
-        "/v1/index-jobs",
         "/v1/sources/{source_id}/files/{file_id}/generations",
         "/v1/sessions/{session_id}/events",
     ] {
@@ -96,7 +87,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .merge(protected.route_layer(middleware::from_fn_with_state(state.clone(), authenticate)))
         .fallback(|| async { ApiError::not_found() })
         .layer(axum::extract::DefaultBodyLimit::max(
-            state.config.limits.max_manifest_bytes,
+            usize::try_from(state.config.limits.max_file_bytes)
+                .unwrap_or(usize::MAX)
+                .saturating_add(128 * 1024),
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -211,7 +204,6 @@ pub(crate) struct Cursor {
     pub scope: String,
     pub id: Uuid,
     pub time: Option<DateTime<Utc>>,
-    pub revision: Option<String>,
 }
 pub(crate) fn scope(value: impl Serialize) -> ApiResult<String> {
     Ok(hex::encode(sha2::Sha256::digest(serde_json::to_vec(
@@ -269,7 +261,6 @@ pub(crate) fn page<T>(
                     scope,
                     id: id(v),
                     time: None,
-                    revision: None,
                 })
             })
             .transpose()?
@@ -277,14 +268,4 @@ pub(crate) fn page<T>(
         None
     };
     Ok(Page { data, next_cursor })
-}
-pub(crate) fn no_options(params: &BTreeMap<String, String>) -> ApiResult<()> {
-    if params.is_empty() {
-        Ok(())
-    } else {
-        Err(ApiError::bad(
-            "unsupported_option",
-            "This operation does not accept these parameters.",
-        ))
-    }
 }

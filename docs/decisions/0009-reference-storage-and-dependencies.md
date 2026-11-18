@@ -1,6 +1,6 @@
 # Reference storage and dependency baseline
 
-Status: accepted. Date: 2026-11-16.
+Status: dependency/provider baseline accepted; signed staging and asynchronous finalization below are historical, superseded by [0014](0014-sessions-and-synchronous-files.md). Date: 2026-11-16.
 
 ## Decision
 
@@ -14,4 +14,4 @@ The selected pair passed actual signed PUT/GET, metadata length, byte-range, con
 
 ## Consequences
 
-Keep one blob-storage interface and one S3 implementation initially. Finalization is an asynchronous verification/promotion job; the client advances after `accepted_at`, not merely after HTTP 202. Use the lease, URL renewal, idempotency, and grace defaults in [sync](../sync.md). Application file generations remain independent of provider bucket versioning. No live cloud account or model endpoint was used in the compatibility checks.
+Historical consequence: finalization used an asynchronous promotion job and `accepted_at`, with leases and renewable targets. ADR 0014 replaces that protocol with synchronous API upload; these checks do not validate the replacement. Application generations remain independent of bucket versioning. No live cloud account or model endpoint was used in the compatibility checks.

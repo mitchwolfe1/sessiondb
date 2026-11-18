@@ -1,6 +1,6 @@
 # HTTP API contract
 
-The SessionDB API provides session, message, import, and search resources for the CLI, SDK, and other applications.
+The SessionDB API provides sessions, messages, original files, artifacts, and planned search resources for the CLI, SDK, and applications.
 
 Status: target-v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations; `x-implemented` identifies the current server subset. The instance-key revision is `0.3.0-draft`, with [typed content](normalized-content.md) and the [first-build subset](first-build.md). See [implementation status](implementation.md) before using later target-v1 routes.
 
@@ -12,7 +12,7 @@ Status: target-v1 resource and behavior contract. The [OpenAPI draft](openapi.ya
 - Timestamps are RFC 3339 with UTC output. `after` is inclusive and `before` is exclusive; message search uses the matching message's timestamp, with an explicit session-time fallback when absent.
 - List responses use `data` and nullable `next_cursor`. Default `limit=50`, maximum `200`. Cursors are opaque and bound to filters and ordering.
 - Default session order is `updated_at` descending with ID as a deterministic tie-breaker. Messages use recorded sequence with ID tie-breaking, not arbitrary timestamp sorting.
-- `POST` creates a resource/job, `GET` reads, `PATCH` changes documented mutable fields, and `DELETE` schedules deletion as documented. Unknown request fields are rejected; clients ignore unknown response fields and preserve unknown content block types.
+- `POST` creates a resource or uploads a file, `GET` reads, and planned `PATCH`/`DELETE` operations change documented metadata or delete data. Unknown request fields are rejected; clients ignore unknown response fields and preserve unknown content block types.
 - Request IDs appear in responses and logs. Use HTTP statuses consistently and errors in `application/problem+json` following RFC 9457.
 
 ## Resource inventory
@@ -29,32 +29,27 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 | GET | `/sessions/{session_id}/events` | Read recorded structural events and native event metadata. |
 | GET | `/sessions/{session_id}/export` | Stream a native bundle or normalized JSONL/STS projection. |
 | GET | `/messages/{message_id}` | Read a bounded normalized message. |
-| GET | `/messages/{message_id}/content` | Read full typed content, with optional If-Match revision protection. |
+| GET | `/messages/{message_id}/content` | Read full typed content, without conditional-read metadata. |
 | GET | `/artifacts/{artifact_id}` | Read authorized artifact metadata. |
 | GET | `/artifacts/{artifact_id}/content` | Download artifact bytes with the instance API key. |
 | POST | `/search` | Keyword, semantic, or hybrid message search. |
 
-### Collection and imports
+### Sources and file uploads
 
 | Method | Path | Meaning |
 | --- | --- | --- |
 | GET, POST | `/sources` | List/register collection sources. |
-| GET, PATCH | `/sources/{source_id}` | Inspect/pause a native store source or update its device label. |
-| GET | `/sources/{source_id}/files` | List accepted original files, including files that failed parsing. |
+| GET | `/sources/{source_id}` | Inspect source provenance; clients own stopping/starting collection. |
+| GET, POST | `/sources/{source_id}/files` | List originals or synchronously accept one multipart file upload. |
 | GET | `/sources/{source_id}/files/{file_id}/generations` | List preserved original generations. |
 | GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
-| GET, POST | `/imports` | Inspect import batches or create an upload manifest. |
-| GET | `/imports/{import_id}` | Get upload/processing state and file-level results. |
-| POST | `/imports/{import_id}/complete` | Schedule verification/promotion; poll for non-null accepted_at before advancing a checkpoint. |
 
-### Indexing and changes
+### Planned embeddings and changes
 
 | Method | Path | Meaning |
 | --- | --- | --- |
 | GET, POST | `/embedding-profiles` | Inspect profiles or configure a new immutable embedding space. |
 | GET, PATCH | `/embedding-profiles/{profile_id}` | Inspect or enable/disable a profile; model/dimensions cannot be edited in place. |
-| POST | `/index-jobs` | Request indexing with optional source/session/project-label filters. |
-| GET | `/jobs/{job_id}` | Read parsing, indexing, or deletion job state. |
 | GET | `/changes` | Read an authorized, cursor-based change feed. |
 
 ### Projects
@@ -62,7 +57,7 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 | Method | Path | Meaning |
 | --- | --- | --- |
 | GET, POST | `/projects` | List/create logical project labels in the shared collection. |
-| GET, PATCH | `/projects/{project_id}` | Inspect, rename, or archive a project. |
+| GET, PATCH | `/projects/{project_id}` | Planned name/repository metadata, without an archive lifecycle. |
 
 ### Service endpoints
 
@@ -76,27 +71,27 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 
 Session lists support `project_id`, `unassigned`, `harness`, `tag`, `after`, `before`, `sort`, `cursor`, and `limit`. `project_id` matches optional associations; `unassigned=true` selects an empty association set and cannot be combined with a project filter. All filters narrow the shared collection without changing access.
 
-Session detail contains title, tags, `project_ids`, recorded starting cwd, harness/native IDs, activity times, relationships, counts, and processing state. An empty project array is valid. It does not include all message bodies. The starting cwd need not be inside any associated project directory.
+Session detail contains title, tags, `project_ids`, recorded cwd, harness/native IDs, activity times, relationships, and counts. An empty project array is valid. Bodies remain separate. Starting cwd need not lie inside a project directory.
 
-Message/event lists default to all historical records. `leaf_id` chooses a conversation ancestry where supported; incomplete ancestry is returned with a warning rather than silently represented as exact model context. Pagination cursors include a projection revision. If a rewrite/reparse invalidates that revision, return `409 cursor_stale` and instruct the client to restart the listing.
+Message/event lists default to all historical records. `leaf_id` chooses conversation ancestry where supported; unresolved structural links remain explicit rather than inventing exact model context. Cursors bind filters and ordering but do not guarantee a snapshot while data changes.
 
-Content follows the [typed block union](normalized-content.md). Bound previews at 64 KiB of UTF-8; oversized structured blocks become `content_reference` rather than broken JSON. `truncated` makes omissions explicit. Full-content responses exclude preview references. Message responses have representation ETags. Full-content ETags quote the normalized `revision`; send that field from a preview in `If-Match`, with a mismatch returning `412`. Artifact bytes remain separate. Content URLs are generated for the current public server address.
+Content follows the [typed block union](normalized-content.md). Bound previews at 64 KiB of UTF-8; oversized structured blocks become `content_reference` rather than broken JSON. `truncated` makes omissions explicit. Full-content responses exclude preview references. Expansion reads current content without a snapshot guarantee. Artifact bytes remain separate. Content URLs are generated for the current public server address.
 
 ## Project assignment
 
-`PATCH /sessions/{id}` can replace `project_ids`; omission preserves the set and `[]` clears it. All key holders can use implemented mutations. Sync never resets these catalog edits. A label change updates filters without moving native files or changing access.
+Planned `PATCH /sessions/{id}` replaces `project_ids`; omission preserves the set and `[]` clears it. All key holders share mutations once implemented. Sync preserves catalog edits.
 
-Sources register one native store root and harness. They have no project/workspace binding. Per-file import descriptors may optionally provide initial `project_ids` for newly recognized sessions. Absent/nonmatching associations never prevent ingestion; unavailable/archived labels are omitted with a classification warning. Invalid manual PATCH associations are rejected without changing the session.
+Sources identify native stores, not projects. `FileUpload.project_ids` optionally supplies initial labels. Unavailable labels reject the request before storage. Project administration/matching remains planned; projects have no archive lifecycle.
 
-## Imports and jobs
+## Synchronous file upload
 
-Creation returns `201` with an import resource and signed staging-upload targets. Completion returns `202` with `verifying` and schedules verification/promotion. Neither uploading nor scheduling means the originals were accepted. The worker sets `accepted_at` only after verifying immutable promoted copies and atomically committing the manifest receipt; clients poll import state and advance checkpoints after that timestamp appears.
+`POST /sources/{source_id}/files` accepts exactly two ordered multipart parts: `metadata` is JSON [FileUpload](examples/file-upload.json), and `file` is raw native JSONL. Metadata contains path, exact byte length, SHA-256, required `expected_version` (explicit null for a new path), and optional project IDs. No transcript MIME or import identifier is supplied.
 
-Finalization is atomic for the manifest. Failed verification/version checks leave `accepted_at` null; a later parse failure does not revoke already accepted originals. Import results distinguish verification errors from classification warnings. Repeated requests return the same import/job identity with current state, not duplicate work.
+HTTP **200** returns [FileUploadResult](examples/file-upload-result.json) only after verification, immutable original/artifact storage, normalization, and one-file catalog commit. It includes the accepted `file`, related `session_ids`, and `unchanged`. Every supplied record must be supported and valid. Unsupported or malformed records, invalid JSON function arguments, and invalid inline artifacts reject the entire file with HTTP 400 `unsupported_native_record` before any storage or catalog mutation.
 
-Awaiting imports have a 24-hour lease. Upload URLs last at most 15 minutes, and `GET /imports/{id}` can refresh them before the lease expires. Idempotency records last 30 days. Signed-URL responses are not cacheable. See [sync](sync.md) for the complete retry and cleanup behavior.
+Identical current size/digest returns `unchanged: true`, including retry with the previous version token after a lost response. Nonidentical stale versions return `409 version_conflict`. Missing/extra/malformed parts or actual length/hash mismatches leave previously accepted state unchanged. Clients persist snapshots and checkpoint each successful receipt; there is no atomic multi-file guarantee.
 
-Jobs expose queued/running/succeeded/partial/failed/cancelled, counters, and bounded errors. `verify_import` is separate from parsing/indexing. Changes to labels emit previous/current associations; they never change instance access.
+There are no import/job/index-job endpoints, signed upload targets, completion polling, leases, or persisted server upload states. See [sync](sync.md) for append generations, recovery, and orphan cleanup.
 
 ## Search
 
@@ -110,16 +105,16 @@ Return matching message/session summaries, bounded excerpts, retrieval methods, 
 
 `format=native` returns an `application/zip` bundle containing the session's native files and a manifest of related/missing files. It does not promise native harness resume. `format=jsonl` returns a SessionDB projection; `format=sts` returns a Hugging Face-compatible projection. Normalized exports accept `leaf_id`; native export always preserves original recorded files and ignores no branches silently. See [integration formats](integrations.md).
 
-Native object downloads either proxy bytes or redirect to a short-lived signed URL after authorization. Originals that have no parsed session remain accessible through source-file endpoints. Range reads address original uncompressed bytes. A compression layer must translate ranges correctly or serve the uncompressed representation; a gzip byte offset is not a JSONL source offset. Reject `leaf_id` with native bundle export instead of implying that original files were filtered to a branch.
+Native downloads proxy authorized bytes through the API; clients need no object-store endpoint. Only accepted valid originals are stored and accessible through source files. Range offsets address uncompressed original bytes. Reject `leaf_id` with native export rather than implying branch-filtered original files.
 
 ## Errors and compatibility
 
-Use `400` for invalid input, `401` for missing/invalid authentication, `404` for absent data, `409` for state conflicts or unavailable configured capabilities, `412` for conditional-read failure, `413` for upload limits, `429` for throttling, and `503` for a temporarily unavailable required dependency. Embedding failures may leave keyword operations healthy.
+Use `400` for invalid input, `401` for missing/invalid authentication, `404` for absent data, `409` for state conflicts or unavailable configured capabilities, `413` for upload limits, `429` for throttling, and `503` for a temporarily unavailable required dependency. Embedding failures may leave keyword operations healthy.
 
-Problem details include `type`, `title`, `status`, `detail`, `instance`, stable `code`, and `request_id`; file/field errors are bounded extensions. Do not put transcripts, credentials, or signed URLs in errors. Use `Retry-After` when appropriate.
+Problem details include `type`, `title`, `status`, `detail`, optional `instance`, stable `code`, and `request_id`. Native rejection uses HTTP 400 `unsupported_native_record` with bounded safe reasons and record positions, never raw source excerpts. Never include transcripts or credentials in errors.
 
 Within `/v1`, additive optional response fields and new enum/content variants are allowed. Removing fields, changing meanings/default ordering, or altering access semantics requires an explicit compatibility decision. Clients must tolerate unknown response variants rather than making every new harness event a client-breaking release.
 
 ## Machine readable contract review
 
-The checked-in [OpenAPI 3.1 contract](openapi.yaml) covers this inventory with resource/request/response schemas, operation IDs, examples, authentication, errors, and pagination. Validate it, compare it against CLI commands, and review its diff before API implementation. [Open questions](open-questions.md) records acceptance of this draft as a blocking phase-zero decision; syntactic validation alone is not product approval.
+The [OpenAPI 3.1 contract](openapi.yaml) covers this inventory, schemas, authentication, errors, and pagination. Fifteen baseline operations plus two artifact reads are implemented; other retained operations are explicitly planned. Validate it and compare it against CLI/SDK behavior as part of integrated verification. Syntax validation alone is not product approval.

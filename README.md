@@ -4,6 +4,10 @@ SessionDB is a database for coding-agent sessions. It automatically syncs sessio
 
 Use SessionDB to browse conversations and tool calls, export native history, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK. Keyword search and configurable embedding providers are planned.
 
+Sessions contain messages, structural events, and artifacts. Sources record native-store provenance; projects are optional labels. Originals and rewrite generations remain preserved. Sync uploads one file through the API and checkpoints its receipt independently—there is no all-or-nothing multi-file batch or background acceptance job.
+
+[ADR 0015](docs/decisions/0015-strict-native-records-and-simple-reads.md) requires strict whole-file native validation before storage/publication. Only accepted valid originals are preserved; unsupported/malformed records reject with HTTP 400. Reads carry no revision, parser-status, or warning metadata and no snapshot guarantees. Upload write-CAS remains separate; per-file recovery is unchanged.
+
 **Status: initial implementation.** Authenticated sync, original storage, session reads, and native exports work across Codex, Claude Code, and Pi. See [implementation status](docs/implementation.md) for available features and remaining milestones.
 
 Build instructions and a local development setup are in [Build and run SessionDB](docs/development.md).
@@ -59,6 +63,6 @@ Development starts with the specification. See [CONTRIBUTING.md](CONTRIBUTING.md
 
 The [first-build plan](docs/first-build.md) selects the initial working path. [Reference checks](docs/validation/reference-stack.md) and [synthetic native fixtures](fixtures/README.md) support the storage and message contracts; the earlier OIDC validation is historical and does not verify the instance-key cutover.
 
-Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add session import`, or `fix: retry interrupted uploads`.
+Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add file upload`, or `fix: retry interrupted uploads`.
 
 The repository is private. Distribution and licensing are undecided.

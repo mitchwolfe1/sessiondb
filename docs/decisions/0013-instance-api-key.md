@@ -1,6 +1,6 @@
 # One instance-wide API key
 
-Status: accepted. Date: 2026-11-16.
+Status: key boundary accepted; catalog/count/object-URL assumptions below superseded by [0014](0014-sessions-and-synchronous-files.md). Date: 2026-11-16.
 
 ## Decision
 
@@ -14,15 +14,15 @@ The SDK constructor is `Client::new(server: &str, api_key: String, timeout: Dura
 
 This replaces the identity/access assumptions in 0001, 0004, 0005, 0006, 0007, 0008, and 0010, and the identity-operation count in 0012. Their historical rationale and test observations remain historical evidence, not active product requirements. Source-based collection, optional project labels, original-byte preservation, typed content, storage, and non-auth planned features remain in force.
 
-The first-build set is 18 baseline operations, plus two implemented artifact operations: the previous 23 baseline operations minus authentication configuration, login registration, current-account lookup, organization listing, and invitation creation. Search, embeddings, projects, changes, and other planned non-auth resource APIs retain their implementation status and inherit the same key boundary.
+Historical cutover count: 18 baseline plus two artifact reads, after removing five identity operations from 23. ADR 0014 now selects 15 baseline plus two artifact reads. Planned search, embeddings, projects, and changes retain the same key boundary.
 
 ## Initial schema and consequences
 
-SessionDB has not been deployed, so define the instance-wide schema directly in `0001_catalog.sql`. There is no identity-model conversion migration or compatibility path: the initial catalog contains only the current session, source, file, project, import, object, and job tables.
+SessionDB is undeployed, so define the catalog directly in `0001_catalog.sql` with no identity conversion. The import/job table assumption from this cutover is superseded: ADR 0014's sessions-first migration is the active schema.
 
 Disposable development databases initialized with the earlier migration history must be recreated. SQLx rejects their obsolete migration versions/checksums; do not bypass those checks or carry the abandoned identity schema forward.
 
-One key cannot provide partial/read-only access, per-client revocation, or human attribution. Use separate instances for independent collections. Rotation replaces the server key and updates every intended client; already issued signed object URLs remain subject to their expiry.
+One key cannot provide partial/read-only access, per-client revocation, or human attribution. Use separate instances for independent collections. Rotation replaces the server key and intended clients' copies. Signed object URLs from the previous protocol are no longer issued.
 
 ## Validation boundary
 

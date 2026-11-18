@@ -8,6 +8,9 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
         .find(|r| str_at(&r.value, "sessionId").is_some())
         .ok_or(AdapterError::Unsupported)?;
     let id = str_at(&header.value, "sessionId").ok_or(AdapterError::Unsupported)?;
+    if id.is_empty() {
+        return Err(invalid(header, "empty native session identifier"));
+    }
     let mut session = native_session(
         id,
         str_at(&header.value, "cwd"),
@@ -37,34 +40,79 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
     let mut mapping = HashMap::new();
     for record in records {
         let value = &record.value;
-        let kind = str_at(value, "type").unwrap_or("unknown");
+        optional_str(value, "parentUuid", record)?;
+        if optional_str(value, "sessionId", record)?.is_some_and(|value| value != id) {
+            return Err(invalid(record, "inconsistent native session identifier"));
+        }
+        if optional_str(value, "agentId", record)?
+            .is_some_and(|value| Some(value) != session.native_agent_id.as_deref())
+        {
+            return Err(invalid(record, "inconsistent native agent identifier"));
+        }
+        optional_str(value, "cwd", record)?;
+        let kind = required_str(value, "type", record)?;
         if !matches!(kind, "user" | "assistant") {
-            session
-                .events
-                .push(event(record, str_at(value, "subtype").unwrap_or(kind)));
+            if !matches!(
+                kind,
+                "system"
+                    | "progress"
+                    | "queue-operation"
+                    | "file-history-snapshot"
+                    | "summary"
+                    | "last-prompt"
+                    | "custom-title"
+                    | "agent-name"
+                    | "agent-color"
+                    | "tag"
+                    | "pr-link"
+            ) {
+                return Err(invalid(record, "unsupported outer record kind"));
+            }
+            let subtype = optional_str(value, "subtype", record)?;
+            session.events.push(event(record, subtype.unwrap_or(kind)));
             continue;
         }
+        required_str(value, "uuid", record)?;
         let parent = resolve_parent(str_at(value, "parentUuid"), &parents, &mapping);
-        let p = &value["message"];
-        let r = role(str_at(p, "role").unwrap_or(kind));
+        let p = object(required(value, "message", record)?, record)?;
+        let native_role = required_str(p, "role", record)?;
+        if native_role != kind {
+            return Err(invalid(record, "message role does not match record kind"));
+        }
+        let r = role(native_role, record)?;
+        validate_timestamp(p, record)?;
+        optional_bool(value, "isMeta", record)?;
+        optional_bool(value, "isCompactSummary", record)?;
+        optional_str(p, "id", record)?;
+        optional_str(p, "model", record)?;
+        if let Some(usage) = p.get("usage") {
+            object(usage, record)?;
+        }
         let injected = value["isMeta"] == true
             || value["isCompactSummary"] == true
             || session.native_agent_id.is_some();
         let mut parts = Vec::<(Role, Vec<FullContentBlock>)>::new();
-        if let Some(text) = p["content"].as_str() {
+        let content = required(p, "content", record)?;
+        if let Some(text) = content.as_str() {
             parts.push((r, vec![FullContentBlock::text(text)]));
-        } else if let Some(blocks) = p["content"].as_array() {
+        } else if let Some(blocks) = content.as_array() {
             for (index, b) in blocks.iter().enumerate() {
-                let is_result = str_at(b, "type") == Some("tool_result");
+                let is_result = required_str(b, "type", record)? == "tool_result";
                 let block_role = if is_result { Role::Tool } else { r };
                 let block = if is_result {
                     FullContentBlock::ToolResult {
-                        call_id: str_at(b, "tool_use_id").map(str::to_owned),
-                        status: status(b.get("is_error")),
-                        content: outputs(&b["content"], &mut session, record, index),
+                        call_id: optional_str(b, "tool_use_id", record)?.map(str::to_owned),
+                        status: status(b.get("is_error"), record)?,
+                        content: outputs(
+                            required(b, "content", record)?,
+                            &mut session,
+                            record,
+                            index,
+                            Harness::Claude,
+                        )?,
                     }
                 } else {
-                    block(b, &mut session, record, index, Harness::Claude)
+                    block(b, &mut session, record, index, Harness::Claude)?
                 };
                 if let Some((_, content)) = parts.last_mut().filter(|(role, _)| *role == block_role)
                 {
@@ -73,6 +121,11 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
                     parts.push((block_role, vec![block]));
                 }
             }
+            if parts.is_empty() {
+                parts.push((r, Vec::new()));
+            }
+        } else {
+            return Err(invalid(record, "expected string or array message content"));
         }
         let mut current_parent = parent;
         for (index, (r, content)) in parts.into_iter().enumerate() {
@@ -124,10 +177,10 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
 
 pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
     let header = records
-        .iter()
-        .find(|r| str_at(&r.value, "type") == Some("session"))
+        .first()
+        .filter(|r| str_at(&r.value, "type") == Some("session"))
         .ok_or(AdapterError::Unsupported)?;
-    let id = str_at(&header.value, "id").ok_or(AdapterError::Unsupported)?;
+    let id = required_str(&header.value, "id", header)?;
     if header.value["version"].as_u64() != Some(3) {
         return Err(AdapterError::Unsupported);
     }
@@ -136,7 +189,8 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
         str_at(&header.value, "cwd"),
         header.value.get("timestamp").and_then(timestamp),
     );
-    if let Some(parent) = str_at(&header.value, "parentSession") {
+    optional_str(&header.value, "cwd", header)?;
+    if let Some(parent) = optional_str(&header.value, "parentSession", header)? {
         session.relations.push(NativeRelation {
             relation_type: "fork".into(),
             native_reference: parent.into(),
@@ -147,11 +201,29 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
     let mut mapping = HashMap::new();
     for record in records {
         let value = &record.value;
-        let kind = str_at(value, "type").unwrap_or("unknown");
+        optional_str(value, "parentId", record)?;
+        let kind = required_str(value, "type", record)?;
         if kind == "session" {
+            if record.anchor.line != header.anchor.line {
+                return Err(invalid(record, "duplicate session header"));
+            }
             continue;
         }
+        required_str(value, "id", record)?;
         if !matches!(kind, "message" | "custom_message") {
+            if !matches!(
+                kind,
+                "model_change"
+                    | "thinking_level_change"
+                    | "compaction"
+                    | "branch_summary"
+                    | "custom"
+                    | "label"
+                    | "session_info"
+                    | "context_edit"
+            ) {
+                return Err(invalid(record, "unsupported outer record kind"));
+            }
             session.events.push(event(record, kind));
             continue;
         }
@@ -159,41 +231,44 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
         let p = if kind == "custom_message" {
             value
         } else {
-            &value["message"]
+            object(required(value, "message", record)?, record)?
         };
         let native_role = if kind == "custom_message" {
             "custom"
         } else {
-            str_at(p, "role").unwrap_or("unknown")
+            required_str(p, "role", record)?
         };
         let r = match native_role {
             "toolResult" => Role::Tool,
             "custom" | "compactionSummary" | "branchSummary" => Role::User,
-            other => role(other),
+            other => role(other, record)?,
         };
         let injected = matches!(
             native_role,
             "custom" | "compactionSummary" | "branchSummary"
         );
+        validate_timestamp(p, record)?;
+        optional_str(p, "model", record)?;
+        if let Some(usage) = p.get("usage") {
+            object(usage, record)?;
+        }
+        let native_content = required(p, "content", record)?;
         let content = if r == Role::Tool {
             vec![FullContentBlock::ToolResult {
-                call_id: str_at(p, "toolCallId").map(str::to_owned),
-                status: status(p.get("isError")),
-                content: outputs(&p["content"], &mut session, record, 0),
+                call_id: optional_str(p, "toolCallId", record)?.map(str::to_owned),
+                status: status(p.get("isError"), record)?,
+                content: outputs(native_content, &mut session, record, 0, Harness::Pi)?,
             }]
-        } else if let Some(text) = p["content"].as_str() {
+        } else if let Some(text) = native_content.as_str() {
             vec![FullContentBlock::text(text)]
         } else {
-            p["content"]
+            native_content
                 .as_array()
-                .map(|items| {
-                    items
-                        .iter()
-                        .enumerate()
-                        .map(|(i, b)| block(b, &mut session, record, i, Harness::Pi))
-                        .collect()
-                })
-                .unwrap_or_default()
+                .ok_or_else(|| invalid(record, "expected string or array message content"))?
+                .iter()
+                .enumerate()
+                .map(|(i, b)| block(b, &mut session, record, i, Harness::Pi))
+                .collect::<Result<Vec<_>, _>>()?
         };
         let mut m = message(
             record,
@@ -223,11 +298,20 @@ fn parent_map(records: &[Record], field: &str) -> HashMap<String, Option<String>
         })
         .collect()
 }
-fn status(value: Option<&Value>) -> ToolStatus {
-    match value.and_then(Value::as_bool) {
-        Some(true) => ToolStatus::Error,
-        Some(false) => ToolStatus::Success,
-        None => ToolStatus::Unknown,
+fn optional_bool(value: &Value, field: &str, record: &Record) -> Result<(), AdapterError> {
+    if let Some(value) = value.get(field)
+        && !value.is_boolean()
+    {
+        return Err(invalid(record, "expected a boolean field"));
+    }
+    Ok(())
+}
+fn status(value: Option<&Value>, record: &Record) -> Result<ToolStatus, AdapterError> {
+    match value {
+        Some(Value::Bool(true)) => Ok(ToolStatus::Error),
+        Some(Value::Bool(false)) => Ok(ToolStatus::Success),
+        None => Ok(ToolStatus::Unknown),
+        _ => Err(invalid(record, "expected a boolean tool status")),
     }
 }
 fn block(
@@ -236,100 +320,120 @@ fn block(
     record: &Record,
     index: usize,
     harness: Harness,
-) -> FullContentBlock {
-    let kind = str_at(b, "type").unwrap_or("unknown");
-    match kind {
-        "text" => FullContentBlock::text(str_at(b, "text").unwrap_or("")),
+) -> Result<FullContentBlock, AdapterError> {
+    let kind = required_str(b, "type", record)?;
+    Ok(match kind {
+        "text" => FullContentBlock::text(required_str(b, "text", record)?),
         "thinking" => FullContentBlock::Reasoning {
-            text: str_at(b, "thinking").unwrap_or("").into(),
+            text: required_str(b, "thinking", record)?.into(),
             redacted: false,
         },
-        "tool_use" | "toolCall" => FullContentBlock::ToolCall {
-            call_id: str_at(b, "id").map(str::to_owned),
-            name: str_at(b, "name").unwrap_or("unknown").into(),
-            input: ToolInput::Json(if harness == Harness::Claude {
-                b["input"].clone()
-            } else {
-                b["arguments"].clone()
-            }),
-        },
-        "image" => {
-            let media = str_at(b, "mimeType").or_else(|| str_at(&b["source"], "media_type"));
-            let data = str_at(b, "data").or_else(|| str_at(&b["source"], "data"));
-            if let (Some(media_type), Some(Ok(bytes))) = (media, data.map(|s| STANDARD.decode(s))) {
-                let id = Uuid::new_v5(
-                    &Uuid::NAMESPACE_URL,
-                    format!(
-                        "sessiondb:{}:{}:{}:{index}",
-                        harness, session.native_key, record.anchor.record_id
-                    )
-                    .as_bytes(),
-                );
-                session.artifacts.push(NativeArtifact {
-                    id,
-                    media_type: media_type.into(),
-                    kind: ArtifactKind::Image,
-                    bytes,
-                    native_entry_id: record.anchor.record_id.clone(),
-                    content_index: index,
-                });
-                FullContentBlock::Artifact {
-                    artifact_id: id,
-                    media_type: media_type.into(),
-                    kind: ArtifactKind::Image,
-                    alt: None,
-                }
-            } else {
-                session.warnings.push("unavailable_inline_artifact".into());
-                FullContentBlock::Unknown {
-                    native_type: kind.into(),
-                    data: b.clone(),
-                }
+        "redacted_thinking" if harness == Harness::Claude => {
+            required_str(b, "data", record)?;
+            session.events.push(event(record, "redacted_thinking"));
+            FullContentBlock::Reasoning {
+                text: String::new(),
+                redacted: true,
             }
         }
-        _ => FullContentBlock::Unknown {
-            native_type: kind.into(),
-            data: b.clone(),
+        "tool_use" if harness == Harness::Claude => FullContentBlock::ToolCall {
+            call_id: optional_str(b, "id", record)?.map(str::to_owned),
+            name: required_str(b, "name", record)?.into(),
+            input: ToolInput::Json(object(required(b, "input", record)?, record)?.clone()),
         },
-    }
+        "toolCall" if harness == Harness::Pi => FullContentBlock::ToolCall {
+            call_id: optional_str(b, "id", record)?.map(str::to_owned),
+            name: required_str(b, "name", record)?.into(),
+            input: ToolInput::Json(object(required(b, "arguments", record)?, record)?.clone()),
+        },
+        "image" => {
+            let (media_type, data) = if harness == Harness::Claude {
+                let source = object(required(b, "source", record)?, record)?;
+                if required_str(source, "type", record)? != "base64" {
+                    return Err(invalid(record, "unsupported inline artifact source"));
+                }
+                (
+                    required_str(source, "media_type", record)?,
+                    required_str(source, "data", record)?,
+                )
+            } else {
+                (
+                    required_str(b, "mimeType", record)?,
+                    required_str(b, "data", record)?,
+                )
+            };
+            if !media_type.starts_with("image/") || media_type.len() == 6 {
+                return Err(invalid(record, "invalid image media type"));
+            }
+            let bytes = STANDARD
+                .decode(data)
+                .map_err(|_| invalid(record, "invalid inline artifact base64"))?;
+            let id = Uuid::new_v5(
+                &Uuid::NAMESPACE_URL,
+                format!(
+                    "sessiondb:{}:{}:{}:{index}",
+                    harness, session.native_key, record.anchor.record_id
+                )
+                .as_bytes(),
+            );
+            session.artifacts.push(NativeArtifact {
+                id,
+                media_type: media_type.into(),
+                kind: ArtifactKind::Image,
+                bytes,
+                native_entry_id: record.anchor.record_id.clone(),
+                content_index: index,
+            });
+            FullContentBlock::Artifact {
+                artifact_id: id,
+                media_type: media_type.into(),
+                kind: ArtifactKind::Image,
+                alt: optional_str(b, "alt", record)?.map(str::to_owned),
+            }
+        }
+        _ => return Err(invalid(record, "unsupported content block kind")),
+    })
 }
 fn outputs(
     value: &Value,
     session: &mut NativeSession,
     record: &Record,
     base_index: usize,
-) -> Vec<ToolOutputBlock> {
+    harness: Harness,
+) -> Result<Vec<ToolOutputBlock>, AdapterError> {
     if let Some(text) = value.as_str() {
-        return vec![ToolOutputBlock::Text { text: text.into() }];
+        return Ok(vec![ToolOutputBlock::Text { text: text.into() }]);
     }
     let Some(items) = value.as_array() else {
-        return vec![ToolOutputBlock::Json {
+        if value.get("type").is_some() {
+            return Err(invalid(record, "unsupported tool output shape"));
+        }
+        return Ok(vec![ToolOutputBlock::Json {
             value: value.clone(),
-        }];
+        }]);
     };
     items
         .iter()
         .enumerate()
-        .map(
-            |(i, b)| match block(b, session, record, base_index + i, Harness::Pi) {
-                FullContentBlock::Text { text } => ToolOutputBlock::Text { text },
+        .map(|(i, b)| {
+            if !matches!(str_at(b, "type"), Some("text" | "image")) {
+                return Err(invalid(record, "unsupported tool output block kind"));
+            }
+            match block(b, session, record, base_index + i, harness)? {
+                FullContentBlock::Text { text } => Ok(ToolOutputBlock::Text { text }),
                 FullContentBlock::Artifact {
                     artifact_id,
                     media_type,
                     kind,
                     alt,
-                } => ToolOutputBlock::Artifact {
+                } => Ok(ToolOutputBlock::Artifact {
                     artifact_id,
                     media_type,
                     kind,
                     alt,
-                },
-                FullContentBlock::Json { value } => ToolOutputBlock::Json { value },
-                _ => ToolOutputBlock::Unknown {
-                    native_type: str_at(b, "type").unwrap_or("unknown").into(),
-                    data: b.clone(),
-                },
-            },
-        )
+                }),
+                _ => Err(invalid(record, "unsupported tool output block kind")),
+            }
+        })
         .collect()
 }

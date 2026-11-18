@@ -1,93 +1,58 @@
 # Architecture
 
-SessionDB consists of a server, a CLI with an automatic sync mode, and a reusable client SDK. The server owns session access and indexing; clients use the same HTTP contract that other applications use.
+SessionDB consists of a server, a CLI with automatic sync, and a reusable async client SDK. Sessions contain messages/events/artifacts; sources explain file provenance and projects optionally classify sessions.
 
-Status: accepted first-build architecture. The [selected scope](first-build.md) implements the agreed product direction incrementally.
+Status: accepted first-build architecture, revised by [ADR 0014](decisions/0014-sessions-and-synchronous-files.md).
 
 ## System boundary
 
 ```mermaid
 flowchart LR
-    H[Codex Claude Code and Pi] --> F[Local session files]
-    F --> C[SessionDB CLI and sync agent]
+    H[Native harness stores] --> C[CLI and sync client]
     C --> A[SessionDB HTTP API]
-    U[Other CLI and SDK clients] --> A
-    A --> P[(PostgreSQL)]
-    A --> S[(S3 compatible object storage)]
-    P --> J[Background indexing jobs]
-    S --> J
-    J --> P
-    J --> E[Optional embedding provider]
-    X[hype-history and other applications] --> A
+    U[SDK and application clients] --> A
+    A --> P[(PostgreSQL catalog)]
+    A --> S[(Immutable S3 originals and artifacts)]
 ```
 
-PostgreSQL holds session data, search indexes, optional project metadata, and job state. Original files and large artifacts live in an existing S3-compatible object store. SessionDB uses its object API for storage and its own session API for queries.
+Clients send one bounded native file through the API, not directly to S3. PostgreSQL holds explicit session/message/event metadata and typed content; immutable original/artifact bytes live in an existing S3-compatible store. Search and embedding providers remain planned extensions, not prerequisites for collection.
 
 ## Rust workspace
 
-The Cargo workspace contains these five packages:
+| Package | Purpose |
+| --- | --- |
+| `sessiondb-types` | Public transport-independent resources, requests, responses, and errors. |
+| `sessiondb-adapters` | Harness discovery metadata and native normalization, without server/database dependencies. |
+| `sessiondb-client` | Typed async HTTP, bearer authentication, multipart upload, pagination, and downloads. |
+| `sessiondb-cli` | Human/machine output, contexts, local snapshots/checkpoints, one-shot and watch sync. |
+| `sessiondb-server` | HTTP, key verification, per-file ingestion, catalog reads, immutable object storage, orphan cleanup. |
 
-| Package | Purpose | Depends on |
-| --- | --- | --- |
-| `sessiondb-types` | Public resource/request/response types and API errors | Serialization and basic value types |
-| `sessiondb-adapters` | Harness discovery metadata and native transcript normalization | Types; no server or database |
-| `sessiondb-client` | Typed async HTTP SDK, static bearer-key authentication, pagination, and job access | Types and HTTP client |
-| `sessiondb-cli` | `sessiondb` binary, interactive ergonomics, local collection state, and sync | Client, adapters, types |
-| `sessiondb-server` | `sessiondb-server` binary, HTTP routes, key verification, persistence, search, and workers | Types, adapters, storage libraries |
+Use focused server modules rather than another framework or compatibility layer. Shared DTOs do not replace [OpenAPI](openapi.yaml); SDK callers do not depend on internal server structs.
 
-Keep server concerns in modules initially: `api`, `auth`, `catalog`, `imports`, `objects`, `search`, `embeddings`, and `jobs`. Extract another crate only when there is a concrete reuse or dependency reason. The client must not depend on server internals.
+The locked baseline uses Rust 2024/Rust 1.94.1, Tokio/axum, serde, SQLx, reqwest, clap, tracing, and the official AWS S3 client. SeaweedFS 4.54 and `aws-sdk-s3` 1.159.0 with behavior version `v2026_11_10` are the reference pair. [Reference validation](validation/reference-stack.md) records historical compatibility experiments, not proof of this redesign.
 
-The Rust 2024 edition and Cargo workspace conventions are the baseline. The pinned toolchain and dependency lockfile are checked in. Shared DTOs do not replace a language-neutral HTTP contract.
+## Request execution
 
-## Implementation baseline
+1. Authenticate with the required instance key and validate exactly one metadata/file pair.
+2. Verify actual length and digest; detect already accepted identical content.
+3. Fully parse every supplied record before registering fresh object keys or uploading immutable original/artifact bytes.
+4. Recheck optimistic file version and publish file, generation, sessions, messages, events, and artifacts in one PostgreSQL transaction.
+5. Return HTTP 200 with the accepted file, related session IDs, and unchanged flag.
 
-Use Tokio/axum, serde, SQLx, reqwest, clap, the official AWS S3 client, and structured tracing. Require the nonempty `SESSIONDB_API_KEY` and protect all `/v1` APIs with the same key. No external identity service is required. The historical dependency/protocol checks are recorded in [reference validation](validation/reference-stack.md).
+S3 I/O is outside catalog transactions. Concurrent conflicting publication returns `409`; a disconnect can be retried from the saved snapshot. Unsupported or malformed files reject with HTTP 400 before any storage/catalog mutation. There is no persisted upload state, batch reservation, verification queue, worker lease, or parse polling.
 
-The initial tested compiler baseline is Rust 1.94.1 with the Rust 2024 edition. The workspace Cargo.lock and pinned toolchain record the actual dependency set. Use the tested baseline rather than choosing new latest versions independently.
+Each request is individually accepted; multiple files have no shared atomicity guarantee. The client checkpoints each successful receipt. Appends retain generation identity after full-prefix verification; rewrites retain older generations.
 
-Harness adapters, blob access, and embedding providers have focused Rust interfaces. The first blob implementation uses `aws-sdk-s3` 1.159.0 with explicit path-style/endpoint/region/checksum settings and pinned behavior version `v2026_11_10`. SeaweedFS 4.54 is the reference self-hosted service; compatible existing S3 services use the same checks. The OpenAPI contract remains the language-neutral interface.
+## Consistency and cleanup
 
-## Server execution model
+Read handlers map explicit catalog columns. Full message content is persisted once; previews/URLs are computed at read time. Native branches, subagents, inherited files, unknown records, artifact bytes, ranges, and ZIP exports remain available.
 
-Deploy one service with a bounded API runtime and background workers. PostgreSQL persists job leases, attempts, retry times, and results. A worker claims a job transactionally and refreshes its lease; an expired lease permits retry after a process dies. Do not hold a database transaction during network uploads or embedding calls.
+Periodic orphan cleanup removes only unreferenced old object metadata transactionally, then deletes corresponding S3 keys outside the transaction. Foreign keys protect publication and never-reused keys protect against delayed deletion. This is not a generic task/workflow subsystem.
 
-The same binary may later run API-only or worker-only modes. This is an extraction path, not a requirement to deploy several services initially. Parsing and embedding have separate queues/concurrency limits so an unavailable model endpoint does not block session collection.
+The undeployed project defines its eleven domain tables directly in `0001_catalog.sql`; no upgrade migrations or old protocol aliases are provided. All `/v1` resources use one shared key and all key holders see the same collection.
 
-## Import sequence
+## Applications and future retrieval
 
-```mermaid
-sequenceDiagram
-    participant C as Sync client
-    participant A as SessionDB API
-    participant S as Object storage
-    participant P as PostgreSQL
-    participant W as Background worker
-    C->>A: Create import manifest
-    A->>P: Reserve import and upload targets
-    A-->>C: Import and scoped upload URLs
-    C->>S: Upload native file snapshots
-    C->>A: Complete import
-    A->>P: Enqueue durable verification job
-    A-->>C: Verification job accepted
-    W->>P: Claim verification job
-    W->>S: Promote and verify immutable copies
-    W->>P: Commit file updates, receipt, accepted_at, and parse job
-    C->>A: Poll import until accepted_at
-    W->>S: Read accepted files
-    W->>P: Publish parsed session and keyword index
-    W->>P: Enqueue optional embedding work
-```
+The HTTP API is the interoperability boundary. hype-history and other applications own their own briefing, research, and reviewed-memory behavior.
 
-An upload or scheduled completion is not archival acceptance. A background verifier promotes staging bytes to immutable keys, verifies the promoted copies, and commits the receipt before parsing. The client advances only after `accepted_at` is set. PostgreSQL and S3 are not one transaction; reserved unreferenced objects are cleaned according to the documented lease/grace policy.
-
-## Consistency
-
-Catalog reads use PostgreSQL. Session parsing, keyword indexing, and embedding are asynchronous. Responses include processing state so users can distinguish collection lag from search lag. Keyword results cover indexed accepted content; embedding coverage is a separate measure.
-
-The [sync protocol](sync.md) specifies retries and rewrites. The [data model](data-model.md) separates conversation branches from nested execution. All data paths require the [instance API key](access-control.md), including search and raw exports. Key holders share the complete collection.
-
-## API and applications
-
-The HTTP API is the interoperability boundary. The CLI and SDK use it; other SDKs can be generated from OpenAPI. hype-history becomes an application client. Its research packet and reviewed-memory rules do not become implicit server behavior.
-
-S3 storage access, native transcript syntax, and standardized exports are different interfaces. Use [the format integration rules](integrations.md) when adding export support. Do not infer S3 compatibility from ordinary JSON endpoints.
+Keyword search, embedding profiles/providers, hybrid retrieval, projects administration, and changes are planned as marked in OpenAPI. Their execution/backfill mechanism is not an active index-job API. Storage, sync, and reads must remain useful without a model endpoint.

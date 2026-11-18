@@ -8,7 +8,7 @@ Status: proposed v1 retrieval contract. Benchmarking and library integration pre
 
 Use PostgreSQL full-text search over normalized message passages and selected metadata. Titles, tags, project, harness, and activity times support filtering and navigation. Tool calls/results remain distinguishable from conversation text and can be filtered by tool name or included explicitly.
 
-Indexing follows durable import acceptance. A session reports parse and keyword readiness. A search response identifies its actual retrieval mode, index freshness, matching messages, and bounded excerpts. Default ordering is relevance; `sort=newest` orders by matching message time with documented fallback to session time.
+Planned indexing follows accepted per-file content. Search responses will report actual retrieval mode, freshness, matches, and excerpts. Relevance is default; newest uses matching-message time with session-time fallback.
 
 Search returns a flat list of matching messages, with at most three per session so one long conversation does not fill the result set. Clients can group them by session for display. The caller can retrieve more through message endpoints. Do not treat repeated copies or generated summaries as independent corroboration; label native origin and relationship information when known.
 
@@ -20,13 +20,13 @@ Provider configuration includes endpoint, model, expected dimensions, authentica
 
 See the [embedding profile example](examples/embedding-profile.json). Runtime provider calls occur only after a key holder explicitly configures and enables the profile.
 
-## Profiles and indexing jobs
+## Profiles and planned indexing
 
 An embedding profile belongs to the instance and defines one vector space: provider/model revision, dimensions, normalization, chunking version, and query/document transforms. These values are immutable after vectors are produced. Changing them creates another profile and a backfill; vectors from different spaces never share a similarity comparison. At most one profile is enabled per instance in v1. It covers eligible sessions independently of project assignment.
 
-Background workers batch eligible passages, persist progress, and retry transient provider failures independently of sync. Exclude deleted content and apply the configured indexing eligibility policy before making provider requests. Deletion removes derived vectors along with message passages.
+Indexing execution/backfill is future work, not a retained `/index-jobs` or `/jobs` API. The milestone must define progress, bounded batching, transient-provider recovery, deletion handling, and coverage independently of synchronous file acceptance.
 
-Enabling a profile permits embedding eligible future accepted content, including unassigned sessions. Historical backfill is an explicit job with optional source, session, or project-label filters and progress counters. The selected labels filter work rather than define a vector space or permission boundary.
+Enabling a profile will cover eligible future accepted content, including unassigned sessions. Historical backfill may filter sources, sessions, or optional project labels; labels select content rather than define a vector space or permission boundary. Profile/search wire contracts remain planned as marked in OpenAPI.
 
 ## Vector storage
 
@@ -50,7 +50,7 @@ If semantic/hybrid is requested without an enabled instance profile, return `409
 
 ## Access and privacy
 
-Require the instance API key before candidate selection, vector distance calculation, counts, snippets, and artifact links. All key holders search the same collection. Project associations only narrow candidates by classification. Retrieval jobs and caches identify the instance/profile and query filters, never an account or grant scope.
+Require the instance API key before candidates, vector distances, counts, snippets, and artifact links. All key holders search the same collection. Project labels only narrow classification. Retrieval caches identify instance/profile and query filters, never account/grant scope.
 
 Only normalized configured content is sent to the embedding endpoint. Available model reasoning, large tools, and attachments need explicit eligibility rules; the proposed v1 default indexes user/assistant text and keeps tool payload embedding opt-in. Wire role does not establish authorship or quality.
 

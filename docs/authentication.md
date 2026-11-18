@@ -14,11 +14,11 @@ Use HTTPS for remote deployments. Explicit loopback HTTP remains available for l
 
 `SESSIONDB_API_KEY` is sufficient for every CLI operation. A context selects only a server URL. `sessiondb auth login --key-stdin` requires that flag, reads a supplied key, validates protected `/v1/info`, and saves it per normalized server URL in the OS credential store. It does not authenticate with a provider or exchange tokens. `SESSIONDB_API_KEY` overrides the saved key; an explicitly empty value fails without fallback. Logout removes only the local stored copy, not the environment value; status validates `/v1/info` and reports only the server/authenticated state, never the secret. See [CLI](cli.md) for the available interface.
 
-The Rust SDK requires `Client::new(server: &str, api_key: String, timeout: Duration)`. A missing/empty key is an error. It has no token provider, refresh task, or organization selection. Never forward the key to signed upload/download URLs: object requests receive only their server-provided headers.
+The SDK requires `Client::new(server: &str, api_key: String, timeout: Duration)` with a nonempty key. It has no token provider, refresh task, or organization selection. Uploads and downloads use the API only; never send its bearer key to S3.
 
 ## Provisioning and rotation
 
-Generate a strong random key in the operator's secret manager and distribute it through an appropriate secret channel. No initial owner or bootstrap account is needed. Keep the key external to PostgreSQL backups and client TOML files. To rotate, replace the server environment key and restart the service, then update all client environments or credential-store entries. There is one accepted key, not a dual-key compatibility window; holders of the old key lose API access together. Previously issued signed object URLs can remain usable until their short expiry.
+Provision a strong key through the operator's secret manager. Keep it outside backups and ordinary TOML. Replace the server environment key and restart, then update client environments/credential stores. There is no initial owner or overlapping legacy-key window. Object URLs are not issued to clients.
 
 Anyone given the key can read every session and original, sync content, and invoke all implemented mutations. Do not distribute it to a consumer that should have read-only or partial access. Use separate instances when collection isolation is required; project labels and provenance are not access controls.
 

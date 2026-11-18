@@ -44,17 +44,13 @@ pub struct ProjectRule {
 #[serde(default, deny_unknown_fields)]
 pub struct SyncOptions {
     pub reconcile_interval_seconds: u64,
-    pub debounce_seconds: u64,
     pub upload_concurrency: usize,
-    pub batch_files: usize,
 }
 impl Default for SyncOptions {
     fn default() -> Self {
         Self {
             reconcile_interval_seconds: 60,
-            debounce_seconds: 2,
             upload_concurrency: 4,
-            batch_files: 32,
         }
     }
 }

@@ -1,8 +1,8 @@
 # Keyword search and optional embeddings
 
-Status: proposed; organization/permission assumptions superseded by [0013](0013-instance-api-key.md). Date: 2026-11-15.
+Status: retrieval proposal; identity scope superseded by [0013](0013-instance-api-key.md), background-job workflow below superseded by [0014](0014-sessions-and-synchronous-files.md). Date: 2026-11-15.
 
-Profile scope is clarified by [0008](0008-collection-and-project-associations.md): a common enabled organization profile supports unassigned sessions and optional project filters.
+The current proposal uses one instance profile and optional project filters, including unassigned sessions. Historical organization/profile terminology below is not active access policy.
 
 ## Decision
 

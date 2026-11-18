@@ -43,10 +43,6 @@ pub enum ToolOutputBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         alt: Option<String>,
     },
-    Unknown {
-        native_type: String,
-        data: Value,
-    },
     #[serde(untagged)]
     Future(Value),
 }
@@ -83,10 +79,6 @@ pub enum FullContentBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         alt: Option<String>,
     },
-    Unknown {
-        native_type: String,
-        data: Value,
-    },
     #[serde(untagged)]
     Future(Value),
 }
@@ -104,7 +96,6 @@ impl FullContentBlock {
             Self::ToolResult { .. } => "tool_result",
             Self::Json { .. } => "json",
             Self::Artifact { .. } => "artifact",
-            Self::Unknown { .. } => "unknown",
             Self::Future(value) => value
                 .get("type")
                 .and_then(Value::as_str)
@@ -118,7 +109,6 @@ pub struct ContentReference {
     #[serde(rename = "type")]
     pub block_type: ReferenceType,
     pub content_url: String,
-    pub revision: String,
     pub block_index: usize,
     pub original_type: String,
 }
@@ -150,6 +140,5 @@ pub struct NativeRecordRef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullContent {
     pub message_id: Uuid,
-    pub revision: String,
     pub content: Vec<FullContentBlock>,
 }

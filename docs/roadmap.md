@@ -6,6 +6,10 @@ Delivery proceeds through reviewable vertical slices. Phase zero and the first s
 
 [ADR 0013](decisions/0013-instance-api-key.md) defines the instance-wide key boundary across the server, types, SDK, CLI, and docs. Because the project has not been deployed, the current schema is defined directly in the initial migration rather than upgrading the abandoned identity model. Validate fresh catalog initialization and the complete storage/client path before recording new results.
 
+## Sessions-first synchronous cutover
+
+[ADR 0014](decisions/0014-sessions-and-synchronous-files.md) removes batch/job state and accepts one file through the API before replying. Each successful file checkpoints independently; multi-file atomicity is deliberately not promised. The catalog remains a single fresh migration. Integrated checks must verify per-file retries/rejections and retained native behavior before recording results.
+
 ## Phase zero
 
 Review session workflows, the workspace layout, sync semantics, query/search interfaces, and server configuration. Use the [resolved first-build decisions](open-questions.md), [selected scope](first-build.md), and [OpenAPI draft](openapi.yaml), with request/response examples checked against its schemas.
@@ -16,11 +20,11 @@ The [first-build plan](first-build.md) now defines that implementation path, bac
 
 Create the Cargo workspace and a local server with PostgreSQL and S3-compatible storage. Import one native session without a project label, list it, read its messages, and export its original data through the API and CLI. Include required instance-key authentication for that path.
 
-Prove the API client boundary and import acceptance semantics before adding more retrieval capabilities. Readiness, migrations, durable jobs, and a basic restore drill are part of this slice.
+Prove synchronous per-file acceptance before more retrieval features. Readiness, fresh migrations, pending-snapshot recovery, and a restore drill belong to this slice; no durable job queue is required.
 
 ## Automatic collection and all harnesses
 
-Add Codex, Claude Code, and Pi adapters, initial backfill, continuous sync, local state recovery, supporting artifacts, and Linux/macOS service installation. Verify branch/subagent/context-event handling and visible partial-parse states.
+Add Codex, Claude Code, and Pi adapters, initial backfill, continuous sync, local state recovery, supporting artifacts, and Linux/macOS service installation. Verify branch/subagent/context-event handling and strict rejection before publication.
 
 ## Session search
 
@@ -39,18 +43,18 @@ Complete CLI packaging, client SDK documentation, installation and upgrade proce
 | ID | Scenario | Required result |
 | --- | --- | --- |
 | A01 | Sync Codex, Claude, and Pi sessions into SessionDB | All three are discoverable and readable through the CLI and API. |
-| A02 | Two clients use the same instance key | Both have identical full access to content, snippets, counts, artifacts, jobs, exports, and vector results regardless of project labels. |
-| A03 | Repeated upload and lost completion response | Retrying returns the accepted result without duplicate visible sessions/messages. |
+| A02 | Two clients use the same instance key | Identical full access to content, counts, artifacts, exports, and planned retrieval regardless of labels. |
+| A03 | Repeated snapshot and lost upload response | Identical retry returns current receipt with unchanged=true, including a preceding version token; no duplicate messages. |
 | A04 | Server/network outage and client restart | Local originals remain intact; pending work catches up from persisted state. |
 | A05 | Active transcript has an unfinished final line | The complete prefix is accepted; the tail appears after completion on a later sync. |
 | A06 | An existing file grows, then is rewritten | Appends advance history; a rewrite becomes a new generation with earlier original data preserved. |
 | A07 | Local file disappears or moves to a native archive | Remote history remains available; identical copies do not become duplicate evidence silently. |
-| A08 | Unsupported record or missing inherited parent | Original is retrievable and partial support is visible; parser does not invent content. |
+| A08 | Unsupported record or missing inherited parent | Unsupported records reject the whole file before storage; missing inherited parents remain explicit structural links without invented content. |
 | A09 | Claude subagent repeats parent session ID | Child remains distinguishable; tool/result links and usage are scoped correctly. |
 | A10 | Pi branches/context edits and Codex compaction/rollback | Historical branches/events are accessible and no exact replay is falsely claimed. |
 | A11 | No embedding provider or provider outage | Core sync/read and keyword search work; explicit semantic requests report their capability/dependency error. |
 | A12 | Embedding model/profile changes | Old and new vector spaces are never compared; backfill progress and coverage are visible. |
-| A13 | Instance key rotated | Old-key API requests fail; updated clients regain full access; preissued signed downloads follow their maximum lifetime. |
+| A13 | Instance key rotated | Subsequent old-key API requests fail; updated clients regain full access; no signed object URLs are issued. |
 | A14 | A key holder deletes a session and client syncs again | Session stays removed through source suppression; local harness file is not deleted. |
 | A15 | Backup restored into a clean deployment | Catalog, original reads/exports, and collection recovery work; derived indexes can be rebuilt. |
 | A16 | API result is consumed by CLI, SDK, and hype-history | Same key boundary, filters, error semantics, and session meanings apply. |
@@ -59,6 +63,8 @@ Complete CLI packaging, client SDK documentation, installation and upgrade proce
 | A19 | Assign two projects, replace them, then clear them | Only catalog associations and filter results change; native files and readers stay the same. |
 | A20 | A manually labeled session receives another native append | Content updates while project labels remain unchanged. |
 | A21 | A session moves between project labels during change-feed consumption | Authorized consumers receive the reclassification, including previous/current associations, without duplicate session records. |
+| A22 | Second file fails after first succeeds | First remains accepted/checkpointed; failed file remains pending, with no atomic batch guarantee. |
+| A23 | Unsupported original or metadata/hash mismatch | Unsupported native records and invalid upload bytes reject the whole file before storage and leave prior accepted state unchanged. |
 
 ## Later work
 

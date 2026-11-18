@@ -1,70 +1,50 @@
 # Automatic sync
 
-The sync client automatically collects sessions from configured native harness stores and keeps them updated in SessionDB. It supports initial backfill, one-shot synchronization, continuous watch mode, and collection from multiple machines. A project association or repository cwd is not required.
+The client collects native Codex, Claude Code, and Pi stores, backfills history, and uploads later changes regardless of starting cwd or project labels. One-shot sync and polling watch are implemented; filesystem notifications and OS service installation remain planned.
 
-Status: proposed v1 protocol. The client is part of the CLI and uses the public import API and ordinary signed object uploads.
+Status: accepted synchronous per-file protocol; see [ADR 0014](decisions/0014-sessions-and-synchronous-files.md).
 
-## Discovery and configuration
+## Sources and capture
 
-Discover Codex under `CODEX_HOME` or `~/.codex`, including `sessions` and `archived_sessions`; Claude Code under its configured home or `~/.claude/projects`; and Pi under its configured session directory or `~/.pi/agent/sessions`. Explicit roots override automatic discovery.
+Discover Codex under `CODEX_HOME` or `~/.codex`, including native archived sessions; Claude under its configured home or `~/.claude/projects`; and Pi under its configured directory or `~/.pi/agent/sessions`. Explicit roots override discovery. A source records harness, device label, and native store root, not a repository boundary or owner.
 
-Discovery identifies native stores. Enabling selected roots determines which sessions are uploaded; optional include/exclude filters operate on native file paths or session identifiers. With no such filter, eligible sessions in those stores are collected regardless of their recorded starting cwd, including sessions launched from a home directory.
+`sessiondb sync` runs one pass; `sessiondb sync --watch` reconciles periodically until interrupted. Stop the client/watch process to stop collection; there is no server pause flag. Local disappearance or an offline device does not remove accepted history.
 
-Register one source per device/harness/store root. The source has no project binding. A single source can contain unassigned sessions and sessions associated with different or multiple projects. The device label and root describe provenance, not ownership. Later sync preserves catalog labels.
+For active JSONL, capture a bounded snapshot through the last complete newline. Defer incomplete tail bytes until the next pass. Complete malformed lines remain in the captured snapshot and cause rejection; do not silently remove them. Preserve native parent/child/subagent files and allowlisted artifacts, without sweeping adjacent credential directories.
 
-Optional project rules supply initial `project_ids` as grouping metadata. No match produces an unassigned session, and several matches can produce several associations. A descriptor can carry those initial associations. Unavailable/archived labels are omitted with a classification warning instead of blocking valid original bytes; a malformed manifest is still a validation error. Labels are classification only, and later sync preserves existing associations.
+## One-file HTTP contract
 
-Supporting artifacts are allowlisted through the adapter. Preserve their relative layout. A reference outside the configured source is reported as missing, unless the user separately allows that location. No credential/configuration directory is included merely because it sits beside a transcript.
+`POST /v1/sources/{source_id}/files` uses authenticated `multipart/form-data` with exactly two parts, in order:
 
-## Client behavior
+1. `metadata`: `application/json` containing [FileUpload](examples/file-upload.json): source-relative `path`, exact `byte_length`, lowercase SHA-256, required `expected_version`, and optional initial `project_ids`.
+2. `file`: the raw JSONL snapshot bytes (`application/x-ndjson`).
 
-`sessiondb sync` performs one pass and exits. `sessiondb sync --watch` performs initial backfill and continues until stopped. The installed background service runs the same watch mode.
+A new path requires explicit `"expected_version": null`, not an omitted field. The API rejects malformed/missing/extra parts, invalid paths, excessive length, and actual length/hash mismatches without changing previously accepted file/session state.
 
-Use filesystem notifications as a prompt to scan, with periodic reconciliation to catch missed events. Proposed defaults are a 60-second reconciliation interval, a 2-second write debounce, four concurrent uploads, and bounded batches of 32 files. These defaults are reviewable settings, not performance claims.
+The server verifies bytes and fully parses the transcript before registering/storing originals/artifacts under fresh immutable S3 keys, and atomically publishes one file's catalog changes before returning **HTTP 200 FileUploadResult**. The receipt contains `file`, related `session_ids`, and `unchanged`; it is the checkpoint boundary. There are no signed client-to-S3 uploads, completion requests, import resources, jobs, acceptance polling, or server upload leases.
 
-Persist local source registration, accepted file position, and pending import state in a client SQLite state database. It is operational client state, not a second authoritative session server. A restart resumes a pending import or safely repeats its request. Never advance the accepted checkpoint on an object upload alone.
+Every supplied record must be supported and valid. Unsupported/malformed records, invalid JSON function arguments, or unsupported inline artifacts reject the whole file with HTTP 400 `unsupported_native_record` before object registration, S3 writes, or catalog mutation. Direct malformed/incomplete input rejects; only CLI active-prefix capture defers incomplete tails. Prior accepted state and checkpoints remain unchanged.
 
-For active JSONL, read a bounded snapshot through the last complete newline. Defer unfinished tail bytes to the next pass. Complete malformed lines are uploaded as recorded and reported by the parser; they are not silently removed from the archived representation. Supporting binary artifacts use a stable bounded file read and retry if they change during capture.
+## Disconnects and version conflicts
 
-## Import lifecycle
+Persist pending local snapshots before transfer. Advance each path's checkpoint only after its successful receipt; a later file failure does not undo earlier accepted files. Multi-file sync is deliberately **not all-or-nothing**.
 
-1. `POST /v1/imports` reserves a manifest for a registered source and returns signed staging-upload targets. Descriptors contain source-relative path, complete length, media type, SHA-256, expected version, and optional initial project labels.
-2. The client uploads the bounded native snapshots using each target's method and headers. New targets expire after 15 minutes or at the end of the import lease, whichever comes first. Before the lease ends, `GET /imports/{id}` can issue fresh targets for an awaiting upload.
-3. `POST /imports/{id}/complete` schedules durable verification/promotion work and returns `202` with status `verifying`. This acknowledges the request, not archival acceptance of the files. Repeating completion returns the same import/job identity. `job_id` remains the verification job; the import's status tracks later parsing separately.
-4. The worker copies each staging object to a new server-only immutable key, using the observed source ETag as a copy precondition. It streams the accepted copy to check its actual length and SHA-256. Later writes to a staging URL cannot change that accepted copy.
-5. The worker rechecks source existence and expected versions and atomically commits the manifest's file updates, receipt, and parse job. It sets `accepted_at`; only then may the client advance its source checkpoint. A failed object/version check leaves every new file in that batch unaccepted and reports bounded file errors.
-6. The client polls `GET /imports/{id}` until `accepted_at` is set or verification fails. Parsing and optional embedding proceed after acceptance; the client does not re-upload originals just because parsing is slow or fails.
+After a disconnect or lost response, retry the same metadata and snapshot using a fresh reader. If the current accepted size/digest match, the server returns that file/version and related session IDs with `unchanged: true`, even if `expected_version` is the previous token. This prevents duplicate acceptance after a lost receipt without a persisted idempotency table.
 
-Import states are `awaiting_upload`, `verifying`, `queued`, `processing`, `ready`, `partial`, `failed`, and `expired`. `accepted_at: null` means originals have not been accepted. `failed` plus a non-null acceptance time can mean a later parser failure; the accepted originals remain retrievable. Atomic archival acceptance and partial parsing are separate results.
+Otherwise the server compares `expected_version` again before committing. A stale value returns `409 version_conflict`; refresh source files and reconcile rather than blindly overwriting newer bytes. A request interrupted before publication leaves the previous accepted state intact; unreferenced prepared objects are cleaned later.
 
-Create/complete requests use an `Idempotency-Key`, retained for 30 days and scoped to source/operation within the instance. The same request returns the same resource and effects, with its current status; transient upload URLs can be renewed. Reusing a key with different content returns `409`. A resumed client reconciles source versions when its saved request is older than receipt retention.
+Client state is operational recovery data, not a second session database. `sessiondb sync status --json` reports `pending_files`, accepted checkpoints, and bounded errors, without jobs or a wait command. A permanent `400 unsupported_native_record` discards the rejected pending snapshot without advancing its checkpoint and propagates the error; a later pass can recapture a repaired local file. Authentication errors stop attempts until a valid key is supplied; watch can recover from transient outages on a later reconciliation.
 
-The upload lease is 24 hours from creation. Once expired, create a new manifest/key without advancing unaccepted checkpoints. Staging and unreferenced promotion objects are eligible for cleanup 24 hours after the import closes, with no active lease/reference. Accepted originals have no automatic expiry by default.
+## Appends and rewrites
 
-Classification is optional: unavailable/archived initial project labels produce warnings while valid original bytes can still be accepted. Invalid JSON/paths/limits remain request errors. An asynchronous expected-version conflict is reported in the import/job result; the client refreshes source state and creates a reconciled manifest.
+Byte-changing uploads receive a new version. The server compares the full prior prefix: verified growth keeps the generation ID and advances its immutable snapshot reference. A shorter file or changed earlier bytes creates a new generation and preserves the old one. Header similarity alone does not prove an append.
 
-## Growing and rewritten files
+Sync preserves existing catalog titles, tags, and projects on append. Optional initial project labels do not determine collection; unavailable labels reject the upload before storage. Native archive moves and copies retain source provenance and explicit relations; divergent histories are not silently combined.
 
-V1 uploads changed file snapshots using existing object operations. The server compares an accepted prior prefix with the new bytes. Proven prefix growth extends the current file generation; different earlier content or a shorter file starts a new generation. A first-kilobyte header match alone does not prove an append.
+## Storage and limits
 
-Publish the new object/catalog reference atomically in PostgreSQL after object verification. The preceding append snapshot can become eligible for cleanup when no explicit pin or export requires it, because the new snapshot includes its complete prefix. A rewrite preserves the previous generation. Native references that require an earlier prefix remain resolvable through the file-generation catalog.
+Only the API needs access to the S3 endpoint. It records object metadata before S3 upload, fully parses before object registration and prepares bytes outside the publication transaction, then rechecks versions and commits. No database transaction spans network I/O.
 
-An expected-version conflict detected while creating a manifest returns `409`; one detected during asynchronous verification appears in the failed import/job result. The client refreshes source state and reconciles before creating a new request; it does not overwrite the server's newer state blindly. Identical bytes collected from another source may share physical blob storage while retaining separate source bindings.
+Periodic cleanup atomically removes old unreferenced object rows and returns their keys, then deletes S3 bytes outside the transaction. Foreign keys/row locks protect concurrent publication. Never-reused keys prevent delayed cleanup from deleting a newer request's content. Accepted snapshots and preserved rewrite generations remain referenced.
 
-Native archive moves and copied files may create another source path. Keep their collected session relation explicit and avoid creating a second visible session when the adapter can prove an identical copy. Divergent copies remain visible as separate source variants; v1 does not merge competing conversation edits.
-
-Sync changes recorded native content only. It preserves manual project assignments and tags/title changes. Classification therefore remains stable as a home-launched session continues to work in another repository.
-
-## Missing files and deletion
-
-Local deletion, provider cleanup, or an offline source does not delete server history. Mark source availability through sync status. Server deletion is an explicit authorized operation. A suppression receipt prevents the same source binding from being recreated by ordinary collection; the local original is untouched.
-
-## Retry and limits
-
-Retry connection errors, timeouts, `429`, and appropriate `5xx` responses with bounded exponential backoff, jitter, and `Retry-After`. Authentication failures pause the affected source and request a valid instance key. Permanent validation errors are shown with file-level detail and do not block unrelated sources.
-
-The proposed v1 defaults are at most 128 files per import, a 2 MiB manifest, and 256 MiB per file. Operators can configure lower instance limits. Limits must be advertised by server metadata and checked before transfer. Large-file/multipart support is a later compatibility decision, not a reason to drop a file silently.
-
-`sessiondb sync status` reports last successful acceptance, pending files/bytes, paused sources, and bounded errors. Server parsing/indexing state is reported separately. It must be possible to distinguish an offline laptop, a failed upload, an unsupported native format, and embedding backlog.
-
-See [the API contract](api.md), [CLI behavior](cli.md), and [acceptance scenarios](roadmap.md#acceptance-scenarios).
+The only upload limit is advertised `limits.max_file_bytes`, default **268435456 bytes (256 MiB)**. There is no batch/manifest limit, upload TTL, generic worker setting, or hidden file drop. See [operations](operations.md), [API](api.md), and [acceptance scenarios](roadmap.md#acceptance-scenarios).

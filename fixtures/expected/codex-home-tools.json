@@ -142,6 +142,9 @@
       "events": [
         {
           "type": "task_started"
+        },
+        {
+          "type": "agent_message"
         }
       ],
       "relations": []

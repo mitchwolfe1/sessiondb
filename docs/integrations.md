@@ -20,7 +20,7 @@ Existing products such as Hugging Face Agent Traces, ccusage, Entire, and observ
 
 Original native files remain authoritative for what was collected. The normalized model is a versioned, rebuildable application view. Parser changes can improve it without asking every engineer to re-upload unchanged originals.
 
-Do not turn an external viewer/export format into a requirement that every provider-specific event must be discarded or forced into the same shape. Retain unsupported native records and expose completeness warnings where a projection is partial.
+Retain supported provider-specific events in their documented native event representation rather than forcing every event into one shape. Unsupported native records reject the whole file before storage; exports contain only accepted valid originals.
 
 | Export or integration | Role |
 | --- | --- |
@@ -51,8 +51,8 @@ Use public HTTP/SDK methods, not direct PostgreSQL access. Start by migrating re
 
 The first native SDK is `sessiondb-client` for Rust. OpenAPI provides the contract for other languages; add a generated Python binding or a small HTTP integration when hype-history needs it. Language bindings use the same HTTP contract.
 
-Consumers use session/project filters and server-issued resource IDs. A headless application uses the same instance key as every other client and receives full access, not a read-only or source-limited credential. Do not give the key to an application that must have restricted access; deploy a separate instance instead. Raw downloads use authorized API endpoints or short-lived URLs. Saved citations use durable SessionDB resource URLs rather than expiring object URLs.
+Consumers use server-issued IDs and optional project filters. A headless application gets the same full-access key, not read-only/source-limited access. Use a separate instance for isolation. Raw uploads/downloads use the API; saved citations use durable SessionDB resource URLs.
 
 ## Extensibility boundaries
 
-Harness adapters, object storage access, and embedding providers are explicit Rust interfaces. Keep internal SQL models and job internals private. Add exporters and consumers through the API/normalized model when possible. Every new integration must retain the same instance-key boundary.
+Harness adapters, object storage, and planned embedding providers have focused Rust interfaces. Keep SQL models and ingestion internals private. Add exporters/consumers through the public API/normalized model and retain the instance-key boundary.

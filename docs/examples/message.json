@@ -7,7 +7,6 @@
   "sequence": 2,
   "provider_response_id": "fixture-response-1",
   "model": "fixture-model",
-  "revision": "example-r1",
   "timestamp": "2026-11-15T12:01:00Z",
   "conversation_parent_id": null,
   "content": [

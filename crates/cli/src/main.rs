@@ -62,10 +62,6 @@ enum Command {
         #[command(subcommand)]
         command: MessageCommand,
     },
-    Jobs {
-        #[command(subcommand)]
-        command: JobCommand,
-    },
     Sync {
         #[arg(long)]
         watch: bool,
@@ -163,25 +159,8 @@ enum SessionCommand {
 }
 #[derive(Subcommand)]
 enum MessageCommand {
-    Show {
-        id: Uuid,
-    },
-    Content {
-        id: Uuid,
-        #[arg(long)]
-        revision: Option<String>,
-    },
-}
-#[derive(Subcommand)]
-enum JobCommand {
-    Show {
-        id: Uuid,
-    },
-    Wait {
-        id: Uuid,
-        #[arg(long, default_value_t = 900)]
-        wait_timeout: u64,
-    },
+    Show { id: Uuid },
+    Content { id: Uuid },
 }
 #[derive(Subcommand)]
 enum SyncCommand {
@@ -456,13 +435,12 @@ async fn run(args: &Cli) -> Result<()> {
                     let value = runtime.client.session(*id).await?;
                     emit(args, &value, || {
                         println!(
-                            "{}\nID: {}\nHarness: {}\nDirectory: {}\nMessages: {}\nParsing: {}",
+                            "{}\nID: {}\nHarness: {}\nDirectory: {}\nMessages: {}",
                             clean(&value.title),
                             value.id,
                             value.harness,
                             clean(value.recorded_cwd.as_deref().unwrap_or("unknown")),
-                            value.message_count,
-                            value.processing.parse
+                            value.message_count
                         )
                     })?;
                 }
@@ -485,7 +463,7 @@ async fn run(args: &Cli) -> Result<()> {
                         .await?;
                     if *full {
                         for m in &mut value.data {
-                            let content = runtime.client.content(m.id, Some(&m.revision)).await?;
+                            let content = runtime.client.content(m.id).await?;
                             m.content = content
                                 .content
                                 .into_iter()
@@ -546,32 +524,14 @@ async fn run(args: &Cli) -> Result<()> {
                     let value = runtime.client.message(*id).await?;
                     emit(args, &value, || show_message(&value))?;
                 }
-                MessageCommand::Content { id, revision } => {
-                    let value = runtime.client.content(*id, revision.as_deref()).await?;
+                MessageCommand::Content { id } => {
+                    let value = runtime.client.content(*id).await?;
                     emit(args, &value, || {
                         for b in &value.content {
                             println!("{}", serde_json::to_string_pretty(b).unwrap_or_default());
                         }
                     })?;
                 }
-            }
-        }
-        Command::Jobs { command } => {
-            let runtime = runtime(args, &config).await?;
-            let value = match command {
-                JobCommand::Show { id } => runtime.client.job(*id).await?,
-                JobCommand::Wait { id, wait_timeout } => {
-                    runtime
-                        .client
-                        .wait_for_job(*id, Duration::from_secs(*wait_timeout))
-                        .await?
-                }
-            };
-            emit(args, &value, || {
-                println!("{} {} ({})", value.id, value.kind, value.status)
-            })?;
-            if matches!(command, JobCommand::Wait { .. }) && value.status != JobStatus::Succeeded {
-                bail!("job ended with {}", value.status);
             }
         }
         Command::Status => {

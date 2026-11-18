@@ -6,9 +6,13 @@ SessionDB is a database for coding-agent sessions. Lead with storing, automatica
 
 Lead with capabilities and usage, as database and developer-tool documentation does. Every client with the instance API key has identical full access to one shared collection. There are no users, organizations, scoped credentials, or per-session permissions. Put key management and deployment details in the relevant reference pages. Explain sessions and useful workflows before credential configuration or internal storage bookkeeping.
 
+[ADR 0015](docs/decisions/0015-strict-native-records-and-simple-reads.md) requires strict whole-file native validation before storage/publication. Only accepted valid originals are preserved; unsupported/malformed records reject with HTTP 400. Reads carry no revision, parser-status, or warning metadata and no snapshot guarantees. Upload write-CAS remains separate; per-file recovery is unchanged.
+
 Use established HTTP, CLI, PostgreSQL, and S3 conventions. SessionDB exposes session resources through its API and uses an existing object storage implementation for raw files. Do not implement a new S3 server or invent a SQL language for the CLI.
 
 Collection follows configured native session stores, not repository/workspace containment. Starting cwd is metadata. Sessions can have zero or more logical project associations, and changing these labels does not change instance access. Keep collection and project association separate in the docs and contracts.
+
+The accepted schema/ingestion direction is [ADR 0014](docs/decisions/0014-sessions-and-synchronous-files.md): sessions first, explicit relational metadata, no duplicate document JSON, optional projects, provenance-only sources, client-owned start/stop, and synchronous API-mediated per-file upload. Preserve native originals, generations, branches, subagents, artifacts, export, and restart-safe per-file recovery. Do not restore import/job/index-job/pause/archive machinery, signed client uploads, worker settings, or transcript MIME. Each successful file is individually accepted; no atomic multi-file guarantee. The undeployed catalog stays in one initial migration with no upgrade shims.
 
 ## Implementation language
 

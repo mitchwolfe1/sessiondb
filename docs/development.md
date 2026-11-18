@@ -52,7 +52,9 @@ The private `.env` supplies the instance key; do not print or commit it. The ser
 Enable a fixture directory explicitly:
 
 ```sh
-sessiondb sources add --harness codex --root "$PWD/fixtures/native/codex"
+example_root="$(mktemp -d)"
+cp fixtures/native/codex/home-tools.jsonl "$example_root/"
+sessiondb sources add --harness codex --root "$example_root"
 sessiondb sync
 sessiondb sessions list --harness codex
 sessiondb sessions show SESSION_ID
@@ -61,13 +63,13 @@ sessiondb messages content MESSAGE_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
 
-The `.jsonl.part` fixture deliberately represents an unfinished capture and is excluded from discovery. The regular JSONL fixtures include independent, inherited, and unknown-content examples.
+Use a directory containing accepted fixtures: the full fixture tree also contains deliberate rejection cases. Unfinished `.jsonl.part` captures are excluded from discovery; malformed or unsupported `.jsonl` files are rejected.
 
-Use `--harness claude --root "$PWD/fixtures/native/claude"` or `--harness pi --root "$PWD/fixtures/native/pi"` to try the other formats. To collect your native stores, use `sessiondb sources add --detect`, or provide a harness and root explicitly. Collection follows enabled stores, independently of starting cwd or project assignment.
+Use `--harness claude` or `--harness pi` with a directory containing accepted fixtures for that format. To collect your native stores, use `sessiondb sources add --detect`, or provide a harness and root explicitly. Collection follows enabled stores, independently of starting cwd or project assignment.
 
-`sessiondb sync --watch` reconciles periodically until interrupted. It currently uses polling; filesystem notifications and user-service installation are later work. `sessiondb sync status --json` reports accepted checkpoints and pending imports. Sync saves pending snapshots and request keys locally before transfer, and advances checkpoints after the server's acceptance receipt.
+`sessiondb sync --watch` reconciles periodically until interrupted. Notifications and service installation remain planned. `sessiondb sync status --json` reports accepted checkpoints and `pending_files`. Pending snapshots are persisted before transfer and each successful file receipt advances its checkpoint independently.
 
-API processing can continue after sync acceptance. Session detail reports parsing state; `sessiondb jobs show JOB_ID` and `sessiondb jobs wait JOB_ID` inspect the verification job. Import state through the API also reports later parsing and bounded errors.
+The API verifies and fully parses one file before storing originals/artifacts and publishing its catalog state before HTTP 200. Unsupported or malformed native content rejects the entire file with HTTP 400 before storage; there is no background parse job or acceptance wait command.
 
 Stop the development dependencies with:
 
@@ -79,11 +81,11 @@ Volumes persist across stops. Removing these volumes resets the development data
 
 ## Existing infrastructure
 
-Use [the server configuration example](examples/server.toml) with an existing PostgreSQL database and S3 bucket. Provision a nonempty `SESSIONDB_API_KEY` securely in the server/client environments. Create the bucket before starting SessionDB. With AWS, omit the custom endpoint and explicit credential environment names to use the SDK credential chain, including instance/task roles. Custom S3 endpoints can use path-style addressing. `public_endpoint` can differ from the server's internal endpoint so signed upload URLs are reachable by clients.
+Use [the server configuration example](examples/server.toml) with PostgreSQL and an existing S3 bucket. Provision the instance key securely. With AWS, omit custom endpoint and explicit credential references to use the SDK chain, including instance/task roles. Custom endpoints can use path-style addressing. Only the server accesses S3; clients need only the API URL.
 
 [Authentication](authentication.md) describes the shared-key boundary. Remote deployments use HTTPS; loopback HTTP is a development option. The only external services required are PostgreSQL and S3.
 
-Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, `SESSIONDB_S3_ENDPOINT`, and `SESSIONDB_S3_PUBLIC_ENDPOINT`. Database and explicit object credentials use the environment names in the configuration file. The container runs `sessiondb-server`; supply its configuration and run the `migrate` command before serving.
+Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, and `SESSIONDB_S3_ENDPOINT`. Database/object secrets use configured environment names. Supply container configuration and run `migrate` before serving. Limits contain only `max_file_bytes`; no public S3 endpoint, presign TTL, or worker settings remain.
 
 ## Checks
 
@@ -101,7 +103,7 @@ cargo build --locked --workspace --bins
 cargo test --locked -p sessiondb-cli --test end_to_end -- --ignored
 ```
 
-It starts isolated services on allocated loopback ports, uses a synthetic instance key and transcripts, and removes its containers and volumes afterward. It exercises the real binaries and SDK, including missing/invalid-key rejection, equal access for correct-key clients, signed uploads, atomic acceptance, native export, append/rewrite behavior, lost responses, watch mode, outage recovery, expired job leases, restart persistence, and catalog backup/restore. Existing development services are not used by the suite.
+The suite uses isolated loopback PostgreSQL/S3 services and synthetic keys/transcripts, then removes its containers/volumes. It covers binary/SDK authentication, per-file verified acceptance and whole-file rejection, native export, appends/rewrites, lost responses, watch/outage recovery, rejected-file repair, restart persistence, and backup/restore. Historical tolerant-parser results are not proof that strict rejection works.
 
 Validate documentation contracts separately:
 

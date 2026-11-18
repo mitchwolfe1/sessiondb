@@ -9,7 +9,5 @@
   "started_at": "2026-11-15T12:10:00Z",
   "updated_at": "2026-11-15T12:15:00Z",
   "message_count": 2,
-  "processing": {"parse": "ready", "keyword": "ready", "embedding": "disabled"},
-  "relations": [],
-  "warnings": []
+  "relations": []
 }

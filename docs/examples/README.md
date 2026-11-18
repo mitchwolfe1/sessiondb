@@ -4,8 +4,8 @@ These are synthetic examples of the SessionDB interface, including later target-
 
 | File | Purpose |
 | --- | --- |
-| [server.toml](server.toml) | Single-server storage, authentication, worker, and limit settings |
-| [client.toml](client.toml) | Native store roots and an optional initial classification rule |
+| [server.toml](server.toml) | Server-only S3, authentication, telemetry, and max_file_bytes |
+| [client.toml](client.toml) | Server context and selected native store roots |
 | [source-create.json](source-create.json) | A native store source with no project binding |
 | [session.json](session.json) | A home-launched session associated with a project elsewhere |
 | [message.json](message.json) | Typed assistant text and JSON tool input |
@@ -14,14 +14,13 @@ These are synthetic examples of the SessionDB interface, including later target-
 | [session-update.json](session-update.json) | Project association edits without an access change |
 | [search-request.json](search-request.json) | A filtered shared keyword query |
 | [search-response.json](search-response.json) | Bounded matches with retrieval and coverage information |
-| [import-request.json](import-request.json) | Source file snapshot manifest |
-| [import-response.json](import-response.json) | Signed upload target returned before durable acceptance |
-| [import-accepted.json](import-accepted.json) | Post-verification receipt that permits a client checkpoint |
+| [file-upload.json](file-upload.json) | JSON metadata multipart part, with explicit null expected_version |
+| [file-upload-result.json](file-upload-result.json) | HTTP 200 per-file acceptance and parse diagnostics |
 | [embedding-profile.json](embedding-profile.json) | A common embedding profile that also covers unassigned sessions |
 | [problem.json](problem.json) | RFC 9457 error with a stable application code |
 
-The synthetic IDs consistently use `2222…` for project Payments, `5555…` for a source, `6666…` for a session, `7777…` for a message, and `8888…` for an import. Paths under `example.com` and all digest/URL values are illustrative.
+Synthetic IDs use `2222…` for project Payments, `5555…` for a source, `6666…` for a session, `7777…` for a message, and `8888…` for a source file. All domains/digests are illustrative.
 
-Import sizes/digests demonstrate field shape, not an actual uploaded file. A real completion verifies the actual object bytes and rejects a mismatch. Signed URLs are returned by the service and expire; clients never construct or persist them as permanent citations.
+Upload size/hash demonstrate field shape, not actual fixture bytes. A real request sends metadata plus raw JSONL and verifies both. Each successful file is accepted independently; no import/job examples or signed object URLs remain. Search, session updates, and embedding examples describe explicitly planned operations.
 
 Each API example validates against its named schema in the [OpenAPI draft](../openapi.yaml). Configuration examples parse as TOML and retain the precedence/secret handling in [CLI](../cli.md) and [operations](../operations.md).

@@ -1,9 +1,9 @@
-//! SessionDB API, PostgreSQL catalog, S3 storage, and durable workers.
+//! SessionDB API, PostgreSQL catalog, and immutable S3 storage.
 pub mod api;
 pub mod auth;
 pub mod config;
 pub mod error;
-pub mod jobs;
+pub mod ingest;
 pub mod objects;
 
 use anyhow::{Context, Result, bail};
@@ -74,38 +74,37 @@ pub async fn check_migrations(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-/// Serve the API and drain active work on shutdown. Unfinished leases permit recovery.
+/// Serve the API and drain synchronous uploads and object cleanup on shutdown.
 pub async fn serve(
     state: Arc<AppState>,
     listener: TcpListener,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
-    let workers = jobs::spawn(state.clone(), shutdown.clone());
     let cleanup_state = state.clone();
-    let mut cleanup_stop = shutdown.clone();
+    let (stop_cleanup, mut cleanup_stop) = watch::channel(false);
     let cleanup = tokio::spawn(async move {
         loop {
-            tokio::select! { _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}, _ = cleanup_stop.changed() => { break; } }
-            if jobs::cleanup(&cleanup_state).await.is_err() {
-                tracing::warn!("object cleanup will retry");
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {},
+                _ = cleanup_stop.changed() => break,
+            }
+            if let Err(error) = objects::cleanup(&cleanup_state).await {
+                tracing::error!(%error, "object cleanup failed");
             }
         }
     });
-    axum::serve(listener, api::router(state))
+    let result = axum::serve(listener, api::router(state))
         .with_graceful_shutdown(async move {
             if !*shutdown.borrow() {
-                let _ = shutdown.changed().await;
+                match shutdown.changed().await {
+                    Ok(()) => {}
+                    Err(error) => tracing::warn!(%error, "shutdown signal sender closed"),
+                }
             }
         })
-        .await?;
-    for mut worker in workers {
-        if tokio::time::timeout(std::time::Duration::from_secs(60), &mut worker)
-            .await
-            .is_err()
-        {
-            worker.abort();
-        }
-    }
-    cleanup.abort();
-    Ok(())
+        .await;
+    let stopped = stop_cleanup.send(true);
+    cleanup.await.context("object cleanup task failed")?;
+    stopped.context("object cleanup task stopped unexpectedly")?;
+    result.context("serve SessionDB API")
 }

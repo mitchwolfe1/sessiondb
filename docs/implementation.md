@@ -1,29 +1,28 @@
 # Implementation status
 
-SessionDB has an initial server, CLI, and async client SDK. It implements the [first-build contract](first-build.md), plus all three native adapters, polling watch mode, and authorized inline-artifact reads.
+SessionDB has a server, CLI, and async SDK for authenticated per-file sync, original storage, session reads, artifacts, and native export across Codex, Claude Code, and Pi.
 
 ## Available
 
-- PostgreSQL catalog defined directly in the initial migration.
-- S3-compatible original storage using signed staging uploads and immutable verified acceptance.
-- Required nonempty `SESSIONDB_API_KEY`, bearer-key verification on all `/v1` APIs including `/v1/info`, and equal full collection access for every correct-key client.
-- Optional per-server OS credential storage via `auth login --key-stdin`; no browser login, network token exchange, identity model, or scoped credentials.
-- Source registration, one-shot sync, polling watch, persistent client checkpoints, and pending-import recovery.
-- Codex, Claude Code, and Pi adapters with native contract-fixture tests.
-- Session/message reads, historical branch selection, typed full-content expansion, inline artifacts, and native ZIP export.
-- Durable PostgreSQL jobs, expired-lease recovery, readiness checks, request IDs, and optional aggregate request metrics.
-- CLI JSON output, contexts, shell completions, and a reusable typed client.
+- Eleven sessions-first domain tables in the single initial PostgreSQL migration.
+- API-mediated synchronous multipart upload: verify/store/parse one file before HTTP 200, with visible per-file parse diagnostics and safe lost-response retries.
+- S3 immutable originals/artifacts and age-based unreferenced-object cleanup.
+- Required nonempty instance key on every `/v1` operation, including info; equal full access for all correct-key clients.
+- Optional OS credential storage, contexts, CLI JSON, and shell completions.
+- Source registration, one-shot and polling watch sync, persistent per-file snapshots/checkpoints, and `pending_files` recovery.
+- Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
+- Readiness, request IDs, and optional aggregate request metrics.
 
-The 18 operations marked `x-first-build` in [OpenAPI](openapi.yaml) are implemented. Two artifact reads are also implemented; `x-implemented` identifies the running API subset. `/v1/info` reports the server's actual capabilities.
+[OpenAPI](openapi.yaml) marks **15 baseline operations** with `x-first-build` and **17 implemented operations**, including the two artifact reads, with `x-implemented`. `/v1/info` advertises actual operation capabilities.
 
 ## Planned
 
-Keyword search, embedding profiles/providers, hybrid retrieval, project administration and matching, title/tag mutations, change feeds, normalized exports, service installation, multipart transfer, and published release artifacts remain delivery milestones.
+Keyword search, embedding profiles/providers, hybrid retrieval, project administration/matching, metadata mutation, change feeds, normalized/STS exports, service installation, and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
 
-The target-v1 specification includes these interfaces. An unavailable route returns a `501 not_implemented` problem; unsupported parameters return a documented input error. The CLI's help lists available commands.
+An unavailable planned route returns `501 not_implemented`; unsupported parameters return input errors. CLI help lists available commands. Source pause, project archive, transcript MIME, upload TTLs, and generic workers are not part of the current design.
 
 ## Compatibility and validation
 
-Native compatibility is bounded by the [fixture families](../fixtures/README.md). Unsupported files remain archived and retrievable with visible processing errors. Historical views and related native files are available; exact model-request reconstruction and native harness resume are not implemented.
+Only supported, valid native files are accepted. Any unsupported or malformed supplied record rejects the whole file with HTTP 400 before storage/catalog mutation. Native compatibility is bounded by the [fixture families](../fixtures/README.md), not a guarantee of exact model requests or harness resume.
 
-The integration suite uses real PostgreSQL/S3 storage against the binaries and SDK. [First-build validation](validation/first-build.md) separates current instance-key results from historical OIDC checks; [development](development.md) documents how to run the checks. Production sizing, additional provider matrices, and release-platform testing remain later work.
+[Historical validation](validation/first-build.md) retains prior observed results. Those runs predate the sessions-first/synchronous redesign and do not validate it. No checks were run for this documentation change; [development](development.md#checks) lists the integrated verification commands.

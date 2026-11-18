@@ -6,7 +6,7 @@ Status: implemented baseline for API draft `0.3.0`. The [OpenAPI schemas](openap
 
 ## Messages and content blocks
 
-A message has a canonical role, recorded native role, origin, sequence, conversation parent, normalized revision, and ordered content. A model response can contain several blocks; a tool call can also be a separate assistant message when the native format records it that way.
+A message has a canonical role, recorded native role, origin, sequence, conversation parent, and ordered content. A model response can contain several blocks; a tool call can also be a separate assistant message when the native format records it that way.
 
 | Block type | Required payload | Meaning |
 | --- | --- | --- |
@@ -16,10 +16,9 @@ A message has a canonical role, recorded native role, origin, sequence, conversa
 | `tool_result` | `call_id`, `status`, `content` | Output blocks linked to an invocation when unambiguous. Status is success, error, or unknown. |
 | `json` | `value` | Explicit native structured JSON; all JSON values, including null, are valid. |
 | `artifact` | `artifact_id`, `media_type`, `kind` | A file/image/audio/video reference served through instance-key-protected artifact endpoints. |
-| `unknown` | `native_type`, `data` | An unrecognized native block retained as opaque data. |
-| `content_reference` | `content_url`, `revision`, `block_index`, `original_type` | A bounded preview's reference to a full block; absent from full-content responses. |
+| `content_reference` | `content_url`, `block_index`, `original_type` | A bounded preview's reference to a full block; absent from full-content responses. |
 
-Tool result output can contain text, JSON, artifact, or unknown blocks. Calls/results are paired by a unique native call ID within the appropriate session/source history. If a result cannot be paired unambiguously, its canonical `call_id` is null and a warning retains the diagnostic; timing alone is not a link.
+Tool result output can contain text, JSON, or artifact blocks. Calls/results are paired by a unique native call ID within the appropriate session/source history. If a result cannot be paired unambiguously, its canonical `call_id` is null; timing alone is not a link.
 
 ## Tool inputs
 
@@ -33,7 +32,7 @@ Tool input is an explicit union:
 {"encoding":"text","value":"text(2 + 2);"}
 ```
 
-Native function argument JSON strings are decoded as JSON when valid. A malformed argument string is retained as text with a warning. Free-form custom tool input remains text, even if it resembles a JSON document. Tool output strings are not automatically parsed merely because they look like JSON.
+Native function argument JSON strings are decoded as JSON when valid. A malformed JSON argument string rejects the entire native file. Free-form custom tool input remains text, even if it resembles a JSON document. Tool output strings are not automatically parsed merely because they look like JSON.
 
 Use arbitrary-precision JSON handling for native values; do not round a large integer through a floating-point representation. The selected serde_json features are recorded in [the dependency baseline](validation/reference-stack.md).
 
@@ -59,9 +58,9 @@ Optional message `source_refs` records identify file generations and exact nativ
 
 Message previews are bounded to 64 KiB of UTF-8 content. Text can be shortened at a valid UTF-8 boundary. Oversized structured blocks are replaced by `content_reference`; tool input JSON is never cut into an invalid or misleading partial value. `truncated` is true whenever a preview omits content.
 
-`GET /messages/{id}/content` returns full canonical blocks with their revision. A client expanding a preview sends the quoted revision in `If-Match`; a changed revision returns `412`, after which the client reloads the message. Responses expose the same strong revision in `ETag`. Artifact bytes remain separate from full normalized JSON.
+`GET /messages/{id}/content` returns full canonical blocks without conditional-read metadata. Expansion reads current content; it does not guarantee a snapshot matching an earlier preview. Artifact bytes remain separate from full normalized JSON.
 
-Unknown native content is data. Render it as escaped content or a reference, and retain its original type rather than guessing a new operation or instruction.
+Unsupported native record and block types reject the whole file. SDK tolerance of future wire variants does not authorize native adapters to emit opaque unknown blocks.
 
 ## Fixtures
 

@@ -26,8 +26,6 @@ pub enum Error {
     Decode(#[from] serde_json::Error),
     #[error("file transfer failed: {0}")]
     Io(#[from] std::io::Error),
-    #[error("timed out waiting for {0}")]
-    Timeout(&'static str),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 fn transport(error: reqwest::Error) -> Error {
@@ -80,9 +78,8 @@ impl Client {
         path: &str,
         query: Option<&impl Serialize>,
         body: Option<&impl Serialize>,
-        key: Option<&str>,
     ) -> Result<T> {
-        let response = self.send(method, path, query, body, key, None).await?;
+        let response = self.send(method, path, query, body).await?;
         let bytes = bounded_response(response, 16 * 1024 * 1024).await?;
         Ok(serde_json::from_slice(&bytes)?)
     }
@@ -92,14 +89,12 @@ impl Client {
         path: &str,
         query: Option<&impl Serialize>,
         body: Option<&impl Serialize>,
-        key: Option<&str>,
-        revision: Option<&str>,
     ) -> Result<reqwest::Response> {
         let url = self
             .base
             .join(path.trim_start_matches('/'))
             .map_err(|_| Error::Configuration("Invalid API path.".into()))?;
-        let safe = method == Method::GET || key.is_some();
+        let safe = method == Method::GET;
         for attempt in 0..3 {
             let mut request = self
                 .http
@@ -110,12 +105,6 @@ impl Client {
             }
             if let Some(body) = body {
                 request = request.json(body);
-            }
-            if let Some(key) = key {
-                request = request.header("idempotency-key", key);
-            }
-            if let Some(revision) = revision {
-                request = request.header("if-match", format!("\"{revision}\""));
             }
             match request.send().await {
                 Ok(response)
@@ -142,7 +131,7 @@ impl Client {
         unreachable!("bounded retry returns on the final attempt")
     }
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        self.request(Method::GET, path, None::<&()>, None::<&()>, None)
+        self.request(Method::GET, path, None::<&()>, None::<&()>)
             .await
     }
     async fn get_query<T: DeserializeOwned>(
@@ -150,7 +139,7 @@ impl Client {
         path: &str,
         query: &impl Serialize,
     ) -> Result<T> {
-        self.request(Method::GET, path, Some(query), None::<&()>, None)
+        self.request(Method::GET, path, Some(query), None::<&()>)
             .await
     }
 
@@ -161,7 +150,7 @@ impl Client {
         self.get_query("v1/sources", options).await
     }
     pub async fn create_source(&self, input: &SourceCreate) -> Result<Source> {
-        self.request(Method::POST, "v1/sources", None::<&()>, Some(input), None)
+        self.request(Method::POST, "v1/sources", None::<&()>, Some(input))
             .await
     }
     pub async fn source(&self, id: Uuid) -> Result<Source> {
@@ -170,29 +159,6 @@ impl Client {
     pub async fn source_files(&self, id: Uuid, options: &ListOptions) -> Result<Page<SourceFile>> {
         self.get_query(&format!("v1/sources/{id}/files"), options)
             .await
-    }
-    pub async fn create_import(&self, manifest: &ImportManifest, key: &str) -> Result<Import> {
-        self.request(
-            Method::POST,
-            "v1/imports",
-            None::<&()>,
-            Some(manifest),
-            Some(key),
-        )
-        .await
-    }
-    pub async fn import(&self, id: Uuid) -> Result<Import> {
-        self.get(&format!("v1/imports/{id}")).await
-    }
-    pub async fn complete_import(&self, id: Uuid, key: &str) -> Result<Import> {
-        self.request(
-            Method::POST,
-            &format!("v1/imports/{id}/complete"),
-            None::<&()>,
-            None::<&()>,
-            Some(key),
-        )
-        .await
     }
     pub async fn sessions(&self, filter: &SessionFilter) -> Result<Page<Session>> {
         self.get_query("v1/sessions", filter).await
@@ -207,62 +173,61 @@ impl Client {
     pub async fn message(&self, id: Uuid) -> Result<Message> {
         self.get(&format!("v1/messages/{id}")).await
     }
-    pub async fn content(&self, id: Uuid, revision: Option<&str>) -> Result<FullContent> {
+    pub async fn content(&self, id: Uuid) -> Result<FullContent> {
         let response = self
             .send(
                 Method::GET,
                 &format!("v1/messages/{id}/content"),
                 None::<&()>,
                 None::<&()>,
-                None,
-                revision,
             )
             .await?;
         Ok(serde_json::from_slice(
             &bounded_response(response, 300 * 1024 * 1024).await?,
         )?)
     }
-    pub async fn job(&self, id: Uuid) -> Result<Job> {
-        self.get(&format!("v1/jobs/{id}")).await
-    }
     pub async fn artifact(&self, id: Uuid) -> Result<Artifact> {
         self.get(&format!("v1/artifacts/{id}")).await
     }
 
-    /// Upload with only the signed target headers, using a client with no API credentials.
-    pub async fn upload<R: AsyncRead + Send + Sync + 'static>(
+    /// Archive and parse one file through the authenticated API.
+    ///
+    /// Retry with a fresh reader and the same metadata after a lost response.
+    pub async fn upload_file<R: AsyncRead + Send + Sync + 'static>(
         &self,
-        target: &UploadTarget,
+        source: Uuid,
+        metadata: &FileUpload,
         reader: R,
-    ) -> Result<()> {
-        if target.method != "PUT" {
-            return Err(Error::Configuration(
-                "Unsupported signed upload method.".into(),
-            ));
-        }
-        let url = Url::parse(&target.url)
-            .map_err(|_| Error::Configuration("Invalid signed upload URL.".into()))?;
-        secure_url(&url)?;
-        let mut request = self.http.put(url);
-        for (key, value) in &target.headers {
-            if key.eq_ignore_ascii_case("authorization") || key.eq_ignore_ascii_case("cookie") {
-                return Err(Error::Configuration(
-                    "Unexpected signed upload credential header.".into(),
-                ));
-            }
-            request = request.header(key, value);
-        }
-        let response = request
-            .body(reqwest::Body::wrap_stream(
-                tokio_util::io::ReaderStream::new(reader),
-            ))
+    ) -> Result<FileUploadResult> {
+        let metadata_part = reqwest::multipart::Part::text(serde_json::to_string(metadata)?)
+            .mime_str("application/json")
+            .map_err(transport)?;
+        let file_part = reqwest::multipart::Part::stream_with_length(
+            reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(reader)),
+            metadata.byte_length,
+        )
+        .file_name("transcript.jsonl")
+        .mime_str("application/x-ndjson")
+        .map_err(transport)?;
+        let form = reqwest::multipart::Form::new()
+            .part("metadata", metadata_part)
+            .part("file", file_part);
+        let url = self
+            .base
+            .join(&format!("v1/sources/{source}/files"))
+            .map_err(|_| Error::Configuration("Invalid API path.".into()))?;
+        let response = self
+            .http
+            .post(url)
+            .header(AUTHORIZATION, self.authorization.clone())
+            .multipart(form)
             .send()
             .await
             .map_err(transport)?;
-        if !response.status().is_success() {
-            return Err(Error::Http(response.status()));
-        }
-        Ok(())
+        let response = success(response).await?;
+        Ok(serde_json::from_slice(
+            &bounded_response(response, 16 * 1024 * 1024).await?,
+        )?)
     }
     pub async fn export_to<W: AsyncWrite + Unpin>(&self, id: Uuid, writer: &mut W) -> Result<u64> {
         self.download(&format!("v1/sessions/{id}/export"), None::<&()>, writer)
@@ -296,9 +261,7 @@ impl Client {
         query: Option<&impl Serialize>,
         writer: &mut W,
     ) -> Result<u64> {
-        let mut response = self
-            .send(Method::GET, path, query, None::<&()>, None, None)
-            .await?;
+        let mut response = self.send(Method::GET, path, query, None::<&()>).await?;
         if response.status() == StatusCode::TEMPORARY_REDIRECT {
             let location = response
                 .headers()
@@ -317,38 +280,6 @@ impl Client {
         }
         writer.flush().await?;
         Ok(bytes)
-    }
-    pub async fn wait_for_acceptance(&self, id: Uuid, timeout: Duration) -> Result<Import> {
-        self.wait_import(id, timeout, true).await
-    }
-    pub async fn wait_for_processing(&self, id: Uuid, timeout: Duration) -> Result<Import> {
-        self.wait_import(id, timeout, false).await
-    }
-    async fn wait_import(&self, id: Uuid, timeout: Duration, acceptance: bool) -> Result<Import> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let import = self.import(id).await?;
-            if (acceptance && import.accepted_at.is_some()) || import.status.terminal() {
-                return Ok(import);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(Error::Timeout("import"));
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-    }
-    pub async fn wait_for_job(&self, id: Uuid, timeout: Duration) -> Result<Job> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let job = self.job(id).await?;
-            if job.status.terminal() {
-                return Ok(job);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(Error::Timeout("job"));
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
     }
 }
 

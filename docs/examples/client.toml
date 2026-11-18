@@ -1,4 +1,4 @@
-# Proposed client configuration. The API key belongs in the OS store or SESSIONDB_API_KEY.
+# Client configuration. The API key belongs in the OS store or SESSIONDB_API_KEY.
 current_context = "shared"
 
 [contexts.shared]
@@ -19,13 +19,6 @@ context = "shared"
 harness = "pi"
 root = "~/.pi/agent/sessions"
 
-# Optional initial classification. Nonmatching sessions still sync unassigned.
-[[project_rules]]
-project = "payments"
-cwd_under = "~/work/payments"
-
 [sync]
 reconcile_interval_seconds = 60
-debounce_seconds = 2
 upload_concurrency = 4
-batch_files = 32

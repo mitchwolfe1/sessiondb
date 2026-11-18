@@ -2,6 +2,8 @@
 
 SessionDB stores and syncs coding-agent sessions. These documents cover the CLI, API, data model, architecture, server configuration, and planned search features.
 
+Start with the [main objects and eleven catalog tables](data-model.md): sessions, messages, events, artifacts, optional projects, source provenance, original generations, and immutable objects. [ADR 0014](decisions/0014-sessions-and-synchronous-files.md) defines synchronous per-file upload and independent file receipts, replacing the historical import/job protocol.
+
 ## Find a task
 
 | Task | Start here |

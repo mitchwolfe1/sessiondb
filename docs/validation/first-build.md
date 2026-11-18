@@ -1,6 +1,35 @@
 # First implementation validation
 
+## Strict-records cutover
+
+[ADR 0015](../decisions/0015-strict-native-records-and-simple-reads.md) supersedes the archival-failure, partial-normalization, parser-warning, and read-revision behavior in the historical sections below.
+
+Verified locally using synthetic transcripts and disposable PostgreSQL/S3 services; no personal session store or model API was used:
+
+- Workspace Clippy passes with warnings denied. All 21 unit/fixture tests pass, with the separate Docker integration test also passing.
+- New-file and overwrite requests containing unsupported or malformed records return HTTP 400 `unsupported_native_record`. Previously accepted versions, generations, original bytes, and messages remain unchanged; rejected paths are not published.
+- Valid large integers, all three harnesses, branch ancestry, tools, artifacts, related native exports, full-content expansion, append/rewrite identity, and manual metadata remain covered.
+- Two pending CLI files recover after an object-service outage. A confirmed unsupported-file rejection does not advance its checkpoint or trap subsequent sync: repairing the local file succeeds without resetting state.
+- Upload write-CAS, concurrent identical uploads, complete-prefix capture, watch mode, SIGINT, restart, backup/restore, changed public URLs, and instance-key rotation pass.
+- Contract validation passes for 31 target operations, 17 implemented operations, 12 API examples, 11 native cases, 13 native files, 35 expected messages, and 255 documentation links.
+- Markdown lint passes for 44 files. The actual message-content and session-message CLI help were inspected; no revision flag remains.
+
+Production capacity, release-container builds, additional platforms, and broader native-version compatibility were not checked for this cutover. Everything below is historical evidence, not proof of current behavior.
+
 Historical record: the pre-cutover OIDC implementation was exercised on 2026-11-16 on Linux x86-64 with the pinned Rust 1.94.1 toolchain. Tests used synthetic identities/transcripts and disposable local services. No personal session store or model API was used.
+
+## Sessions-first synchronous revision
+
+[ADR 0014](../decisions/0014-sessions-and-synchronous-files.md) replaces the import/job implementation exercised in the historical sections below. The revised eleven-table catalog and synchronous per-file API were verified with synthetic transcripts and disposable PostgreSQL/S3 services; no personal session store or model API was used.
+
+- Server Clippy passes with warnings denied, and all ten workspace tests pass.
+- The real server/CLI/SDK integration passes fresh catalog initialization, concurrent identical uploads, stale-version rejection, corrupt-length/checksum rejection, and rejection of extra multipart parts before publication.
+- Unsupported originals remain retrievable with an explicit parse failure; invalid native tool arguments produce partial status without losing structured content or large integers.
+- Append and rewrite checks preserve original generations, stable conversation identity, and manually assigned titles, tags, and projects. Branch ancestry, related native exports, artifact MIME types, full-content expansion, and conditional revisions pass.
+- Two pending CLI files recover after an object-service outage, including an unsupported transcript. Successful receipts are checkpointed individually; an unchanged subsequent sync uploads neither file. Watch mode, complete-prefix capture, single-sync exclusion, SIGINT, backup/restore, changed public URLs, and key rotation pass.
+- API/documentation validation passes for 31 target operations, 17 implemented operations, 12 examples, and 247 links. Markdown lint passes; actual CLI and sync help were inspected and contain no job commands.
+
+Release-container, production-capacity, and additional platform/provider checks were not rerun for this revision.
 
 ## Instance-key cutover status
 
@@ -8,7 +37,7 @@ The authentication/authorization observations below belong to the superseded bui
 
 The instance-key build passed Clippy with warnings denied and the affected Rust package tests (seven tests passed; Docker integration is separate). The API/documentation checks passed for 37 target operations, 20 implemented operations, 13 API examples, and all documentation links. Markdown lint reported no issues. The simplified development launcher passed shell syntax and Compose configuration checks.
 
-The Docker integration scenario passes against the built server and CLI binaries with PostgreSQL and S3-compatible storage, without an identity provider:
+The historical Docker integration scenario passed against the then-built server/CLI with PostgreSQL and S3, without an identity provider:
 
 - Missing, empty, and incorrect keys are rejected; all data surfaces require authentication, and correct-key clients have equal access to sessions, related history, originals, and artifacts.
 - Replacing the instance key and restarting rejects previously configured clients while preserving stored data.

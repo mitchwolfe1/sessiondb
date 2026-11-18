@@ -7,13 +7,14 @@ The decisions needed for the [first build](first-build.md) are settled. The refe
 | ID | Decision | Resolution |
 | --- | --- | --- |
 | Q01 | Dependency set and compiler baseline | [Tested library set and Rust 1.94.1](validation/reference-stack.md); the application toolchain and lockfile are committed. |
-| Q02 | Authentication and client credentials | [One required instance API key](authentication.md), bearer authentication on all `/v1` APIs, no identity provider or account bootstrap; cutover validation remains to be run. |
-| Q03 | S3 implementation/client | [SeaweedFS 4.54 and aws-sdk-s3 1.159.0](decisions/0009-reference-storage-and-dependencies.md), with signed staging, immutable promotion, and verified bytes. |
-| Q04 | Initial HTTP surface | [18 first-build operations](first-build.md), typed API draft 0.3.0, and explicit capability reporting. |
-| Q05 | Initial lease/retention/limits | [Sync defaults](sync.md): 24-hour upload lease, 15-minute renewed URLs, 30-day idempotency, 24-hour cleanup grace, 256 MiB files, and no automatic original expiry. |
+| Q02 | Authentication | [Required instance key](authentication.md), shared full access, no identity provider. |
+| Q03 | Storage and ingestion | [ADR 0014](decisions/0014-sessions-and-synchronous-files.md): server-only S3 and synchronous per-file API upload. |
+| Q04 | HTTP surface | [15 baseline plus two artifact reads](first-build.md), explicit capabilities; no import/job/index-job APIs. |
+| Q05 | Limits and retention | Only max_file_bytes, default 256 MiB; periodic orphan cleanup and no automatic accepted-original expiry. No upload TTL/lease. |
 | Q08 | Native normalization fixtures | [Ten synthetic cases](../fixtures/README.md), with virtual native paths and schema-checked expectations. Actual adapter conformance is implementation work. |
 | Q09 | History, leaf, and exports | [Historical message view](normalized-content.md), explicit ancestry and inherited relations, native bundle first. |
 | Q11 | Collection versus classification | Native stores collect independently of cwd; labels are optional and sync preserves manual edits. Optional matching is a later collection feature. |
+| Q12 | Sessions-first schema | Eleven domain tables in one initial migration; scalar metadata, one content value, optional projects, client-owned collection start/stop. |
 
 ## Later milestone work
 

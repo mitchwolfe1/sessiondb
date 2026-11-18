@@ -24,14 +24,13 @@ Planned `sessiondb sync install` installs the current context and selected sourc
 
 | Group | Commands |
 | --- | --- |
-| `sessions` | `list`, `show`, `messages`, `events`, `update`, `export`, `delete` |
-| `search` | Query with a keyword, semantic, or hybrid mode and filters |
-| `sources` | `list`, `add`, `show`, `pause`, `resume` |
-| `sync` | One pass; `--watch`; `status`, `install`, `uninstall` |
-| `embeddings` | `profiles list`, `profiles create`, `profiles show`, `profiles enable`, `profiles disable`, `backfill` |
-| `jobs` | `show`, `wait` |
+| `sessions` | `list`, `show`, `messages`, `export`; events/update/delete are planned |
+| `search` | Planned keyword, semantic, and hybrid queries |
+| `sources` | `list`, `add`, `show`; collection starts/stops on the client |
+| `sync` | One pass; `--watch`; `status`; install/uninstall are planned |
+| `embeddings` | Planned profile management; backfill execution contract is not yet defined |
 | `context` | `create`, `list`, `show`, `use`, `remove` |
-| `projects` | `list`, `create`, `show`, `update`, `archive` |
+| `projects` | Planned `list`, `create`, `show`, `update`; no archive lifecycle |
 | `auth` | `login --key-stdin`, `logout`, `status` (OS credential-store conveniences only) |
 | Top level | `status`, `config show`, `completion`, `version` |
 
@@ -39,24 +38,20 @@ Session and search commands cover everyday use. Connection and project commands 
 
 ## Everyday use
 
+Implemented examples:
+
 ```sh
-sessiondb sessions list --project payments --harness codex --limit 20
+sessiondb sessions list --harness codex --limit 20
 sessiondb sessions list --unassigned
 sessiondb sessions show SESSION_ID
 sessiondb sessions messages SESSION_ID --leaf MESSAGE_ID --json
-sessiondb search "retry migration" --project payments --after 2026-11-01
-sessiondb search "previous retry designs" --project payments --mode hybrid
-sessiondb sessions update SESSION_ID --title "Payment retry investigation" --tag retries
-sessiondb sessions update SESSION_ID --project payments --project api-client
-sessiondb sessions update SESSION_ID --clear-projects
 sessiondb sessions export SESSION_ID --format native --output session.zip
-sessiondb embeddings backfill --project payments --profile PROFILE_ID
-sessiondb jobs wait JOB_ID
+sessiondb sync status --json
 ```
 
-`sessions show` presents a readable overview and bounded preview. Message/content/export commands retrieve more data. On `sessions update`, repeated `--tag` and `--project` options supply replacement sets; omission preserves a set, and `--clear-tags` or `--clear-projects` clears it. `sessions delete` explains server deletion and source suppression; interactive deletion requires confirmation unless `--yes` is supplied.
+Search, title/tag/project updates, session deletion, and embedding profile commands are planned, not available examples. See `sessiondb --help` and [implementation status](implementation.md).
 
-For example, `sessiondb sessions update SESSION_ID --project payments` can label a session whose recorded cwd is `/home/ada`. Its file stays in the harness store, subsequent sync keeps updating it, and its readers remain unchanged. See [project associations](project-associations.md).
+Session reads present bounded content; full-content and native export endpoints retrieve more data. Planned metadata updates replace supplied label/tag sets while preserving omitted fields. Ordinary append sync preserves existing catalog metadata.
 
 ## Familiar behavior
 
@@ -64,7 +59,7 @@ Human output is a stable, readable table or transcript. `--json` writes structur
 
 Support `--help`, `--version`, generated shell completions, `--server`, `--context`, `--config`, `--timeout`, and quiet/verbose modes consistently. Server-side filters behave the same through the CLI and SDK.
 
-Proposed exit codes are `0` for success, `1` for an operational/server failure, `2` for invalid usage, `3` for authentication/authorization failure, and `4` for a requested resource not found. An interrupted foreground watch exits conventionally with the signal-derived status. `jobs wait` returns failure for a failed job; partial results are explained and require explicit caller handling.
+Exit codes distinguish success (`0`), operational failure (`1`), usage (`2`), authentication (`3`), and missing resources (`4`). Interrupted watch exits with the signal-derived status. There are no jobs or wait commands; each successful file response is its acceptance receipt.
 
 ## Configuration
 
@@ -72,12 +67,25 @@ Use TOML configuration in the platform configuration directory (`$XDG_CONFIG_HOM
 
 `config show` reports effective nonsecret values and their origin. `SESSIONDB_API_KEY` takes precedence over the OS credential store; an explicitly empty value fails rather than falling back. Keys never belong in the ordinary configuration file or command-line flags. `auth login --key-stdin` requires that flag, reads a nonempty key from stdin, validates protected `/v1/info`, and saves it per normalized server URL in the OS keyring (`sessiondb-api-key`). There is no browser or token exchange. `auth logout` deletes only the local stored copy; `auth status` validates `/v1/info` and reports the server/authentication status without revealing the key. Keep sync state in the platform state/data directory and make `status` report its path.
 
-See the [client configuration example](examples/client.toml). It is illustrative and uses no real credentials. During upgrade, remove obsolete `organization` and `default_visibility` configuration fields; they are rejected, not ignored. The SQLite state migration preserves source registrations, IDs, checkpoints, and pending snapshots while removing organization scope. Do not delete recovery state merely to reconnect with the new key.
+See the [client configuration example](examples/client.toml). It contains no credentials or unsupported future settings. The project is undeployed: use the clean current local-state schema rather than migration aliases for abandoned import state. Recovery persists pending per-file snapshots and advances checkpoints individually after HTTP 200; `sync status --json` reports `pending_files`.
+
+The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. Only `[sync] reconcile_interval_seconds` and `upload_concurrency` are current sync settings; debounce/batch settings and future matching rules are not runnable configuration.
 
 ## Rust client crate
 
-`sessiondb-client` exposes a reusable async client constructed with `Client::new(server: &str, api_key: String, timeout: Duration)`. It requires a nonempty static key; there is no auth module, token provider, refresh, or organization argument. Resource methods take global resource IDs with no organization UUID. Provide typed methods for resources, page iteration, import upload/completion, job polling, and downloads. Errors distinguish transport failures, HTTP problem details, and decoding/compatibility errors.
+`sessiondb-client` exposes `Client::new(server: &str, api_key: String, timeout: Duration)`, resource reads, pagination, originals/artifacts, native export, and:
 
-Reuse HTTP connections and bounded streaming for file transfer. Retry only safe reads and operations with explicit idempotency semantics. Do not hide server validation or authorization failures behind unlimited retries. Signed upload targets receive only their provided headers; never forward a SessionDB API key to an object-store host. The CLI supplies human presentation and local collection behavior; the SDK supplies the shared network contract.
+```rust,ignore
+pub async fn upload_file<R: AsyncRead + Send + Sync + 'static>(
+    &self,
+    source: Uuid,
+    metadata: &FileUpload,
+    reader: R,
+) -> Result<FileUploadResult>
+```
+
+It sends the metadata JSON and raw JSONL as an authenticated multipart API request. The caller provides a fresh reader when retrying; the SDK does not automatically replay a non-replayable stream. Every successful response represents one accepted file, only after every supplied native record is supported and valid. No import, upload-target, completion, or wait-job methods remain.
+
+Reuse HTTP connections and bounded transfer. Errors distinguish transport, HTTP problem details, and decoding failures. Never send the API key to an object-store host: clients only need the API URL. The CLI owns local capture/recovery and presentation; the SDK owns the network contract.
 
 Follow Rust API naming and documentation conventions. Public types live in `sessiondb-types`; server database structs are private. Additional language SDKs are derived from the same OpenAPI contract after the Rust client is proven. hype-history may use such a client or ordinary HTTP before a packaged Python SDK exists.

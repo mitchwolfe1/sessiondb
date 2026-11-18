@@ -104,7 +104,7 @@
         "native/codex/incomplete-tail.jsonl.part"
       ],
       "expected": "expected/codex-incomplete-tail.json",
-      "notes": "Archive complete malformed lines; defer the unfinished final line and keep the valid prefix readable.",
+      "notes": "Reject this unchanged synthetic snapshot: malformed complete JSON and an unfinished tail must not yield a partial projection. CLI capture of complete prefixes is tested separately.",
       "allow_malformed_lines": [
         2
       ],
@@ -146,7 +146,20 @@
       "native_paths": {
         "native/codex/precision-unknown.jsonl": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000005.jsonl"
       },
-      "notes": "Preserve a JSON integer beyond u64, retain malformed argument JSON as text, and keep an unknown native block opaque."
+      "notes": "Reject this unchanged synthetic input: malformed function argument JSON and an unsupported content kind must never produce partial success."
+    },
+    {
+      "id": "codex-precision",
+      "harness": "codex",
+      "native_version": "0.169.0",
+      "inputs": [
+        "native/codex/precision.jsonl"
+      ],
+      "expected": "expected/codex-precision.json",
+      "native_paths": {
+        "native/codex/precision.jsonl": "2026/11/16/rollout-2026-11-16T12-00-00-c0000000-0000-4000-8000-000000000006.jsonl"
+      },
+      "notes": "Synthetic bounded native compatibility: supported function calls and JSON results preserve integers beyond u64 exactly."
     }
   ]
 }

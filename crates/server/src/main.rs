@@ -55,7 +55,9 @@ async fn main() -> Result<()> {
     let (stop, shutdown) = watch::channel(false);
     tokio::spawn(async move {
         shutdown_signal().await;
-        let _ = stop.send(true);
+        if let Err(error) = stop.send(true) {
+            tracing::debug!(%error, "API already stopped before shutdown signal");
+        }
     });
     if let Some(address) = state.config.telemetry.metrics_listen {
         let listener = TcpListener::bind(address).await?;
@@ -64,11 +66,16 @@ async fn main() -> Result<()> {
             .with_state(state.clone());
         let mut metrics_stop = shutdown.clone();
         tokio::spawn(async move {
-            let _ = axum::serve(listener, metrics)
+            if let Err(error) = axum::serve(listener, metrics)
                 .with_graceful_shutdown(async move {
-                    let _ = metrics_stop.changed().await;
+                    if let Err(error) = metrics_stop.changed().await {
+                        tracing::debug!(%error, "metrics shutdown sender closed");
+                    }
                 })
-                .await;
+                .await
+            {
+                tracing::error!(%error, "metrics listener failed");
+            }
         });
     }
     sessiondb_server::serve(state, listener, shutdown).await

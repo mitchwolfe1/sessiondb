@@ -20,22 +20,18 @@ fn native_contract_fixtures() {
             let input = input.as_str().unwrap();
             let bytes = fs::read(root.join(input)).unwrap();
             let native_path = case["native_paths"][input].as_str().unwrap();
-            let parsed =
-                parse(harness, native_path, &bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
-            if let Some(tail) = expected["capture"]["pending_tail_bytes"].as_u64() {
-                assert_eq!(parsed.deferred_bytes as u64, tail, "{name}");
+            let result = parse(harness, native_path, &bytes);
+            if let Some(error) = expected["error"].as_str() {
+                assert_eq!(error, "unsupported_native_record", "{name}");
+                assert!(result.is_err(), "{name}: unsupported input was accepted");
+                continue;
             }
-            if let Some(lines) = expected["capture"]["malformed_lines"].as_array() {
-                for line in lines {
-                    assert!(
-                        parsed
-                            .warnings
-                            .contains(&format!("malformed_json_line:{}", line)),
-                        "{name}"
-                    );
-                }
-            }
+            let parsed = result.unwrap_or_else(|e| panic!("{name}: {e}"));
             sessions.extend(parsed.sessions);
+        }
+        if expected.get("error").is_some() {
+            assert!(sessions.is_empty(), "{name}");
+            continue;
         }
         assert_eq!(
             sessions.len(),
@@ -115,17 +111,6 @@ fn native_contract_fixtures() {
                         e.get("provider_usage"),
                         "{name}"
                     );
-                }
-                if let Some(warnings) = e["warnings"].as_array() {
-                    for w in warnings {
-                        assert!(
-                            actual
-                                .warnings
-                                .iter()
-                                .any(|a| Some(a.as_str()) == w.as_str()),
-                            "{name}"
-                        );
-                    }
                 }
             }
             assert_eq!(
@@ -209,5 +194,4 @@ fn ambiguous_tool_results_are_not_guessed() {
     let content = serde_json::to_value(&message.content).unwrap();
     assert!(content[0]["call_id"].is_null());
     assert_eq!(content[0]["content"][0]["type"], "text");
-    assert!(message.warnings.contains(&"unresolved_tool_call".into()));
 }

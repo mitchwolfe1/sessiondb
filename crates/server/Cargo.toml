@@ -1,6 +1,6 @@
 [package]
 name = "sessiondb-server"
-description = "SessionDB HTTP service and durable background workers"
+description = "SessionDB HTTP service and synchronous session ingestion"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

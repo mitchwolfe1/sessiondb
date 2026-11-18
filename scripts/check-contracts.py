@@ -31,8 +31,8 @@ EXAMPLES = {
     "session.json": "Session", "session-unassigned.json": "Session",
     "session-update.json": "SessionPatch", "source-create.json": "SourceCreate",
     "search-request.json": "SearchRequest", "search-response.json": "SearchResponse",
-    "import-request.json": "ImportManifest", "import-response.json": "Import",
-    "import-accepted.json": "Import", "embedding-profile.json": "EmbeddingProfileCreate",
+    "file-upload.json": "FileUpload", "file-upload-result.json": "FileUploadResult",
+    "embedding-profile.json": "EmbeddingProfileCreate",
     "problem.json": "Problem", "message.json": "Message",
     "content-reference.json": "ContentReferenceBlock",
 }
@@ -45,14 +45,35 @@ for name, schema in SPEC["components"]["schemas"].items():
     for example in schema.get("examples", []):
         validator(name).validate(example)
 
+def rust_fields(path, name):
+    source = (ROOT / path).read_text()
+    body = re.search(rf"pub struct {name}\s*\{{(.*?)^\}}", source, re.M | re.S)
+    assert body is not None, (path, name)
+    fields = set(re.findall(r"pub (\w+):", body[1]))
+    return (fields - {"problem_type"}) | ({"type"} if "problem_type" in fields else set())
+
+
+client_config = "crates/cli/src/config.rs"
+server_config = "crates/server/src/config.rs"
 for path in [*ROOT.glob("docs/examples/*.toml"), ROOT / "dev/server.toml"]:
     config = tomllib.loads(path.read_text())
     if path.name == "client.toml":
+        assert set(config) <= rust_fields(client_config, "FileConfig")
         assert all(set(context) == {"server"} for context in config["contexts"].values())
         assert all(set(source) == {"context", "harness", "root"} for source in config["sources"])
+        assert set(config.get("sync", {})) <= {"reconcile_interval_seconds", "upload_concurrency"}
+        assert set(config.get("sync", {})) <= rust_fields(client_config, "SyncOptions")
+        assert "project_rules" not in config, "matching rules are not implemented"
     else:
+        assert set(config) <= rust_fields(server_config, "Config")
         assert config["auth"] == {"api_key_env": "SESSIONDB_API_KEY"}
-        assert "bootstrap" not in config
+        assert set(config["objects"]) <= rust_fields(server_config, "Objects")
+        assert not {"public_endpoint", "upload_url_ttl_seconds", "download_url_ttl_seconds"} & set(config["objects"])
+        assert "workers" not in config and "bootstrap" not in config
+        limits = config.get("limits", {})
+        assert set(limits) <= {"max_file_bytes"}
+        if "max_file_bytes" in limits:
+            assert 0 < limits["max_file_bytes"] <= 268435456
 
 # Response extensibility must not reintroduce identity policy in examples or schemas.
 identity_fields = {
@@ -75,22 +96,31 @@ removed_schemas = {
     "AuthConfig", "User", "Organization", "OrganizationPatch", "Membership", "MembershipPatch",
     "Me", "Invitation", "InvitationCreate", "Team", "TeamCreate", "TeamPatch", "TeamMember",
     "Token", "TokenCreate", "CreatedToken", "SessionGrant", "SessionGrantCreate",
+    "Import", "ImportManifest", "ImportFileResult", "UploadTarget", "FileDescriptor",
+    "Job", "IndexJobCreate", "ProcessingState", "SourcePatch",
 }
 assert not any(name.removesuffix("Page") in removed_schemas for name in SPEC["components"]["schemas"])
+for name, resource_schema in SPEC["components"]["schemas"].items():
+    assert not ({"revision", "parse_status", "parse_error", "warnings"} & set(resource_schema.get("properties", {}))), name
 assert set(SPEC["components"]["schemas"]["Source"]["properties"]) == {
-    "id", "harness", "device_label", "paused", "last_synced_at", "root",
+    "id", "harness", "device_label", "last_synced_at", "root",
 }
 assert set(SPEC["components"]["schemas"]["SourceCreate"]["properties"]) == {
     "harness", "device_label", "root",
 }
 assert set(SPEC["components"]["schemas"]["Session"]["properties"]) == {
     "id", "project_ids", "harness", "native_session_id", "title", "tags", "recorded_cwd",
-    "started_at", "updated_at", "message_count", "processing", "relations", "warnings",
+    "started_at", "updated_at", "message_count", "relations",
 }
-assert set(SPEC["components"]["schemas"]["Import"]["properties"]) == {
-    "id", "source_id", "status", "uploads", "results", "created_at", "job_id", "accepted_at",
-    "errors", "upload_expires_at",
+for name in ["Source", "SourceCreate", "SourceFile", "FileUpload", "FileUploadResult", "Session", "Problem", "Limits"]:
+    assert set(SPEC["components"]["schemas"][name]["properties"]) == rust_fields(
+        "crates/types/src/resources.rs", name,
+    ), name
+assert set(SPEC["components"]["schemas"]["FileUpload"]["required"]) == {
+    "path", "byte_length", "sha256", "expected_version",
 }
+assert set(SPEC["components"]["schemas"]["Limits"]["properties"]) == {"max_file_bytes"}
+assert set(SPEC["components"]["schemas"]["Project"]["properties"]) == {"id", "slug", "name", "repository_urls"}
 for name, sample, field in [
     ("SourceCreate", examples["source-create.json"], "default_visibility"),
     ("SessionPatch", examples["session-update.json"], "visibility"),
@@ -99,10 +129,15 @@ for name, sample, field in [
 ]:
     assert list(validator(name).iter_errors({**sample, field: "removed"}))
 assert examples["session-unassigned.json"]["project_ids"] == []
-assert examples["import-response.json"]["source_id"] == examples["import-request.json"]["source_id"]
-assert examples["import-accepted.json"]["id"] == examples["import-response.json"]["id"]
-assert examples["import-response.json"]["accepted_at"] is None
-assert examples["import-accepted.json"]["accepted_at"] is not None
+metadata = examples["file-upload.json"]
+receipt = examples["file-upload-result.json"]
+assert metadata["expected_version"] is None
+for field in ["path", "byte_length", "sha256"]:
+    assert metadata[field] == receipt["file"][field]
+assert receipt["session_ids"] == [examples["session.json"]["id"]]
+assert receipt["unchanged"] is False
+assert list(validator("FileUpload").iter_errors({k: v for k, v in metadata.items() if k != "expected_version"}))
+assert list(validator("FileUpload").iter_errors({**metadata, "media_type": "application/x-ndjson"}))
 assert list(validator("ContentBlock").iter_errors({"type": "tool_call", "name": "bash"}))
 reference = json.loads((ROOT / "docs/examples/content-reference.json").read_text())
 assert list(validator("FullContentBlock").iter_errors(reference))
@@ -134,18 +169,23 @@ for case in manifest["cases"]:
             except ValueError:
                 bad.append(line_number)
                 continue
-            for obj in [record, record.get("payload", {})]:
+            if not isinstance(record, dict):
+                continue
+            payload = record.get("payload")
+            payload = payload if isinstance(payload, dict) else {}
+            for obj in [record, payload]:
                 for key in ["uuid", "id"]:
                     if isinstance(obj.get(key), str):
                         anchors.add(obj[key])
-            boundary = record.get("payload", {}).get("history_base")
+            boundary = payload.get("history_base")
             if record.get("type") == "session_meta" and boundary:
                 parents = [ROOT / "fixtures" / p for p in case["inputs"] if p != name]
                 parents = [p for p in parents if json.loads(p.read_bytes().splitlines()[0])["payload"]["id"] == boundary["thread_id"]]
                 assert len(parents) == 1 and parents[0].stat().st_size == boundary["end_byte_offset"]
-            content = record.get("message", {}).get("content", [])
+            message = record.get("message")
+            content = message.get("content", []) if isinstance(message, dict) else []
             for block in content if isinstance(content, list) else []:
-                if block.get("type") == "image":
+                if isinstance(block, dict) and block.get("type") == "image":
                     image = base64.b64decode(block["data"])
                     assert image[:8] == b"\x89PNG\r\n\x1a\n"
                     offset = 8
@@ -159,10 +199,10 @@ for case in manifest["cases"]:
         assert bad == case.get("allow_malformed_lines", [])
         if len(data) != end:
             assert case.get("allow_incomplete_tail")
-        if expected.get("capture"):
-            assert expected["capture"]["complete_lines"] == data[:end].count(b"\n")
-            assert expected["capture"]["pending_tail_bytes"] == len(data) - end
         native_files += 1
+    if "error" in expected:
+        assert expected == {"case": case["id"], "error": "unsupported_native_record"}
+        continue
     for session in expected["sessions"]:
         by_key = {message["key"]: message for message in session["messages"]}
         assert len(by_key) == len(session["messages"])
@@ -190,8 +230,46 @@ first = {op["operationId"] for item in SPEC["paths"].values() for method, op in 
 implementation = {op["operationId"] for item in SPEC["paths"].values() for method, op in item.items() if method != "parameters" and op.get("x-implemented")}
 source = (ROOT / "crates/types/src/lib.rs").read_text().split("FIRST_BUILD_OPERATIONS:", 1)[1]
 assert first == set(re.findall(r'"([a-zA-Z]+)"', source))
-assert len(first) == 18
+assert len(first) == 15
+assert first == {
+    "getLiveness", "getReadiness", "getServerInfo", "listSources", "createSource",
+    "getSource", "listSourceFiles", "getOriginalContent", "uploadSourceFile",
+    "listSessions", "getSession", "listSessionMessages", "getMessage",
+    "getMessageContent", "exportSession",
+}
 assert implementation == first | {"getArtifact", "getArtifactContent"}
+assert len(implementation) == 17
+assert not any(re.search(r"/(?:imports|jobs|index-jobs)(?:/|$)", path) for path in SPEC["paths"])
+assert set(SPEC["paths"]["/v1/sources/{source_id}"]) == {"parameters", "get"}
+upload = SPEC["paths"]["/v1/sources/{source_id}/files"]["post"]
+assert upload["operationId"] == "uploadSourceFile"
+assert set(upload["responses"]) == {"200", "default"}
+assert upload["responses"]["200"]["content"]["application/json"]["schema"] == {
+    "$ref": "#/components/schemas/FileUploadResult",
+}
+body = upload["requestBody"]["content"]
+assert set(body) == {"multipart/form-data"}
+multipart = body["multipart/form-data"]
+assert set(multipart["schema"]["required"]) == {"metadata", "file"}
+assert set(multipart["schema"]["properties"]) == {"metadata", "file"}
+assert multipart["schema"]["additionalProperties"] is False
+assert multipart["schema"]["properties"]["metadata"] == {"$ref": "#/components/schemas/FileUpload"}
+assert multipart["encoding"] == {
+    "metadata": {"contentType": "application/json"},
+    "file": {"contentType": "application/x-ndjson"},
+}
+
+# Keep the undeployed initial catalog session-centered and free of workflow scaffolding.
+migrations = list((ROOT / "crates/server/migrations").glob("*.sql"))
+assert [path.name for path in migrations] == ["0001_catalog.sql"]
+catalog = migrations[0].read_text()
+assert re.findall(r"CREATE TABLE (\w+)", catalog) == [
+    "sessions", "messages", "session_events", "projects", "session_projects",
+    "objects", "artifacts", "sources", "source_files", "file_generations", "session_files",
+]
+assert not re.search(r"^\s*(?:document|paused|archived|state|retired_at|import_id|revision|parse_status|parse_error|warnings)\s", catalog, re.M)
+assert len(re.findall(r"^\s*sha256\s", catalog, re.M)) == 1
+assert len(re.findall(r"^\s*byte_length\s", catalog, re.M)) == 1
 assert SPEC["security"] == [{"bearerAuth": []}]
 assert set(SPEC["components"]["securitySchemes"]) == {"bearerAuth"}
 assert SPEC["components"]["securitySchemes"]["bearerAuth"]["type"] == "http"

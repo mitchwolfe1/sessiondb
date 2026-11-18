@@ -2,6 +2,8 @@
 
 A project groups related sessions. It is optional metadata, independent of the native session store, the directory where a session started, and instance access.
 
+Status: optional labels and read filters are supported by the model. Project administration, manual mutation, and matching rules remain planned; examples of future assignment below are not current CLI commands.
+
 A session started in a home directory can be associated with a project elsewhere:
 
 ```text
@@ -47,6 +49,6 @@ Project filters narrow the shared collection. Removing the final label makes a s
 
 Keyword and configured semantic search include accessible unassigned sessions by default. The `unassigned` filter selects sessions with no project associations. A session associated with several matching projects appears once in the results.
 
-Archiving a project stops new associations to that label, while existing associations remain readable and sync continues. Removing a project is not a session-deletion operation.
+Projects have no archive lifecycle. Renaming a label does not stop collection or delete associated sessions.
 
 See [the data model](data-model.md), [automatic sync](sync.md), and [access control](access-control.md).

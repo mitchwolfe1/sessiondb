@@ -1,4 +1,5 @@
 //! Parse native session snapshots without reading other paths or executing content.
+//! Malformed or unsupported records reject the complete snapshot; no partial projection is returned.
 mod codex;
 mod tree;
 
@@ -14,6 +15,8 @@ use uuid::Uuid;
 pub enum AdapterError {
     #[error("native session header is missing or unsupported")]
     Unsupported,
+    #[error("unsupported native record at line {line}: {reason}")]
+    InvalidRecord { line: u64, reason: &'static str },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,7 +39,6 @@ pub struct NativeMessage {
     pub provider_response_id: Option<String>,
     pub model: Option<String>,
     pub provider_usage: Option<Value>,
-    pub warnings: Vec<String>,
     pub anchors: Vec<Anchor>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +74,6 @@ pub struct NativeSession {
     pub events: Vec<NativeEvent>,
     pub relations: Vec<NativeRelation>,
     pub artifacts: Vec<NativeArtifact>,
-    pub warnings: Vec<String>,
 }
 impl NativeSession {
     pub fn title(&self) -> String {
@@ -97,9 +98,6 @@ impl NativeSession {
 #[derive(Debug, Clone)]
 pub struct ParsedFile {
     pub sessions: Vec<NativeSession>,
-    pub accepted_bytes: usize,
-    pub deferred_bytes: usize,
-    pub warnings: Vec<String>,
 }
 
 /// Only complete newline-terminated records are captured from an active JSONL file.
@@ -145,20 +143,15 @@ pub fn parse(harness: Harness, path: &str, bytes: &[u8]) -> Result<ParsedFile, A
     adapter(harness).parse(path, bytes)
 }
 fn parse_native(harness: Harness, path: &str, bytes: &[u8]) -> Result<ParsedFile, AdapterError> {
-    let prefix = complete_prefix(bytes);
-    let (records, warnings) = records(prefix);
+    let records = records(bytes)?;
     let mut session = match harness {
         Harness::Codex => codex::parse(&records)?,
         Harness::Claude => tree::claude(path, &records)?,
         Harness::Pi => tree::pi(&records)?,
     };
-    session.warnings.extend(warnings.clone());
     resolve_calls(&mut session);
     Ok(ParsedFile {
         sessions: vec![session],
-        accepted_bytes: prefix.len(),
-        deferred_bytes: bytes.len() - prefix.len(),
-        warnings,
     })
 }
 
@@ -166,41 +159,94 @@ struct Record {
     value: Value,
     anchor: Anchor,
 }
-fn records(bytes: &[u8]) -> (Vec<Record>, Vec<String>) {
+fn records(bytes: &[u8]) -> Result<Vec<Record>, AdapterError> {
     let mut records = Vec::new();
-    let mut warnings = Vec::new();
     let mut offset = 0;
     for (index, line) in bytes.split_inclusive(|b| *b == b'\n').enumerate() {
+        let line_number = index as u64 + 1;
         if line.iter().all(u8::is_ascii_whitespace) {
             offset += line.len();
             continue;
         }
-        match serde_json::from_slice::<Value>(line) {
-            Ok(value) if value.is_object() => {
-                let record_id = str_at(&value, "uuid")
-                    .or_else(|| str_at(&value, "id"))
-                    .or_else(|| value.get("payload").and_then(|p| str_at(p, "id")))
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("line:{}", index + 1));
-                records.push(Record {
-                    value,
-                    anchor: Anchor {
-                        record_id,
-                        line: index as u64 + 1,
-                        byte_offset: offset as u64,
-                        byte_length: line.len() as u64,
-                    },
-                });
-            }
-            _ => {
-                if warnings.len() < 32 {
-                    warnings.push(format!("malformed_json_line:{}", index + 1));
-                }
+        let value: Value =
+            serde_json::from_slice(line).map_err(|_| AdapterError::InvalidRecord {
+                line: line_number,
+                reason: "invalid JSON",
+            })?;
+        if !value.is_object() {
+            return Err(AdapterError::InvalidRecord {
+                line: line_number,
+                reason: "expected an object",
+            });
+        }
+        let record_id = str_at(&value, "uuid")
+            .or_else(|| str_at(&value, "id"))
+            .or_else(|| value.get("payload").and_then(|p| str_at(p, "id")))
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("line:{line_number}"));
+        let record = Record {
+            value,
+            anchor: Anchor {
+                record_id,
+                line: line_number,
+                byte_offset: offset as u64,
+                byte_length: line.len() as u64,
+            },
+        };
+        required_str(&record.value, "type", &record)?;
+        for key in ["uuid", "id"] {
+            if optional_str(&record.value, key, &record)?.is_some_and(str::is_empty) {
+                return Err(invalid(&record, "empty native record identifier"));
             }
         }
+        validate_timestamp(&record.value, &record)?;
+        records.push(record);
         offset += line.len();
     }
-    (records, warnings)
+    Ok(records)
+}
+fn invalid(record: &Record, reason: &'static str) -> AdapterError {
+    AdapterError::InvalidRecord {
+        line: record.anchor.line,
+        reason,
+    }
+}
+fn required<'a>(value: &'a Value, key: &str, record: &Record) -> Result<&'a Value, AdapterError> {
+    value
+        .get(key)
+        .ok_or_else(|| invalid(record, "missing required field"))
+}
+fn required_str<'a>(value: &'a Value, key: &str, record: &Record) -> Result<&'a str, AdapterError> {
+    required(value, key, record)?
+        .as_str()
+        .ok_or_else(|| invalid(record, "expected a string field"))
+}
+fn optional_str<'a>(
+    value: &'a Value,
+    key: &str,
+    record: &Record,
+) -> Result<Option<&'a str>, AdapterError> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text)),
+        _ => Err(invalid(record, "expected an optional string field")),
+    }
+}
+fn object<'a>(value: &'a Value, record: &Record) -> Result<&'a Value, AdapterError> {
+    if value.is_object() {
+        Ok(value)
+    } else {
+        Err(invalid(record, "expected an object field"))
+    }
+}
+fn validate_timestamp(value: &Value, record: &Record) -> Result<(), AdapterError> {
+    if let Some(value) = value.get("timestamp")
+        && !value.is_null()
+        && timestamp(value).is_none()
+    {
+        return Err(invalid(record, "invalid timestamp"));
+    }
+    Ok(())
 }
 fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(Value::as_str)
@@ -222,7 +268,6 @@ fn native_session(id: &str, cwd: Option<&str>, time: Option<DateTime<Utc>>) -> N
         events: vec![],
         relations: vec![],
         artifacts: vec![],
-        warnings: vec![],
     }
 }
 fn message(
@@ -245,7 +290,6 @@ fn message(
         provider_response_id: None,
         model: None,
         provider_usage: None,
-        warnings: vec![],
         anchors: vec![record.anchor.clone()],
     }
 }
@@ -257,8 +301,14 @@ fn event(record: &Record, event_type: &str) -> NativeEvent {
         anchor: record.anchor.clone(),
     }
 }
-fn role(v: &str) -> Role {
-    v.parse().unwrap_or(Role::Unknown)
+fn role(value: &str, record: &Record) -> Result<Role, AdapterError> {
+    match value {
+        "user" => Ok(Role::User),
+        "assistant" => Ok(Role::Assistant),
+        "system" | "developer" => Ok(Role::System),
+        "tool" => Ok(Role::Tool),
+        _ => Err(invalid(record, "unsupported message role")),
+    }
 }
 fn origin(role: Role) -> Origin {
     match role {
@@ -285,7 +335,6 @@ fn resolve_calls(session: &mut NativeSession) {
                 && call_id.as_ref().is_none_or(|id| counts.get(id) != Some(&1))
             {
                 *call_id = None;
-                m.warnings.push("unresolved_tool_call".into());
             }
         }
     }
