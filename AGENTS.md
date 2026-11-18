@@ -10,6 +10,8 @@ Lead with capabilities and usage, as database and developer-tool documentation d
 
 Use established HTTP, CLI, PostgreSQL, and S3 conventions. SessionDB exposes session resources through its API and uses an existing object storage implementation for raw files. Do not implement a new S3 server or invent a SQL language for the CLI.
 
+[ADR 0016](docs/decisions/0016-http-private-networks.md) permits HTTP and HTTPS server origins in the server, CLI, and SDK without loopback-only checks or extra insecure-mode flags. Operators provide network protection for HTTP; the instance key remains required and HTTPS certificate validation stays enabled.
+
 Collection follows configured native session stores, not repository/workspace containment. Starting cwd is metadata. Sessions can have zero or more logical project associations, and changing these labels does not change instance access. Keep collection and project association separate in the docs and contracts.
 
 The accepted schema/ingestion direction is [ADR 0014](docs/decisions/0014-sessions-and-synchronous-files.md): sessions first, explicit relational metadata, no duplicate document JSON, optional projects, provenance-only sources, client-owned start/stop, and synchronous API-mediated per-file upload. Preserve native originals, generations, branches, subagents, artifacts, export, and restart-safe per-file recovery. Do not restore import/job/index-job/pause/archive machinery, signed client uploads, worker settings, or transcript MIME. Each successful file is individually accepted; no atomic multi-file guarantee. The undeployed catalog stays in one initial migration with no upgrade shims.

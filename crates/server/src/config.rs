@@ -109,7 +109,7 @@ impl Config {
                 "configure both object credential environment names or use the AWS credential chain"
             );
         }
-        require_secure_url(&self.public_url, true)?;
+        validate_http_url(&self.public_url)?;
         if self.public_url.path() != "/" {
             bail!("public_url must contain only its scheme, host, and port");
         }
@@ -122,7 +122,7 @@ impl Config {
         env::var(&self.database.url_env).context("database URL environment variable is not set")
     }
 }
-pub fn require_secure_url(url: &Url, allow_loopback: bool) -> Result<()> {
+pub fn validate_http_url(url: &Url) -> Result<()> {
     if !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
@@ -130,12 +130,8 @@ pub fn require_secure_url(url: &Url, allow_loopback: bool) -> Result<()> {
     {
         bail!("URLs must not contain credentials, query strings, or fragments");
     }
-    if url.scheme() == "https" {
-        return Ok(());
+    if !matches!(url.scheme(), "http" | "https") {
+        bail!("URL scheme must be HTTP or HTTPS");
     }
-    let local = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
-    if url.scheme() == "http" && allow_loopback && local {
-        return Ok(());
-    }
-    bail!("HTTPS is required; development HTTP must be explicitly enabled on loopback")
+    Ok(())
 }

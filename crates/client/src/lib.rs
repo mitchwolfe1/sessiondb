@@ -50,7 +50,7 @@ impl Client {
         authorization.set_sensitive(true);
         let mut base =
             Url::parse(server).map_err(|_| Error::Configuration("Invalid server URL.".into()))?;
-        secure_url(&base)?;
+        validate_http_url(&base)?;
         if !matches!(base.path(), "" | "/") || base.query().is_some() {
             return Err(Error::Configuration(
                 "The server URL must contain only its scheme, host, and port.".into(),
@@ -270,7 +270,7 @@ impl Client {
                 .ok_or_else(|| Error::Configuration("Missing download location.".into()))?;
             let url = Url::parse(location)
                 .map_err(|_| Error::Configuration("Invalid download location.".into()))?;
-            secure_url(&url)?;
+            validate_http_url(&url)?;
             response = success(self.http.get(url).send().await.map_err(transport)?).await?;
         }
         let mut bytes = 0;
@@ -283,22 +283,18 @@ impl Client {
     }
 }
 
-pub(crate) fn secure_url(url: &Url) -> Result<()> {
+pub(crate) fn validate_http_url(url: &Url) -> Result<()> {
     if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
         return Err(Error::Configuration(
             "URLs must not contain credentials or fragments.".into(),
         ));
     }
-    if url.scheme() == "https"
-        || (url.scheme() == "http"
-            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
-    {
-        Ok(())
-    } else {
-        Err(Error::Configuration(
-            "Use HTTPS, or loopback HTTP for local development.".into(),
-        ))
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(Error::Configuration(
+            "URL scheme must be HTTP or HTTPS.".into(),
+        ));
     }
+    Ok(())
 }
 async fn success(response: reqwest::Response) -> Result<reqwest::Response> {
     if response.status().is_success() || response.status() == StatusCode::TEMPORARY_REDIRECT {
@@ -328,4 +324,62 @@ async fn bounded_response(mut response: reqwest::Response, max: usize) -> Result
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Client;
+    use std::time::Duration;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    #[tokio::test]
+    async fn http_hostname_supports_authenticated_requests() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.ends_with(b"\r\n\r\n") {
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert!(count > 0, "request ended before its headers");
+                request.extend_from_slice(&buffer[..count]);
+                assert!(request.len() <= 16 * 1024);
+            }
+            let request = String::from_utf8(request).unwrap();
+            assert!(request.starts_with("GET /v1/info HTTP/1.1\r\n"));
+            assert!(request.lines().any(|line| {
+                line.split_once(':').is_some_and(|(name, value)| {
+                    name.eq_ignore_ascii_case("authorization")
+                        && value.trim() == "Bearer tailnet-test-key"
+                })
+            }));
+            let body = r#"{"api_version":"v1","server_version":"tailnet-test","capabilities":["sessions:read"],"limits":{"max_file_bytes":4096}}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        let mut client = Client::new(
+            &format!("http://athena:{}", address.port()),
+            "tailnet-test-key".into(),
+            Duration::from_secs(3),
+        )
+        .unwrap();
+        client.http = reqwest::Client::builder()
+            .no_proxy()
+            .resolve("athena", address)
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let info = client.info().await.unwrap();
+        assert_eq!(info.server_version, "tailnet-test");
+        assert_eq!(info.limits.max_file_bytes, 4096);
+        assert_eq!(info.capabilities, vec!["sessions:read"]);
+        server.await.unwrap();
+    }
 }

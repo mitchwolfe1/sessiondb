@@ -6,7 +6,7 @@ Status: initial operating model with later target-v1 features called out in [imp
 
 ## Deployment topology
 
-Run the `sessiondb-server` service with PostgreSQL and an existing S3-compatible object store. Provide TLS termination for remote access and a nonempty `SESSIONDB_API_KEY`. The development Compose profile supplies PostgreSQL and S3 dependencies; production instructions must identify persistent volumes and external secret configuration explicitly.
+Run the `sessiondb-server` service with PostgreSQL and an existing S3-compatible object store. Provide a nonempty `SESSIONDB_API_KEY` and use HTTPS across untrusted networks. HTTP is supported for protected private connections such as a Tailscale network. The development Compose profile supplies PostgreSQL and S3 dependencies; production instructions must identify persistent volumes and external secret configuration explicitly.
 
 The API verifies/stores/parses one native file before responding. A periodic orphan-cleanup task removes unreferenced objects; there is no durable job queue, generic worker subsystem, or separate parse runtime.
 
@@ -15,6 +15,8 @@ Only the server needs the S3 endpoint. Sync clients upload through the API, and 
 ## Configuration and credentials
 
 Use TOML with `--config` and documented environment overrides. The [server example](examples/server.toml) reflects the current shape. `[limits]` contains only `max_file_bytes` (default 268435456); there are no worker or upload-lease settings. `[objects]` configures the server's endpoint, bucket, region, path style, and credential environment references.
+
+`public_url` is the address clients use, not a requirement for internet exposure. Both HTTP and HTTPS are accepted without an extra insecure-mode flag. The server listener serves HTTP; setting an HTTPS `public_url` does not enable TLS. Use an external TLS terminator for HTTPS. Bind to the private interface or restrict its port with a firewall when serving HTTP.
 
 The operator provisions one strong shared key in `SESSIONDB_API_KEY`; `[auth] api_key_env = "SESSIONDB_API_KEY"` is the default environment reference, never a literal secret. Startup rejects an absent/empty key. There is no account bootstrap or external identity service. Every correct-key client can access all instance data and implemented mutations; use independent instances for isolation. See [authentication](authentication.md).
 

@@ -9,6 +9,8 @@ info:
 servers:
 - url: https://sessions.example.com
   description: Illustrative deployment URL
+- url: http://athena:6767
+  description: Illustrative protected private-network deployment URL
 security:
 - bearerAuth: []
 tags:

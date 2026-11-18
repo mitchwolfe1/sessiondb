@@ -9,6 +9,7 @@ Status: target-v1 resource and behavior contract. The [OpenAPI draft](openapi.ya
 - Base namespace `/v1`; JSON requests and responses use `snake_case` fields.
 - Resource IDs are opaque UUIDs. Native harness IDs and source paths remain separate string attributes. CLI slugs resolve through list/detail APIs.
 - One required instance-wide API key in `Authorization: Bearer <key>`. Every `/v1` API, including `/v1/info`, is protected. Health, readiness, and static `/openapi.yaml` are public.
+- Server origins may use HTTP or HTTPS. HTTP relies on operator-provided network protection; use HTTPS across untrusted networks. The API key is required with either scheme.
 - Timestamps are RFC 3339 with UTC output. `after` is inclusive and `before` is exclusive; message search uses the matching message's timestamp, with an explicit session-time fallback when absent.
 - List responses use `data` and nullable `next_cursor`. Default `limit=50`, maximum `200`. Cursors are opaque and bound to filters and ordering.
 - Default session order is `updated_at` descending with ID as a deterministic tie-breaker. Messages use recorded sequence with ID tie-breaking, not arbitrary timestamp sorting.

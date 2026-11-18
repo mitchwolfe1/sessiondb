@@ -134,11 +134,11 @@ pub fn normalize_server(server: &str) -> Result<String> {
         || url.fragment().is_some()
         || url.query().is_some()
         || !matches!(url.path(), "" | "/")
-        || !(url.scheme() == "https"
-            || (url.scheme() == "http"
-                && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))))
+        || !matches!(url.scheme(), "http" | "https")
     {
-        bail!("use an HTTPS server origin, or loopback HTTP, without credentials");
+        bail!(
+            "use an HTTP or HTTPS server origin without credentials, paths, queries, or fragments"
+        );
     }
     url.set_path("/");
     Ok(url.into())

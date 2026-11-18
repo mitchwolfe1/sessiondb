@@ -1,5 +1,15 @@
 # First implementation validation
 
+## Private-network HTTP
+
+HTTP and HTTPS origins are now accepted by the server, SDK, and CLI without a loopback-only restriction. The API key remains required.
+
+- Clippy passes for the three affected packages with warnings denied, and all seven affected-package tests pass.
+- The SDK regression makes an authenticated HTTP request to an `athena` hostname resolved to an isolated local listener.
+- The PostgreSQL/S3 integration passes with both HTTPS and `http://athena:6767` advertised URLs, verifying startup, regenerated content URLs, full-content reads, and the existing sync/authentication/recovery paths.
+- The actual CLI accepts the Athena HTTP URL and attempts a connection. That endpoint returned connection refused; the live Athena deployment itself was not verified.
+- OpenAPI/examples/fixture/link validation passes, and Markdown lint passes for 45 files.
+
 ## Strict-records cutover
 
 [ADR 0015](../decisions/0015-strict-native-records-and-simple-reads.md) supersedes the archival-failure, partial-normalization, parser-warning, and read-revision behavior in the historical sections below.

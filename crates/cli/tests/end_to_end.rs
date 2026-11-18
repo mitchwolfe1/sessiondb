@@ -896,26 +896,27 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(value["sources"][0]["accepted_files"], 0);
 
     // Restoring behind another public address must not expose stale content URLs.
-    server.stop();
-    let configuration = fs::read_to_string(&server.config).unwrap().replace(
-        &format!("public_url = \"{}\"", server.url),
-        "public_url = \"https://moved.example.com\"",
-    );
-    fs::write(&server.config, configuration).unwrap();
-    server.restart(&services, "restored").await;
-    let relocated = owner.message(m.id).await.unwrap();
-    assert!(
-        relocated
-            .content_url
-            .as_ref()
-            .unwrap()
-            .starts_with("https://moved.example.com/")
-    );
-    let relocated_content = owner.content(m.id).await.unwrap();
-    assert_eq!(
-        serde_json::to_value(&relocated_content.content).unwrap(),
-        serde_json::to_value(&expanded.content).unwrap()
-    );
+    let mut configuration: toml::Value =
+        toml::from_str(&fs::read_to_string(&server.config).unwrap()).unwrap();
+    for public_url in ["https://moved.example.com", "http://athena:6767"] {
+        server.stop();
+        configuration["public_url"] = toml::Value::String(public_url.into());
+        fs::write(&server.config, toml::to_string(&configuration).unwrap()).unwrap();
+        server.restart(&services, "restored").await;
+        let relocated = owner.message(m.id).await.unwrap();
+        assert!(
+            relocated
+                .content_url
+                .as_ref()
+                .unwrap()
+                .starts_with(&format!("{public_url}/"))
+        );
+        let relocated_content = owner.content(m.id).await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&relocated_content.content).unwrap(),
+            serde_json::to_value(&expanded.content).unwrap()
+        );
+    }
 
     // Replacing the one instance key revokes every previously configured client.
     server.api_key = format!("rotated-{}", Uuid::new_v4());

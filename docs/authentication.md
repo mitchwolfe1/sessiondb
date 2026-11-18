@@ -8,7 +8,9 @@ Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md). [First-build
 
 Every `/v1` endpoint, including `/v1/info`, requires the key before returning data or processing a request. `/healthz`, `/readyz`, and static `/openapi.yaml` are public. Missing, malformed, or incorrect bearer credentials return `401`; valid-key clients all have the same full access to the shared collection. There is no network login, discovery, refresh, account lookup, or credential-issuance API.
 
-Use HTTPS for remote deployments. Explicit loopback HTTP remains available for local development. Verify the secret with a constant-time comparison. Never write it into logs, diagnostics, ordinary configuration, examples, URLs, or command-line arguments.
+Both HTTP and HTTPS server URLs are supported. Use HTTPS across untrusted networks; HTTP is suitable over a protected connection such as an encrypted Tailscale network or loopback. HTTP itself does not encrypt the key or transcript data. See [ADR 0016](decisions/0016-http-private-networks.md).
+
+Verify the secret with a constant-time comparison. Never write it into logs, diagnostics, ordinary configuration, examples, URLs, or command-line arguments.
 
 ## CLI and SDK
 

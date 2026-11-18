@@ -1,6 +1,6 @@
 # One instance-wide API key
 
-Status: key boundary accepted; catalog/count/object-URL assumptions below superseded by [0014](0014-sessions-and-synchronous-files.md). Date: 2026-11-16.
+Status: key boundary accepted; catalog/count/object-URL assumptions below superseded by [0014](0014-sessions-and-synchronous-files.md), HTTPS-only transport by [0016](0016-http-private-networks.md). Date: 2026-11-16.
 
 ## Decision
 

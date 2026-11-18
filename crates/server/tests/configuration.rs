@@ -1,4 +1,4 @@
-use sessiondb_server::config::{Auth, Config, require_secure_url};
+use sessiondb_server::config::{Auth, Config, validate_http_url};
 use std::process::Command;
 
 #[test]
@@ -72,9 +72,14 @@ fn configuration_requires_a_nonempty_instance_key() {
 }
 
 #[test]
-fn plain_http_is_limited_to_loopback_development() {
-    assert!(require_secure_url(&"https://sessiondb.example.com".parse().unwrap(), false).is_ok());
-    assert!(require_secure_url(&"http://127.0.0.1:8180".parse().unwrap(), true).is_ok());
-    assert!(require_secure_url(&"http://127.0.0.1:8180".parse().unwrap(), false).is_err());
-    assert!(require_secure_url(&"http://sessiondb.example.com".parse().unwrap(), true).is_err());
+fn public_urls_reject_non_http_schemes_and_embedded_secrets() {
+    for value in [
+        "ftp://athena:6767",
+        "file:///tmp/sessiondb",
+        "http://user:password@athena:6767",
+        "http://athena:6767?key=secret",
+        "http://athena:6767#fragment",
+    ] {
+        assert!(validate_http_url(&value.parse().unwrap()).is_err());
+    }
 }

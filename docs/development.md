@@ -83,7 +83,16 @@ Volumes persist across stops. Removing these volumes resets the development data
 
 Use [the server configuration example](examples/server.toml) with PostgreSQL and an existing S3 bucket. Provision the instance key securely. With AWS, omit custom endpoint and explicit credential references to use the SDK chain, including instance/task roles. Custom endpoints can use path-style addressing. Only the server accesses S3; clients need only the API URL.
 
-[Authentication](authentication.md) describes the shared-key boundary. Remote deployments use HTTPS; loopback HTTP is a development option. The only external services required are PostgreSQL and S3.
+[Authentication](authentication.md) describes the shared-key boundary. Both HTTP and HTTPS server URLs are supported; use HTTPS across untrusted networks. The only external services required are PostgreSQL and S3.
+
+For a Tailscale-only host named `athena`, a direct HTTP deployment can use:
+
+```toml
+listen = "0.0.0.0:6767"
+public_url = "http://athena:6767"
+```
+
+Restrict port 6767 to the tailnet with a firewall, or replace the wildcard listen address with the host's Tailscale IP. The wildcard listens on every IPv4 interface. Tailscale encrypts traffic between peers; HTTP itself does not. The API key is still required.
 
 Environment overrides are `SESSIONDB_LISTEN`, `SESSIONDB_PUBLIC_URL`, and `SESSIONDB_S3_ENDPOINT`. Database/object secrets use configured environment names. Supply container configuration and run `migrate` before serving. Limits contain only `max_file_bytes`; no public S3 endpoint, presign TTL, or worker settings remain.
 
