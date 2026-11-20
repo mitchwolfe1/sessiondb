@@ -2,6 +2,8 @@
 
 Historical boundary: [ADR 0015](0015-strict-native-records-and-simple-reads.md) supersedes the permissive archival, parser-diagnostic, and conditional-read assumptions below. Other native semantics and per-file write-CAS/recovery decisions remain in force.
 
+Deployment boundary: [ADR 0018](0018-deployed-native-compatibility.md) supersedes the undeployed migration assumptions below. The initial migration is now immutable; deployed repairs use forward migrations.
+
 Status: accepted by the user. Date: 2026-11-16.
 
 ## Decision

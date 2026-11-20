@@ -2,6 +2,8 @@
 
 Status: accepted by the user; supersedes the permissive archival and conditional-read portions of ADRs 0011 and 0014.
 
+Deployment boundary: [ADR 0018](0018-deployed-native-compatibility.md) supersedes the undeployed migration assumptions below. Strict acceptance remains in force.
+
 ## Decision
 
 Accept a native file only when every supplied record is supported and valid. Parse the complete supplied snapshot before object registration, S3 writes, or catalog publication. Malformed JSON, invalid record structures, unsupported record/content kinds, invalid JSON function arguments, and unsupported inline artifacts reject the entire request with HTTP 400 `unsupported_native_record`. Return bounded safe reasons/record positions, never raw transcript contents. Preserve previous accepted file, generation, session, message, artifact, and checkpoint state on rejection. Store originals only for accepted valid files; there is no archive-invalid fallback or partial projection.

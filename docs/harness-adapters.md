@@ -2,7 +2,7 @@
 
 Adapters give native Codex, Claude Code, and Pi sessions a consistent SessionDB representation while preserving original files. They are implemented in `sessiondb-adapters` and do not require a running harness, model credentials, or database access.
 
-Status: proposed adapter contract. Native format support must be verified against versioned fixtures before release.
+Status: implemented bounded adapter contract. Native format support must be verified against versioned synthetic fixtures; new producer kinds are not silently accepted as unknown data.
 
 ## Adapter responsibilities
 
@@ -28,6 +28,8 @@ Read metadata from `session_meta`, per-turn settings from `turn_context`, model-
 
 Resolve call/results by native call IDs where available. Preserve opaque encrypted reasoning/replay fields as original data, without presenting them as readable hidden reasoning. Keep model/phase information when recorded.
 
+Known web-search items normalize recorded actions as tool calls without fabricating IDs or results. Tool-definition items, world-state snapshots, and token-usage records remain complete structural events. Complete injected AGENTS.md and environment-context messages retain native content and roles but use harness origin, so they do not supply default human-request titles.
+
 Newer metadata can distinguish thread ID, root session ID, fork ancestry, and `history_base` references to a bounded parent rollout. Resolve references through retained source bindings; preserve unresolved references when a parent is missing. Rollback and compaction are recorded events, not permission to erase original source bytes.
 
 Codex's local SQLite history projections and prompt-recall file are not substitutes for the native rollout. V1 collection uses rollout files and explicitly selected artifacts rather than synchronizing the provider's live SQLite databases.
@@ -37,6 +39,8 @@ Codex's local SQLite history projections and prompt-recall file are not substitu
 Do not require a fixed first-line header. Session metadata can appear on repeated records. Distinguish transcript record UUIDs from provider response IDs; several assistant rows can share one model response and repeated usage data. Usage aggregation must count the recorded response correctly rather than summing every repeated block row.
 
 Tool calls are assistant `tool_use` blocks; results can be `tool_result` blocks in user messages. Preserve meta/summary markers and distinguish them from a direct human input. Include parent-linked non-message nodes needed to connect conversation branches.
+
+Mode/permission changes, native attachments, and AI/custom titles are structural events with their complete native fields. Attachment nodes remain part of ancestor traversal; recognizing them does not authorize following arbitrary paths or fetching external content.
 
 Subagent files may share their parent's session ID; agent identity and source file scope keep them separate. Nested workflow directories and `fork-context-ref` records must not merge a child into its parent. Resolve external tool outputs only through the adapter's artifact allowlist.
 

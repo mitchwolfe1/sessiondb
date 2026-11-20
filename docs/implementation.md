@@ -4,8 +4,8 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 ## Available
 
-- Eleven sessions-first domain tables in the single initial PostgreSQL migration.
-- API-mediated synchronous multipart upload: verify/store/parse one file before HTTP 200, with visible per-file parse diagnostics and safe lost-response retries.
+- Eleven sessions-first domain tables originating in the immutable initial PostgreSQL migration, with forward deployed-data repairs.
+- API-mediated synchronous multipart upload: verify and fully normalize one file before HTTP 200, reject unsupported/malformed input as a whole, and safely recover lost responses.
 - S3 immutable originals/artifacts and age-based unreferenced-object cleanup.
 - Required nonempty instance key on every `/v1` operation, including info; equal full access for all correct-key clients.
 - Optional OS credential storage, contexts, CLI JSON, and shell completions.
@@ -25,4 +25,4 @@ An unavailable planned route returns `501 not_implemented`; unsupported paramete
 
 Only supported, valid native files are accepted. Any unsupported or malformed supplied record rejects the whole file with HTTP 400 before storage/catalog mutation. Native compatibility is bounded by the [fixture families](../fixtures/README.md), not a guarantee of exact model requests or harness resume.
 
-[Historical validation](validation/first-build.md) retains prior observed results. Those runs predate the sessions-first/synchronous redesign and do not validate it. No checks were run for this documentation change; [development](development.md#checks) lists the integrated verification commands.
+[Validation](validation/first-build.md) distinguishes observed checks for each revision from historical results. Native compatibility remains bounded; run the [development checks](development.md#checks) before claiming a new format or deployed upgrade works.

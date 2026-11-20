@@ -266,9 +266,12 @@ async fn resume(
                 {
                     state.reject(&pending).await?;
                     remove_snapshot(state, &pending.snapshot)?;
-                    return Err(sessiondb_client::Error::Problem(problem).into());
+                    return Err(sessiondb_client::Error::Problem(problem))
+                        .with_context(|| format!("upload {}", pending.metadata.path));
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    return Err(error).with_context(|| format!("upload {}", pending.metadata.path));
+                }
             };
             state.accept(&pending, &receipt).await?;
             remove_snapshot(state, &pending.snapshot)?;

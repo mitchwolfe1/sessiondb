@@ -4,11 +4,11 @@ Delivery proceeds through reviewable vertical slices. Phase zero and the first s
 
 ## Instance-key cutover
 
-[ADR 0013](decisions/0013-instance-api-key.md) defines the instance-wide key boundary across the server, types, SDK, CLI, and docs. Because the project has not been deployed, the current schema is defined directly in the initial migration rather than upgrading the abandoned identity model. Validate fresh catalog initialization and the complete storage/client path before recording new results.
+[ADR 0013](decisions/0013-instance-api-key.md) defines the instance-wide key boundary across the server, types, SDK, CLI, and docs. The abandoned identity model was replaced before deployment; Athena now has accepted data. Preserve its initial migration and validate forward upgrades as well as fresh catalog initialization before recording new results.
 
 ## Sessions-first synchronous cutover
 
-[ADR 0014](decisions/0014-sessions-and-synchronous-files.md) removes batch/job state and accepts one file through the API before replying. Each successful file checkpoints independently; multi-file atomicity is deliberately not promised. The catalog remains a single fresh migration. Integrated checks must verify per-file retries/rejections and retained native behavior before recording results.
+[ADR 0014](decisions/0014-sessions-and-synchronous-files.md) removes batch/job state and accepts one file through the API before replying. Each successful file checkpoints independently; multi-file atomicity is deliberately not promised. Preserve the initial catalog and add forward migrations for deployed repairs. Integrated checks must verify per-file retries/rejections, retained native behavior, and upgrades without losing accepted history.
 
 ## Phase zero
 

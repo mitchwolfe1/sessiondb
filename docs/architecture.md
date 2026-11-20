@@ -45,11 +45,11 @@ Each request is individually accepted; multiple files have no shared atomicity g
 
 ## Consistency and cleanup
 
-Read handlers map explicit catalog columns. Full message content is persisted once; previews/URLs are computed at read time. Native branches, subagents, inherited files, unknown records, artifact bytes, ranges, and ZIP exports remain available.
+Read handlers map explicit catalog columns. Full message content is persisted once; previews/URLs are computed at read time. Native branches, subagents, inherited files, known structural metadata, artifact bytes, ranges, and ZIP exports remain available; unknown native kinds reject the file.
 
 Periodic orphan cleanup removes only unreferenced old object metadata transactionally, then deletes corresponding S3 keys outside the transaction. Foreign keys protect publication and never-reused keys protect against delayed deletion. This is not a generic task/workflow subsystem.
 
-The undeployed project defines its eleven domain tables directly in `0001_catalog.sql`; no upgrade migrations or old protocol aliases are provided. All `/v1` resources use one shared key and all key holders see the same collection.
+The eleven domain tables originate in immutable `0001_catalog.sql`. Athena is deployed, so subsequent schema/data repairs use forward migrations without old protocol aliases or state resets. All `/v1` resources use one shared key and all key holders see the same collection.
 
 ## Applications and future retrieval
 

@@ -2,6 +2,7 @@ use crate::{
     AppState,
     api::{ApiPath, sources},
     error::{ApiError, ApiResult},
+    native_json::NativeJson,
 };
 use axum::{
     Json,
@@ -531,8 +532,8 @@ async fn publish(
         sqlx::query("INSERT INTO messages(id,session_id,sequence,role,native_role,origin,recorded_at,conversation_parent_id,content,provider_response_id,model,provider_usage,source_refs) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)")
             .bind(message_id).bind(id).bind(sequence as i64).bind(message.role.as_str())
             .bind(&message.native_role).bind(message.origin.as_str()).bind(message.timestamp).bind(parent)
-            .bind(sqlx::types::Json(&message.content)).bind(&message.provider_response_id)
-            .bind(&message.model).bind(message.provider_usage.as_ref().map(sqlx::types::Json))
+            .bind(NativeJson(&message.content)).bind(&message.provider_response_id)
+            .bind(&message.model).bind(message.provider_usage.as_ref().map(NativeJson))
             .bind(sqlx::types::Json(anchors))
             .execute(&mut **tx).await?;
     }
@@ -547,7 +548,7 @@ async fn publish(
         );
         sqlx::query("INSERT INTO session_events(id,session_id,sequence,type,recorded_at,native_type,data) VALUES($1,$2,$3,$4,$5,$4,$6)")
             .bind(event_id).bind(id).bind(sequence as i64).bind(event.event_type)
-            .bind(event.timestamp).bind(sqlx::types::Json(event.data)).execute(&mut **tx).await?;
+            .bind(event.timestamp).bind(NativeJson(event.data)).execute(&mut **tx).await?;
     }
     for artifact in artifacts {
         let kind = match artifact.kind {

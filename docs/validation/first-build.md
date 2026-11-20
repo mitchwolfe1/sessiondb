@@ -1,5 +1,15 @@
 # First implementation validation
 
+## Native compatibility and deployed title repair
+
+Synthetic regressions cover observed Codex web searches/tool definitions/world-state/usage records and Claude mode, permission, attachment, and title records. Unknown or malformed native kinds still reject the whole file. No personal transcript content was added to repository fixtures.
+
+- All 33 workspace tests pass. Workspace Clippy passes with warnings denied, and the workspace binary build passes.
+- Both real PostgreSQL/S3 integration tests pass. Fresh catalog creation and upgrade from migration 0001 verify automatic instruction-title repair, preserved manual titles, unchanged message IDs/text/native roles/tags, genuine marker-like human text, mixed blocks, blank text, instruction-only sessions, and safe derived titles without altering original control characters.
+- Existing storage, authentication, branch/artifact/native-export, atomic rejection, per-file recovery, backup/restore, and HTTP public-URL checks pass. CLI upload failures identify the source-relative filename.
+- Contract/link validation and Markdown lint pass.
+- Inspecting the concurrent Pi pending-upload window identified a NUL-bearing tool result. A minimal synthetic native upload reproduced HTTP 500 and PostgreSQL's `unsupported Unicode escape sequence` error before the fix. Migration `0003_native_json_payloads.sql` and the native JSON parameter codec now pass exact tool-text preview/full-content, provider-usage, event-data, and original-byte round trips. An unsupported overwrite still returns HTTP 400 and leaves the accepted NUL-bearing data intact. No personal transcript was used as a committed fixture, and the live Athena deployment has not been upgraded by these checks.
+
 ## Fixed credential environment variables
 
 Server secrets now use fixed environment names. The `[database]`/`[auth]` sections and all secret-variable-name options have been removed from server configuration, examples, development tooling, and integration setup.

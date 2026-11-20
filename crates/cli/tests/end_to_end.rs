@@ -59,19 +59,189 @@ async fn source(client: &Client, harness: Harness, label: &str) -> Source {
         .unwrap()
 }
 
+struct LegacyTitleCase {
+    id: Uuid,
+    title: &'static str,
+    blocks: Vec<Vec<&'static str>>,
+    expected_title: &'static str,
+    expected_origins: Vec<Origin>,
+}
+
+async fn seed_legacy_titles(pool: &sqlx::PgPool) -> Vec<LegacyTitleCase> {
+    const TITLE: &str = "# AGENTS.md instructions for /fixture";
+    const INSTRUCTIONS: &str = "# AGENTS.md instructions for /fixture\n\n<INSTRUCTIONS>\nSynthetic harness setup.\n</INSTRUCTIONS>";
+    const ENVIRONMENT: &str =
+        "<environment_context>\nSynthetic environment.\n</environment_context>";
+    const REQUEST: &str = "\n  verify\tthe saved tool output\u{1b}  \nKeep the original detail.";
+    const EXPECTED: &str = "verify the saved tool output";
+    const LITERAL: &str = "# AGENTS.md instructions for a test fixture";
+    let cases = vec![
+        LegacyTitleCase {
+            id: Uuid::new_v4(),
+            title: TITLE,
+            blocks: vec![vec![INSTRUCTIONS], vec![ENVIRONMENT], vec![REQUEST]],
+            expected_title: EXPECTED,
+            expected_origins: vec![Origin::Harness, Origin::Harness, Origin::NativeUser],
+        },
+        LegacyTitleCase {
+            id: Uuid::new_v4(),
+            title: "My chosen title",
+            blocks: vec![vec![INSTRUCTIONS], vec![REQUEST]],
+            expected_title: "My chosen title",
+            expected_origins: vec![Origin::Harness, Origin::NativeUser],
+        },
+        LegacyTitleCase {
+            id: Uuid::new_v4(),
+            title: LITERAL,
+            blocks: vec![vec![LITERAL]],
+            expected_title: LITERAL,
+            expected_origins: vec![Origin::NativeUser],
+        },
+        LegacyTitleCase {
+            id: Uuid::new_v4(),
+            title: TITLE,
+            blocks: vec![vec![
+                INSTRUCTIONS,
+                "A direct human request follows this block.",
+            ]],
+            expected_title: TITLE,
+            expected_origins: vec![Origin::NativeUser],
+        },
+        LegacyTitleCase {
+            id: Uuid::new_v4(),
+            title: "",
+            blocks: vec![vec![""], vec![REQUEST]],
+            expected_title: EXPECTED,
+            expected_origins: vec![Origin::NativeUser, Origin::NativeUser],
+        },
+        LegacyTitleCase {
+            id: Uuid::new_v4(),
+            title: TITLE,
+            blocks: vec![vec![INSTRUCTIONS], vec![ENVIRONMENT]],
+            expected_title: "Untitled session",
+            expected_origins: vec![Origin::Harness, Origin::Harness],
+        },
+    ];
+    let source = Uuid::new_v4();
+    sqlx::query("INSERT INTO sources(id,harness,device_label,root) VALUES($1,'codex','legacy-fixture','/fixture')")
+        .bind(source).execute(pool).await.unwrap();
+    for case in &cases {
+        sqlx::query("INSERT INTO sessions(id,source_id,native_key,harness,native_session_id,title,tags,updated_at,message_count) VALUES($1,$2,$3,'codex',$3,$4,ARRAY['legacy'],'2000-01-01T00:00:00Z',$5)")
+            .bind(case.id).bind(source).bind(format!("legacy-{}",case.id))
+            .bind(case.title).bind(case.blocks.len() as i64)
+            .execute(pool).await.unwrap();
+        let mut parent = None;
+        for (sequence, blocks) in case.blocks.iter().enumerate() {
+            let id = Uuid::new_v5(&case.id, &sequence.to_le_bytes());
+            let content: Vec<_> = blocks
+                .iter()
+                .map(|text| FullContentBlock::text(*text))
+                .collect();
+            sqlx::query("INSERT INTO messages(id,session_id,sequence,role,native_role,origin,recorded_at,conversation_parent_id,content) VALUES($1,$2,$3,'user','user','native_user','2000-01-01T00:00:00Z',$4,$5)")
+                .bind(id).bind(case.id).bind(sequence as i64).bind(parent)
+                .bind(sqlx::types::Json(content)).execute(pool).await.unwrap();
+            parent = Some(id);
+        }
+    }
+    cases
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires Docker and cargo build --workspace; uses isolated synthetic services"]
 async fn authenticated_sync_storage_and_recovery() {
     let root = tempfile::tempdir().unwrap();
     let services = Services::start().await;
-    let mut server = Server::start(root.path(), &services).await;
-    let owner = client(&server);
-    let peer = client(&server);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(4)
         .connect(&services.database_url("postgres"))
         .await
         .unwrap();
+    let migration_directory =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/migrations");
+    sqlx::migrate::Migrator::new(migration_directory.as_path())
+        .await
+        .unwrap()
+        .run_to(1, &pool)
+        .await
+        .unwrap();
+    let legacy_cases = seed_legacy_titles(&pool).await;
+    let mut server = Server::start(root.path(), &services).await;
+    let owner = client(&server);
+    let peer = client(&server);
+    sqlx::query("CREATE DATABASE fresh")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let migrated = server
+        .command(&services, "fresh")
+        .arg("migrate")
+        .output()
+        .unwrap();
+    assert!(
+        migrated.status.success(),
+        "fresh migrations failed: {}",
+        String::from_utf8_lossy(&migrated.stderr)
+    );
+    server.restart(&services, "fresh").await;
+    let fresh = client(&server);
+    let fresh_source = source(&fresh, Harness::Codex, "fresh-catalog").await;
+    let fresh_bytes = fixture("codex/home-tools.jsonl");
+    let fresh_receipt = ingest(
+        &fresh,
+        fresh_source.id,
+        "fresh.jsonl",
+        fresh_bytes.clone(),
+        None,
+    )
+    .await;
+    assert_eq!(
+        fresh
+            .session(fresh_receipt.session_ids[0])
+            .await
+            .unwrap()
+            .message_count,
+        7
+    );
+    let mut fresh_original = Vec::new();
+    fresh
+        .original_to(
+            fresh_source.id,
+            fresh_receipt.file.id,
+            None,
+            &mut fresh_original,
+        )
+        .await
+        .unwrap();
+    assert_eq!(fresh_original, fresh_bytes);
+    server.restart(&services, "postgres").await;
+    for case in &legacy_cases {
+        let session = owner.session(case.id).await.unwrap();
+        assert_eq!(session.title, case.expected_title);
+        assert_eq!(session.tags, vec!["legacy"]);
+        let messages = owner
+            .messages(case.id, &MessageFilter::default())
+            .await
+            .unwrap()
+            .data;
+        assert_eq!(messages.len(), case.blocks.len());
+        for (sequence, ((message, blocks), origin)) in messages
+            .iter()
+            .zip(&case.blocks)
+            .zip(&case.expected_origins)
+            .enumerate()
+        {
+            assert_eq!(message.id, Uuid::new_v5(&case.id, &sequence.to_le_bytes()));
+            assert_eq!(message.origin, *origin);
+            assert_eq!(message.native_role.as_deref(), Some("user"));
+            assert_eq!(message.content.len(), blocks.len());
+            for (block, expected) in message.content.iter().zip(blocks) {
+                let ContentBlock::Full(FullContentBlock::Text { text }) = block else {
+                    panic!("migration must preserve native text");
+                };
+                assert_eq!(text, expected);
+            }
+        }
+    }
 
     // The same instance key works for every client; there is no login or identity.
     for key in [None, Some("wrong-key"), Some("")] {
@@ -731,6 +901,7 @@ async fn authenticated_sync_storage_and_recovery() {
     fs::write(local.join("rejected.jsonl"), &unknown_bytes).unwrap();
     let rejected = cli(&server, root.path(), &["sync", "--json"]).await;
     assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("rejected.jsonl"));
     let status_output = cli(&server, root.path(), &["sync", "status", "--json"]).await;
     let status_value: Value = serde_json::from_slice(&status_output.stdout).unwrap();
     assert_eq!(status_value["pending_files"], 0);
@@ -942,4 +1113,111 @@ async fn authenticated_sync_storage_and_recovery() {
 
 fn zip_bytes(bytes: &[u8]) -> zip::ZipArchive<Cursor<&[u8]>> {
     zip::ZipArchive::new(Cursor::new(bytes)).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires Docker and built workspace binaries; uses isolated synthetic services"]
+async fn native_json_control_characters_round_trip() {
+    let root = tempfile::tempdir().unwrap();
+    let services = Services::start().await;
+    let mut server = Server::start(root.path(), &services).await;
+    let client = client(&server);
+    let source = source(&client, Harness::Pi, "json-controls").await;
+    let text = "before\u{0}after";
+    let request = "Preserve\u{0}the native tool output.";
+    let records = [
+        json!({"type":"session","version":3,"id":"pi-json-controls","cwd":"/fixture","timestamp":"2026-10-24T00:00:00Z"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1792800000000i64,"content":[{"type":"text","text":request}]}}),
+        json!({"type":"message","id":"assistant","parentId":"user","message":{"role":"assistant","timestamp":1792800000001i64,"usage":{"input":1,"nativeDetail":text},"content":[{"type":"toolCall","id":"call","name":"fixture_tool","arguments":{}}]}}),
+        json!({"type":"message","id":"result","parentId":"assistant","message":{"role":"toolResult","toolCallId":"call","isError":false,"timestamp":1792800000002i64,"content":[{"type":"text","text":text}]}}),
+        json!({"type":"custom","id":"metadata","parentId":"result","customType":"native-fixture","data":{"text":text}}),
+    ];
+    let mut bytes = Vec::new();
+    for record in records {
+        serde_json::to_writer(&mut bytes, &record).unwrap();
+        bytes.push(b'\n');
+    }
+    let receipt = client
+        .upload_file(
+            source.id,
+            &descriptor("controls.jsonl", &bytes, None),
+            Cursor::new(bytes.clone()),
+        )
+        .await
+        .unwrap_or_else(|error| {
+            panic!(
+                "native JSON ingestion failed: {error}\n{}",
+                fs::read_to_string(&server.log).unwrap()
+            )
+        });
+    assert_eq!(
+        client.session(receipt.session_ids[0]).await.unwrap().title,
+        "Preserve the native tool output."
+    );
+    let messages = client
+        .messages(receipt.session_ids[0], &MessageFilter::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&messages.data[0].content).unwrap()[0]["text"],
+        request
+    );
+    assert_eq!(
+        serde_json::to_value(&messages.data[2].content).unwrap()[0]["content"][0]["text"],
+        text
+    );
+    assert_eq!(
+        messages.data[1].provider_usage.as_ref().unwrap()["nativeDetail"],
+        text
+    );
+    let full = client.content(messages.data[2].id).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(full.content).unwrap()[0]["content"][0]["text"],
+        text
+    );
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&services.database_url("postgres"))
+        .await
+        .unwrap();
+    let event: sqlx::types::Json<Value> =
+        sqlx::query_scalar("SELECT data FROM session_events WHERE session_id=$1 AND type='custom'")
+            .bind(receipt.session_ids[0])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(event.0["data"]["text"], text);
+    let mut rejected_bytes = bytes.clone();
+    rejected_bytes.extend_from_slice(b"{\"type\":\"future_record\",\"id\":\"unsupported\"}\n");
+    status(
+        client
+            .upload_file(
+                source.id,
+                &descriptor(
+                    "controls.jsonl",
+                    &rejected_bytes,
+                    Some(receipt.file.version.clone()),
+                ),
+                Cursor::new(rejected_bytes),
+            )
+            .await
+            .unwrap_err(),
+        400,
+    );
+    let retained = client
+        .messages(receipt.session_ids[0], &MessageFilter::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&retained.data[2].content).unwrap()[0]["content"][0]["text"],
+        text
+    );
+    let mut original = Vec::new();
+    client
+        .original_to(source.id, receipt.file.id, None, &mut original)
+        .await
+        .unwrap();
+    assert_eq!(original, bytes);
+    server.stop();
+    pool.close().await;
 }

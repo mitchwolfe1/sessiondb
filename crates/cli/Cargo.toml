@@ -38,7 +38,7 @@ libc = "0.2"
 
 [dev-dependencies]
 aws-sdk-s3.workspace = true
-sqlx = { workspace = true, features = ["postgres"] }
+sqlx = { workspace = true, features = ["postgres", "migrate"] }
 reqwest.workspace = true
 zip.workspace = true
 

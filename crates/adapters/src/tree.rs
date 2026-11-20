@@ -13,8 +13,10 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
     }
     let mut session = native_session(
         id,
-        str_at(&header.value, "cwd"),
-        header.value.get("timestamp").and_then(timestamp),
+        records.iter().find_map(|r| str_at(&r.value, "cwd")),
+        records
+            .iter()
+            .find_map(|r| r.value.get("timestamp").and_then(timestamp)),
     );
     let agent = records
         .iter()
@@ -52,24 +54,43 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
         optional_str(value, "cwd", record)?;
         let kind = required_str(value, "type", record)?;
         if !matches!(kind, "user" | "assistant") {
-            if !matches!(
-                kind,
+            let event_type = match kind {
+                "mode" | "permission-mode" | "ai-title" => {
+                    required_str(value, "sessionId", record)?;
+                    let field = match kind {
+                        "mode" => "mode",
+                        "permission-mode" => "permissionMode",
+                        _ => "aiTitle",
+                    };
+                    required_str(value, field, record)?;
+                    kind
+                }
+                "custom-title" => {
+                    required_str(value, "customTitle", record)?;
+                    kind
+                }
+                "attachment" => {
+                    required_str(value, "uuid", record)?;
+                    optional_bool(value, "isSidechain", record)?;
+                    let attachment = object(required(value, "attachment", record)?, record)?;
+                    if required_str(attachment, "type", record)?.is_empty() {
+                        return Err(invalid(record, "empty native attachment type"));
+                    }
+                    kind
+                }
                 "system"
-                    | "progress"
-                    | "queue-operation"
-                    | "file-history-snapshot"
-                    | "summary"
-                    | "last-prompt"
-                    | "custom-title"
-                    | "agent-name"
-                    | "agent-color"
-                    | "tag"
-                    | "pr-link"
-            ) {
-                return Err(invalid(record, "unsupported outer record kind"));
-            }
-            let subtype = optional_str(value, "subtype", record)?;
-            session.events.push(event(record, subtype.unwrap_or(kind)));
+                | "progress"
+                | "queue-operation"
+                | "file-history-snapshot"
+                | "summary"
+                | "last-prompt"
+                | "agent-name"
+                | "agent-color"
+                | "tag"
+                | "pr-link" => optional_str(value, "subtype", record)?.unwrap_or(kind),
+                _ => return Err(invalid(record, "unsupported outer record kind")),
+            };
+            session.events.push(event(record, event_type));
             continue;
         }
         required_str(value, "uuid", record)?;

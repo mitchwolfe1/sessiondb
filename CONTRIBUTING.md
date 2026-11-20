@@ -10,7 +10,7 @@ Lead with what SessionDB does and how to use it. Put access settings and deploym
 
 State whether a choice is an agreed requirement, a proposed implementation, or an unresolved question. Resolve contradictions rather than adding another competing example. Keep examples synthetic and runnable-looking examples explicitly identified as proposed while implementation is absent.
 
-Follow [ADR 0014](docs/decisions/0014-sessions-and-synchronous-files.md) for the sessions-first catalog and synchronous per-file API. Update shared types, multipart/OpenAPI contract, examples, config, CLI `pending_files`, and recovery together. No batch/job compatibility paths or deployment-upgrade migrations belong in this undeployed cutover. Preserve historical checks as history, never as proof of new behavior.
+Follow [ADR 0014](docs/decisions/0014-sessions-and-synchronous-files.md) for the sessions-first catalog and synchronous per-file API. Update shared types, multipart/OpenAPI contract, examples, config, CLI `pending_files`, and recovery together. No batch/job compatibility paths belong in the current model. Athena is deployed: preserve the initial migration and add forward migrations for schema/data repairs, as required by [ADR 0018](docs/decisions/0018-deployed-native-compatibility.md). Preserve historical checks as history, never as proof of new behavior.
 
 Follow [ADR 0015](docs/decisions/0015-strict-native-records-and-simple-reads.md) for strict whole-file rejection before storage and simple reads without parser diagnostics or revisions. Keep raw rejection fixtures and accepted precision coverage; upload `expected_version` remains the independent write-CAS protocol. Record integrated verification only after it runs.
 

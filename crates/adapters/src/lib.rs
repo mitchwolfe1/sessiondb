@@ -77,23 +77,41 @@ pub struct NativeSession {
 }
 impl NativeSession {
     pub fn title(&self) -> String {
+        for (kind, field) in [("custom-title", "customTitle"), ("ai-title", "aiTitle")] {
+            if let Some(title) = self
+                .events
+                .iter()
+                .rev()
+                .filter(|event| event.event_type == kind)
+                .filter_map(|event| str_at(&event.data, field))
+                .find_map(title_text)
+            {
+                return title;
+            }
+        }
         self.messages
             .iter()
             .filter(|m| m.origin == Origin::NativeUser)
             .flat_map(|m| &m.content)
             .find_map(|b| match b {
-                FullContentBlock::Text { text } => Some(
-                    text.lines()
-                        .next()
-                        .unwrap_or("")
-                        .chars()
-                        .take(160)
-                        .collect(),
-                ),
+                FullContentBlock::Text { text } => title_text(text),
                 _ => None,
             })
             .unwrap_or_else(|| "Untitled session".into())
     }
+}
+
+fn title_text(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let mut title: String = line
+            .chars()
+            .map(|ch| if ch.is_control() { ' ' } else { ch })
+            .skip_while(|ch| ch.is_whitespace())
+            .take(160)
+            .collect();
+        title.truncate(title.trim_end().len());
+        (!title.is_empty()).then_some(title)
+    })
 }
 #[derive(Debug, Clone)]
 pub struct ParsedFile {

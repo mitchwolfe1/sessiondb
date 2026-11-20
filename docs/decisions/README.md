@@ -21,5 +21,7 @@ Decision records explain choices that affect several SessionDB components. Requi
 | [0015 Strict native records and simple reads](0015-strict-native-records-and-simple-reads.md) | Accepted | Whole-file rejection before storage; no read revisions or parser diagnostics |
 | [0016 HTTP on private networks](0016-http-private-networks.md) | Accepted | HTTP and HTTPS URLs; operator-managed network protection with the same required API key |
 | [0017 Fixed secret environment variables](0017-fixed-secret-environment-variables.md) | Accepted | Fixed database/API-key/S3 credential names; no secret-reference TOML fields or empty wrapper sections |
+| [0018 Native compatibility and deployed upgrades](0018-deployed-native-compatibility.md) | Accepted | Known native tools/metadata, harness-origin titles, immutable initial migration and forward data repair |
+| [0019 Lossless native JSON payloads](0019-native-json-payloads.md) | Accepted implementation correction | Preserve valid control characters with PostgreSQL JSON and a typed JSON parameter codec |
 
 An accepted direction does not mean every example field or default has been approved. Accept a proposed record after its assumptions and relevant open questions are reviewed. Supersede records with a new linked decision rather than erasing the rationale.

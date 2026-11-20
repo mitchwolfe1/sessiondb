@@ -2,7 +2,7 @@
 
 SessionDB stores conversations and their original native files. A **session** contains **messages**, structural **events**, and **artifacts**. Optional **projects** label sessions. A **source** records which client harness store supplied a file; **file generations** preserve native rewrites. **Objects** describe immutable S3 bytes used by originals and artifacts.
 
-Status: accepted and implemented in the single [initial migration](../crates/server/migrations/0001_catalog.sql). [ADR 0014](decisions/0014-sessions-and-synchronous-files.md) records the sessions-first design and synchronous file contract.
+Status: accepted and implemented, originating in the immutable [initial migration](../crates/server/migrations/0001_catalog.sql). Athena is deployed; subsequent changes use forward migrations. [ADR 0014](decisions/0014-sessions-and-synchronous-files.md) records the sessions-first design and synchronous file contract.
 
 ## Catalog tables
 
@@ -22,11 +22,15 @@ Status: accepted and implemented in the single [initial migration](../crates/ser
 
 Ordinary metadata uses explicit columns, foreign keys, and uniqueness constraints. JSON is reserved for variable typed content, native relations, usage, source references, and event payloads. There are no duplicate session/message/event `document` blobs. Message previews and content URLs are generated at read time from the one full `messages.content` value. Object hashes and lengths are stored once in `objects`, not repeated in original/artifact rows.
 
+Opaque message content, provider usage, and native event data use PostgreSQL `json`, not `jsonb`: valid native strings can contain escaped NUL characters that JSONB cannot represent. Migration `0003_native_json_payloads.sql` converts existing payloads without scrubbing data. Typed relation/source-reference metadata remains JSONB; native payloads are decoded in the application rather than cast back to JSONB.
+
 ## Conversations and native history
 
 A source file can contribute to several sessions; one session can require several native files. Claude subagents can repeat their parent's native session ID, so source/native bindings matter. Proven copies remain explicit and divergent copies are not silently merged. Native roles describe recorded data, not proof of human authorship.
 
 Messages contain typed text, available reasoning, tool calls/results, JSON and artifact references. [Normalized content](normalized-content.md) defines their wire shapes. `conversation_parent_id` describes branching independently of tool/delegation relationships. The default historical view includes alternate branches; `leaf_id` selects ancestry. Compaction/context edits remain events, not invented provider requests. Exact replay and native harness resume are not promised.
+
+Complete Codex AGENTS.md/environment setup envelopes retain their content/native role but have harness origin, not direct-human origin. Default titles prefer recorded native custom/AI titles and then meaningful human text. Display titles normalize control characters to spaces while the original message content remains unchanged. Forward migration `0002_codex_instruction_origins.sql` repairs legacy Codex defaults without replacing manually different titles or altering original content.
 
 ## Collection and projects
 

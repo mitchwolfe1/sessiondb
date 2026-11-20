@@ -259,10 +259,8 @@ assert multipart["encoding"] == {
     "file": {"contentType": "application/x-ndjson"},
 }
 
-# Keep the undeployed initial catalog session-centered and free of workflow scaffolding.
-migrations = list((ROOT / "crates/server/migrations").glob("*.sql"))
-assert [path.name for path in migrations] == ["0001_catalog.sql"]
-catalog = migrations[0].read_text()
+# Keep the immutable base catalog session-centered; deployed changes use forward migrations.
+catalog = (ROOT / "crates/server/migrations/0001_catalog.sql").read_text()
 assert re.findall(r"CREATE TABLE (\w+)", catalog) == [
     "sessions", "messages", "session_events", "projects", "session_projects",
     "objects", "artifacts", "sources", "source_files", "file_generations", "session_files",

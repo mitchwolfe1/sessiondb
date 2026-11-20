@@ -50,9 +50,11 @@ Foreground `sync --watch` currently performs polling and reconnects after transi
 
 Ordered SQL migrations live with the server. Run `sessiondb-server migrate` explicitly before serving. Startup checks migration versions/checksums and fails with an actionable message if migrations are required; it does not unexpectedly apply destructive changes.
 
-The project has not been deployed, so `0001_catalog.sql` directly creates the current instance-wide schema. There is no second migration or upgrade path from the abandoned identity model. Disposable development databases created with earlier migration history must be recreated; startup correctly rejects their obsolete versions/checksums. Do not edit the migration ledger to bypass that mismatch.
+Athena is deployed. Keep `0001_catalog.sql` unchanged and append forward migrations for subsequent schema/data repairs. Migration `0002_codex_instruction_origins.sql` repairs legacy Codex harness origins and instruction-derived titles while retaining original text, IDs, and manually chosen titles.
 
-Future deployed upgrades will need an explicit compatibility policy. There are no old clients or workers to overlap in this undeployed clean cutover.
+Migration `0003_native_json_payloads.sql` changes opaque native payload columns to PostgreSQL `json`, preserving valid control-character escapes such as `\u0000`. Rebuild and migrate before retrying a Pi tool-output file previously rejected by JSONB; do not edit native files or discard pending snapshots to work around the error.
+
+Before upgrading, back up PostgreSQL and object storage, stop the API, run `migrate` using the new server build/configuration/environment, then restart that build. Preserve client state and server volumes. Do not edit the migration ledger, replay the initial migration, or reset the deployed database to bypass a checksum/version mismatch. Abandoned pre-deployment identity catalogs are not a supported deployed upgrade source. See [ADR 0018](decisions/0018-deployed-native-compatibility.md).
 
 The toolchain and dependencies are locked in Cargo. Release checks include formatting, Clippy, unit/integration tests, API compatibility, and migration tests. PostgreSQL/pgvector/object-store versions belong in the tested deployment matrix rather than being inferred from `latest` tags. Supported release targets still require packaging checks.
 
