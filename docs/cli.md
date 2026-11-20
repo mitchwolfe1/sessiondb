@@ -59,7 +59,7 @@ Human output is a stable, readable table or transcript. `--json` writes structur
 
 Support `--help`, `--version`, generated shell completions, `--server`, `--context`, `--config`, `--timeout`, and quiet/verbose modes consistently. Server-side filters behave the same through the CLI and SDK.
 
-Exit codes distinguish success (`0`), operational failure (`1`), usage (`2`), authentication (`3`), and missing resources (`4`). Interrupted watch exits with the signal-derived status. There are no jobs or wait commands; each successful file response is its acceptance receipt.
+Exit codes distinguish success (`0`), operational failure (`1`), usage (`2`), authentication (`3`), and missing resources (`4`). A sync pass with rejected native files reports their paths and reasons and finishes other uploads. In `sync --json`, affected source reports include a `rejections` object mapping source-relative paths to reasons. One-shot sync exits `1` after reporting these rejections. Interrupted watch exits with the signal-derived status.
 
 ## Configuration
 

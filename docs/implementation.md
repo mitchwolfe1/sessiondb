@@ -9,7 +9,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - S3 immutable originals/artifacts and age-based unreferenced-object cleanup.
 - Required nonempty instance key on every `/v1` operation, including info; equal full access for all correct-key clients.
 - Optional OS credential storage, contexts, CLI JSON, and shell completions.
-- Source registration, one-shot and polling watch sync, persistent per-file snapshots/checkpoints, and `pending_files` recovery.
+- Source registration, one-shot and polling watch sync, persistent per-file snapshots/checkpoints, and `pending_files` recovery. A sync pass reports individual native-file rejections and continues collecting other files.
 - Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
 - Readiness, request IDs, and optional aggregate request metrics.
 

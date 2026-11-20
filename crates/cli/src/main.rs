@@ -366,16 +366,19 @@ async fn run(args: &Cli) -> Result<()> {
                         }
                     }
                     emit(args, &json!({"sources":results}), || {
-                        for value in &results {
+                        for report in &results {
                             println!(
                                 "{}: {} file(s) accepted",
-                                value["source_id"].as_str().unwrap_or(""),
-                                value["accepted_files"]
+                                report.source_id, report.accepted_files
                             );
                         }
                     })?;
                     if let Some(error) = first_error {
                         return Err(error);
+                    }
+                    let rejected: usize = results.iter().map(|r| r.rejections.len()).sum();
+                    if rejected > 0 {
+                        bail!("{rejected} file(s) rejected");
                     }
                     Ok(())
                 };

@@ -897,11 +897,53 @@ async fn authenticated_sync_storage_and_recovery() {
     let unchanged: Value = serde_json::from_slice(&unchanged.stdout).unwrap();
     assert_eq!(unchanged["sources"][0]["accepted_files"], 0);
 
-    // Rejected snapshots do not advance checkpoints or block a repaired local file.
+    // Drain the saved batch and still scan for new files when individual uploads reject.
+    let config_path = root.path().join("client.toml");
+    let mut local_config: toml::Value =
+        toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+    local_config["sync"]["upload_concurrency"] = toml::Value::Integer(1);
+    fs::write(&config_path, toml::to_string(&local_config).unwrap()).unwrap();
+    fs::write(
+        local.join("a-recovery.jsonl"),
+        fixture("codex/precision.jsonl"),
+    )
+    .unwrap();
     fs::write(local.join("rejected.jsonl"), &unknown_bytes).unwrap();
+    docker(&["pause", &services.s3]);
+    let interrupted = cli(&server, root.path(), &["--timeout", "1", "sync", "--json"]).await;
+    docker(&["unpause", &services.s3]);
+    assert!(!interrupted.status.success());
+    let interrupted_status = cli(&server, root.path(), &["sync", "status", "--json"]).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&interrupted_status.stdout).unwrap()["pending_files"],
+        2
+    );
+    fs::write(local.join("second-rejected.jsonl"), &unknown_bytes).unwrap();
+    fs::write(
+        local.join("z-fresh.jsonl"),
+        fixture("codex/fork/parent.jsonl"),
+    )
+    .unwrap();
     let rejected = cli(&server, root.path(), &["sync", "--json"]).await;
-    assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("rejected.jsonl"));
+    assert_eq!(rejected.status.code(), Some(1));
+    let output: Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    let report = &output["sources"][0];
+    assert_eq!(report["accepted_files"], 2);
+    assert_eq!(report["rejections"].as_object().unwrap().len(), 2);
+    for path in ["rejected.jsonl", "second-rejected.jsonl"] {
+        assert!(
+            report["rejections"][path]
+                .as_str()
+                .unwrap()
+                .contains("unsupported_native_record")
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&rejected.stderr)
+                .matches(&format!("Rejected {path} for source"))
+                .count(),
+            1
+        );
+    }
     let status_output = cli(&server, root.path(), &["sync", "status", "--json"]).await;
     let status_value: Value = serde_json::from_slice(&status_output.stdout).unwrap();
     assert_eq!(status_value["pending_files"], 0);
@@ -911,6 +953,8 @@ async fn authenticated_sync_storage_and_recovery() {
         .unwrap()
         .data;
     assert!(!accepted.iter().any(|file| file.path == "rejected.jsonl"));
+    assert!(accepted.iter().any(|file| file.path == "z-fresh.jsonl"));
+    assert!(accepted.iter().any(|file| file.path == "a-recovery.jsonl"));
     assert_eq!(
         accepted
             .iter()
@@ -920,6 +964,7 @@ async fn authenticated_sync_storage_and_recovery() {
         cli_file.version
     );
     let repaired = fixture("codex/fork/parent.jsonl");
+    fs::remove_file(local.join("second-rejected.jsonl")).unwrap();
     fs::write(local.join("rejected.jsonl"), &repaired).unwrap();
     let output = cli(&server, root.path(), &["sync", "--json"]).await;
     assert!(
@@ -945,9 +990,6 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(repaired_original, repaired);
 
     // Foreground watch finds the completed tail and exits conventionally on SIGINT.
-    let config_path = root.path().join("client.toml");
-    let mut local_config: toml::Value =
-        toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
     local_config["sync"]["reconcile_interval_seconds"] = toml::Value::Integer(1);
     fs::write(&config_path, toml::to_string(&local_config).unwrap()).unwrap();
     let watch_log = fs::File::create(root.path().join("watch.log")).unwrap();

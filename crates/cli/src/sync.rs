@@ -3,13 +3,13 @@ use crate::{
     state::{LocalState, Pending},
 };
 use anyhow::{Context, Result, bail};
-use futures_util::{StreamExt, TryStreamExt};
-use serde_json::json;
+use futures_util::StreamExt;
+use serde::Serialize;
 use sessiondb_client::Client;
 use sessiondb_types::{FileUpload, Harness, ListOptions, Source, SourceCreate, SourceFile};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap, HashSet},
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -96,20 +96,34 @@ async fn remote_files(client: &Client, source: Uuid) -> Result<HashMap<String, S
     }
 }
 
+#[derive(Default, Serialize)]
+pub struct SourceReport {
+    pub source_id: Uuid,
+    pub accepted_files: usize,
+    pub deferred_tail_files: usize,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub rejections: BTreeMap<String, String>,
+}
+
 pub async fn source(
     client: &Client,
     state: &LocalState,
     source: &Source,
     options: &SyncOptions,
     quiet: bool,
-) -> Result<serde_json::Value> {
+) -> Result<SourceReport> {
+    let mut report = SourceReport {
+        source_id: source.id,
+        ..Default::default()
+    };
     // Resolve saved snapshots before later local bytes can replace them.
-    let mut accepted = resume(
+    resume(
         client,
         state,
         state.pending(source.id).await?,
         options,
         quiet,
+        &mut report,
     )
     .await?;
     let limits = client.info().await?.limits;
@@ -121,8 +135,16 @@ pub async fn source(
         .join("pending")
         .join(Uuid::new_v4().to_string());
     let dir = directory.clone();
+    let rejected_paths = report.rejections.keys().cloned().collect();
     let scan = match tokio::task::spawn_blocking(move || {
-        scan(&root, source_id, &remote, &dir, limits.max_file_bytes)
+        scan(
+            &root,
+            source_id,
+            &remote,
+            &dir,
+            limits.max_file_bytes,
+            &rejected_paths,
+        )
     })
     .await?
     {
@@ -132,14 +154,14 @@ pub async fn source(
             return Err(error);
         }
     };
-    let deferred = scan.deferred;
+    report.deferred_tail_files = scan.deferred;
     if scan.files.is_empty() {
         remove_snapshot_dir(state, &directory)?;
     } else {
         state.save_pending(&scan.files).await?;
-        accepted += resume(client, state, scan.files, options, quiet).await?;
+        resume(client, state, scan.files, options, quiet, &mut report).await?;
     }
-    Ok(json!({"source_id":source.id,"accepted_files":accepted,"deferred_tail_files":deferred}))
+    Ok(report)
 }
 struct Scan {
     files: Vec<Pending>,
@@ -151,6 +173,7 @@ fn scan(
     remote: &HashMap<String, SourceFile>,
     directory: &Path,
     max_bytes: u64,
+    rejected_paths: &HashSet<String>,
 ) -> Result<Scan> {
     if !root.is_dir() {
         bail!("native store {} is unavailable", root.display());
@@ -172,6 +195,9 @@ fn scan(
             .to_str()
             .context("session path must be UTF-8")?
             .replace(std::path::MAIN_SEPARATOR, "/");
+        if rejected_paths.contains(&relative) {
+            continue;
+        }
         let mut options = OpenOptions::new();
         options.read(true);
         #[cfg(unix)]
@@ -250,8 +276,9 @@ async fn resume(
     pending: Vec<Pending>,
     options: &SyncOptions,
     quiet: bool,
-) -> Result<usize> {
-    futures_util::stream::iter(pending)
+    report: &mut SourceReport,
+) -> Result<()> {
+    let mut uploads = futures_util::stream::iter(pending)
         .map(|pending| async move {
             let file = tokio::fs::File::open(&pending.snapshot)
                 .await
@@ -266,8 +293,12 @@ async fn resume(
                 {
                     state.reject(&pending).await?;
                     remove_snapshot(state, &pending.snapshot)?;
-                    return Err(sessiondb_client::Error::Problem(problem))
-                        .with_context(|| format!("upload {}", pending.metadata.path));
+                    let reason = sessiondb_client::Error::Problem(problem).to_string();
+                    eprintln!(
+                        "Rejected {} for source {}: {reason}",
+                        pending.metadata.path, pending.source_id
+                    );
+                    return Ok(Some((pending.metadata.path, reason)));
                 }
                 Err(error) => {
                     return Err(error).with_context(|| format!("upload {}", pending.metadata.path));
@@ -281,11 +312,18 @@ async fn resume(
                     pending.metadata.path, pending.source_id
                 );
             }
-            Ok::<(), anyhow::Error>(())
+            Ok::<_, anyhow::Error>(None)
         })
-        .buffer_unordered(options.upload_concurrency.clamp(1, 16))
-        .try_fold(0, |accepted, ()| async move { Ok(accepted + 1) })
-        .await
+        .buffer_unordered(options.upload_concurrency.clamp(1, 16));
+    while let Some(result) = uploads.next().await {
+        match result? {
+            Some((path, reason)) => {
+                report.rejections.insert(path, reason);
+            }
+            None => report.accepted_files += 1,
+        }
+    }
+    Ok(())
 }
 fn remove_snapshot(state: &LocalState, snapshot: &Path) -> Result<()> {
     let directory = snapshot.parent().context("snapshot has no parent")?;

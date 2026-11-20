@@ -33,7 +33,7 @@ After a disconnect or lost response, retry the same metadata and snapshot using 
 
 Otherwise the server compares `expected_version` again before committing. A stale value returns `409 version_conflict`; refresh source files and reconcile rather than blindly overwriting newer bytes. A request interrupted before publication leaves the previous accepted state intact; unreferenced prepared objects are cleaned later.
 
-Client state is operational recovery data, not a second session database. `sessiondb sync status --json` reports `pending_files`, accepted checkpoints, and bounded errors, without jobs or a wait command. File-upload errors include the source-relative path. A permanent `400 unsupported_native_record` discards the rejected pending snapshot without advancing its checkpoint and propagates the error; a later pass can recapture a repaired local file. Authentication errors stop attempts until a valid key is supplied; watch can recover from transient outages on a later reconciliation.
+Client state holds pending snapshots and accepted checkpoints. `sessiondb sync status --json` reports their counts. On `400 unsupported_native_record`, sync reports the source-relative path and reason, discards that pending snapshot, and continues with the remaining saved and newly discovered files. Each rejected path is attempted once per pass and remains eligible on the next pass after a local repair or server upgrade. Only successful receipts advance checkpoints. A one-shot sync with any rejection exits nonzero. Authentication errors stop attempts until a valid key is supplied. Watch can recover from transient outages on a later reconciliation.
 
 ## Appends and rewrites
 
