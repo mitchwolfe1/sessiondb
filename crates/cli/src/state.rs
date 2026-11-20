@@ -5,7 +5,10 @@ use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 use uuid::Uuid;
 
 pub struct LocalState {
@@ -16,6 +19,13 @@ pub struct Pending {
     pub source_id: Uuid,
     pub metadata: FileUpload,
     pub snapshot: PathBuf,
+}
+#[derive(serde::Serialize)]
+pub struct RejectedFile {
+    pub source_id: String,
+    pub path: String,
+    pub reason: String,
+    pub rejected_at: String,
 }
 impl LocalState {
     pub async fn open(directory: &Path) -> Result<Self> {
@@ -48,6 +58,15 @@ impl LocalState {
                 source_id TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL,
                 sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,accepted_at TEXT NOT NULL,
                 PRIMARY KEY(source_id,path)
+            );
+            CREATE TABLE IF NOT EXISTS rejected_files(
+                server TEXT NOT NULL,source_id TEXT NOT NULL,path TEXT NOT NULL,
+                sha256 TEXT NOT NULL,server_version TEXT NOT NULL,reason TEXT NOT NULL,rejected_at TEXT NOT NULL,
+                PRIMARY KEY(server,source_id,path)
+            );
+            CREATE TABLE IF NOT EXISTS last_watch_pass(
+                id INTEGER PRIMARY KEY CHECK(id=1),server TEXT NOT NULL,context TEXT NOT NULL,
+                finished_at TEXT NOT NULL,error TEXT
             );",
         )
         .execute(&pool)
@@ -128,7 +147,12 @@ impl LocalState {
         tx.commit().await?;
         Ok(())
     }
-    pub async fn accept(&self, pending: &Pending, receipt: &FileUploadResult) -> Result<()> {
+    pub async fn accept(
+        &self,
+        server: &str,
+        pending: &Pending,
+        receipt: &FileUploadResult,
+    ) -> Result<()> {
         let file = &receipt.file;
         if file.source_id != pending.source_id
             || file.path != pending.metadata.path
@@ -152,10 +176,27 @@ impl LocalState {
             .bind(&file.path)
             .execute(&mut *tx)
             .await?;
+        sqlx::query("DELETE FROM rejected_files WHERE server=? AND source_id=? AND path=?")
+            .bind(server)
+            .bind(file.source_id.to_string())
+            .bind(&file.path)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         Ok(())
     }
-    pub async fn reject(&self, pending: &Pending) -> Result<()> {
+    pub async fn reject(
+        &self,
+        pending: &Pending,
+        server: &str,
+        version: &str,
+        reason: &str,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT INTO rejected_files(server,source_id,path,sha256,server_version,reason,rejected_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(server,source_id,path) DO UPDATE SET sha256=excluded.sha256,server_version=excluded.server_version,reason=excluded.reason,rejected_at=excluded.rejected_at")
+            .bind(server).bind(pending.source_id.to_string()).bind(&pending.metadata.path)
+            .bind(&pending.metadata.sha256).bind(version).bind(reason).bind(chrono::Utc::now().to_rfc3339())
+            .execute(&mut *tx).await?;
         sqlx::query("DELETE FROM pending_files WHERE source_id=? AND path=? AND snapshot=?")
             .bind(pending.source_id.to_string())
             .bind(&pending.metadata.path)
@@ -165,8 +206,79 @@ impl LocalState {
                     .to_str()
                     .context("snapshot path must be UTF-8")?,
             )
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+    pub async fn rejection_hashes(
+        &self,
+        server: &str,
+        source: Uuid,
+    ) -> Result<HashMap<String, (String, String)>> {
+        let rows: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT path,sha256,server_version FROM rejected_files WHERE server=? AND source_id=?",
+        )
+        .bind(server)
+        .bind(source.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(path, hash, version)| (path, (hash, version)))
+            .collect())
+    }
+    pub async fn forget_rejections(
+        &self,
+        server: &str,
+        source: Uuid,
+        paths: Vec<String>,
+    ) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        let id = source.to_string();
+        for path in paths {
+            sqlx::query("DELETE FROM rejected_files WHERE server=? AND source_id=? AND path=?")
+                .bind(server)
+                .bind(&id)
+                .bind(path)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+    pub async fn retry_rejections(&self, server: &str) -> Result<u64> {
+        Ok(sqlx::query("DELETE FROM rejected_files WHERE server=?")
+            .bind(server)
+            .execute(&self.pool)
+            .await?
+            .rows_affected())
+    }
+    pub async fn list_rejections(&self, server: &str) -> Result<Vec<RejectedFile>> {
+        let rows=sqlx::query("SELECT source_id,path,reason,rejected_at FROM rejected_files WHERE server=? ORDER BY source_id,path")
+            .bind(server).fetch_all(&self.pool).await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(RejectedFile {
+                    source_id: row.try_get("source_id")?,
+                    path: row.try_get("path")?,
+                    reason: row.try_get("reason")?,
+                    rejected_at: row.try_get("rejected_at")?,
+                })
+            })
+            .collect()
+    }
+    pub async fn watch_finished(
+        &self,
+        server: &str,
+        context: &str,
+        error: Option<String>,
+    ) -> Result<()> {
+        sqlx::query("INSERT INTO last_watch_pass(id,server,context,finished_at,error) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET server=excluded.server,context=excluded.context,finished_at=excluded.finished_at,error=excluded.error")
+            .bind(server).bind(context).bind(chrono::Utc::now().to_rfc3339()).bind(error).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn status(&self) -> Result<serde_json::Value> {
@@ -183,11 +295,23 @@ impl LocalState {
             sqlx::query_scalar("SELECT max(accepted_at) FROM checkpoints")
                 .fetch_one(&self.pool)
                 .await?;
+        let rejected: i64 = sqlx::query_scalar("SELECT count(*) FROM rejected_files")
+            .fetch_one(&self.pool)
+            .await?;
+        let pass: Option<(String, String, String, Option<String>)> = sqlx::query_as(
+            "SELECT server,context,finished_at,error FROM last_watch_pass WHERE id=1",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
         Ok(serde_json::json!({
             "state_path": self.directory.join("state.sqlite"),
             "sources": sources,
             "accepted_files": files,
             "pending_files": pending,
+            "rejected_files": rejected,
+            "last_watch_pass": pass.map(|(server,context,finished_at,error)| serde_json::json!({
+                "server":server, "context":context, "finished_at":finished_at, "error":error
+            })),
             "last_accepted_at": accepted_at
         }))
     }

@@ -34,4 +34,4 @@ Two artifact reads are additionally implemented, for 17 total. Native ZIP is the
 - Reject missing/wrong keys everywhere under `/v1`; independent correct-key clients see the same collection.
 - Recover client pending snapshots and catalog/original reads after outage, restart, and backup/restore.
 
-Polling watch is implemented; notifications and OS service installation remain planned. The catalog is created directly in the initial migration: no deployment upgrade or legacy import/job protocol exists.
+Polling watch and user-login service installation are implemented. Native filesystem notifications remain planned. The catalog is created directly in the initial migration: no deployment upgrade or legacy import/job protocol exists.

@@ -1,4 +1,5 @@
 mod config;
+mod service;
 mod state;
 mod sync;
 
@@ -10,7 +11,7 @@ use serde_json::json;
 use sessiondb_client::Client;
 use sessiondb_types::*;
 use state::LocalState;
-use std::{path::PathBuf, process::ExitCode, time::Duration};
+use std::{collections::HashMap, path::PathBuf, process::ExitCode, time::Duration};
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
@@ -62,7 +63,9 @@ enum Command {
         #[command(subcommand)]
         command: MessageCommand,
     },
+    /// Sync native sessions and manage the background watcher.
     Sync {
+        /// Reconcile configured sources until interrupted.
         #[arg(long)]
         watch: bool,
         #[command(subcommand)]
@@ -164,7 +167,25 @@ enum MessageCommand {
 }
 #[derive(Subcommand)]
 enum SyncCommand {
+    /// Show the background service, last watch pass, and local sync counts.
     Status,
+    /// Install and start a watcher for this context at user login.
+    Install,
+    /// Start the installed watcher.
+    Start,
+    /// Stop the watcher for this login session.
+    Stop,
+    /// Stop the watcher and remove its login service.
+    Uninstall,
+    /// Read the watcher's recent service logs.
+    Logs {
+        #[arg(short, long)]
+        follow: bool,
+    },
+    /// List remembered native-file rejections for this server.
+    Rejected,
+    /// Make the watcher retry unchanged rejected files on its next pass.
+    Retry,
 }
 #[derive(Subcommand)]
 enum ConfigCommand {
@@ -226,6 +247,161 @@ fn emit(args: &Cli, value: &impl Serialize, human: impl FnOnce()) -> Result<()> 
     }
     Ok(())
 }
+
+async fn sync_status(state: &LocalState) -> Result<serde_json::Value> {
+    let mut value = state.status().await?;
+    value["service"] = serde_json::to_value(
+        service::Service::current(&state.directory)?
+            .map(|svc| svc.status())
+            .transpose()?,
+    )?;
+    Ok(value)
+}
+
+async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
+    match cmd {
+        SyncCommand::Status => {
+            let state = LocalState::open(&args.state_dir).await?;
+            let value = sync_status(&state).await?;
+            return emit(args, &value, || {
+                println!(
+                    "Background sync  {}",
+                    value["service"]["state"].as_str().unwrap_or("unsupported")
+                );
+                println!(
+                    "Accepted files   {}\nPending uploads  {}\nKnown rejections {}",
+                    value["accepted_files"], value["pending_files"], value["rejected_files"]
+                );
+                if let Some(at) = value["last_watch_pass"]["finished_at"].as_str() {
+                    println!("Last watch pass  {at}");
+                    println!(
+                        "Watch target     {} ({})",
+                        value["last_watch_pass"]["context"]
+                            .as_str()
+                            .unwrap_or_default(),
+                        value["last_watch_pass"]["server"]
+                            .as_str()
+                            .unwrap_or_default()
+                    );
+                    if let Some(error) = value["last_watch_pass"]["error"].as_str() {
+                        println!("Last pass error  {error}");
+                    }
+                }
+                println!(
+                    "State file       {}",
+                    value["state_path"].as_str().unwrap_or_default()
+                );
+            });
+        }
+        SyncCommand::Retry | SyncCommand::Rejected => {
+            let config = config::load(&args.config)?;
+            let state = LocalState::open(&args.state_dir).await?;
+            let server = config::normalize_server(server(args, &config)?)?;
+            if matches!(cmd, SyncCommand::Retry) {
+                let count = state.retry_rejections(&server).await?;
+                return emit(args, &json!({"server":server,"cleared":count}), || {
+                    println!("{count} remembered rejection(s) cleared for the next pass")
+                });
+            }
+            let entries = state.list_rejections(&server).await?;
+            return emit(args, &json!({"server":server,"files":entries}), || {
+                for entry in &entries {
+                    println!(
+                        "{}  {}  {}",
+                        entry.source_id,
+                        clean(&entry.path),
+                        clean(&entry.reason)
+                    );
+                }
+                println!("{} remembered rejection(s)", entries.len());
+            });
+        }
+        _ => {}
+    }
+    config::private_dir(&args.state_dir)?;
+    let directory = args.state_dir.canonicalize()?;
+    let svc = service::Service::current(&directory)?
+        .context("background sync services require Linux or macOS")?;
+    if let SyncCommand::Logs { follow } = cmd {
+        if args.json {
+            bail!(
+                "sync logs streams service log text; use sync status --json for structured status"
+            );
+        }
+        return svc.logs(*follow);
+    }
+    let _lock = svc.lock()?;
+    match cmd {
+        SyncCommand::Install => {
+            let config = config::load(&args.config)?;
+            let context = selected_context(args, &config);
+            let roots: Vec<_> = config
+                .sources
+                .iter()
+                .filter(|s| s.context == context)
+                .collect();
+            if roots.is_empty() {
+                bail!("no sources enabled for this context; use sessiondb sources add");
+            }
+            let mut cwd = None;
+            for source in roots {
+                if config::expand(&source.root)?.is_relative() {
+                    cwd = Some(std::env::current_dir()?);
+                    break;
+                }
+            }
+            let command = vec![
+                std::env::current_exe()?
+                    .into_os_string()
+                    .into_string()
+                    .map_err(|_| anyhow::anyhow!("executable path must be UTF-8"))?,
+                format!(
+                    "--config={}",
+                    std::path::absolute(&args.config)?
+                        .to_str()
+                        .context("config path must be UTF-8")?
+                ),
+                format!(
+                    "--state-dir={}",
+                    directory.to_str().context("state path must be UTF-8")?
+                ),
+                format!("--context={context}"),
+                format!(
+                    "--server={}",
+                    config::normalize_server(server(args, &config)?)?
+                ),
+                format!("--timeout={}", args.timeout),
+                "sync".into(),
+                "--watch".into(),
+            ];
+            svc.install(&command, cwd.as_deref())?;
+        }
+        SyncCommand::Start => svc.start()?,
+        SyncCommand::Stop => svc.stop()?,
+        SyncCommand::Uninstall => svc.uninstall()?,
+        _ => unreachable!(),
+    }
+    let status = svc.status()?;
+    emit(args, &status, || {
+        println!("Background sync  {} ({})", status.state, status.name)
+    })
+}
+
+async fn sync_shutdown() -> Result<Interrupted> {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        tokio::select! {
+            result=tokio::signal::ctrl_c()=>{result?;Ok(Interrupted(130))}
+            _=term.recv()=>Ok(Interrupted(143)),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await?;
+        Ok(Interrupted(130))
+    }
+}
 fn clean(text: &str) -> String {
     text.chars()
         .flat_map(|c| {
@@ -262,8 +438,8 @@ async fn main() -> ExitCode {
     match run(&args).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            let code = if error.downcast_ref::<Interrupted>().is_some() {
-                130
+            let code = if let Some(signal) = error.downcast_ref::<Interrupted>() {
+                signal.0
             } else {
                 match error.downcast_ref::<sessiondb_client::Error>() {
                     Some(sessiondb_client::Error::Problem(p)) if matches!(p.status, 401 | 403) => 3,
@@ -278,6 +454,16 @@ async fn main() -> ExitCode {
     }
 }
 async fn run(args: &Cli) -> Result<()> {
+    if let Command::Sync {
+        watch,
+        command: Some(cmd),
+    } = &args.command
+    {
+        if *watch {
+            bail!("use --watch for foreground sync or choose a sync subcommand");
+        }
+        return sync_command(args, cmd).await;
+    }
     let mut config = config::load(&args.config)?;
     match &args.command {
         Command::Completion { shell } => {
@@ -305,30 +491,18 @@ async fn run(args: &Cli) -> Result<()> {
         Command::Context { command } => context_command(args, &mut config, command).await?,
         Command::Auth { command } => auth_command(args, &mut config, command).await?,
         Command::Sources { command } => source_command(args, &mut config, command).await?,
-        Command::Sync { watch, command } => {
+        Command::Sync { watch, .. } => {
             let state = LocalState::open(&args.state_dir).await?;
-            if matches!(command, Some(SyncCommand::Status)) {
-                let value = state.status().await?;
-                emit(args, &value, || {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&value).unwrap_or_default()
-                    )
-                })?;
-                return Ok(());
-            }
             let _lock = sync::lock(&state.directory)?;
+            let new_device = config.device_label.is_none();
             let device = config::device(&mut config);
-            config::save(&args.config, &config)?;
-            let runtime = runtime(args, &config).await?;
-            let sources: Vec<_> = config
-                .sources
-                .iter()
-                .filter(|s| s.context == runtime.context)
-                .collect();
-            if sources.is_empty() {
-                bail!("no sources enabled for this context; use sessiondb sources add");
+            if new_device {
+                config::save(&args.config, &config)?;
             }
+            let runtime = runtime(args, &config).await?;
+            let mut watched_files = HashMap::new();
+            let shutdown = sync_shutdown();
+            tokio::pin!(shutdown);
             if !config.project_rules.is_empty() && !args.quiet {
                 eprintln!(
                     "Project matching is not implemented; collected sessions will be unassigned."
@@ -336,8 +510,20 @@ async fn run(args: &Cli) -> Result<()> {
             }
             loop {
                 let pass = async {
+                    if *watch {
+                        config = config::load(&args.config)?;
+                    }
+                    let sources: Vec<_> = config
+                        .sources
+                        .iter()
+                        .filter(|s| s.context == runtime.context)
+                        .collect();
+                    if sources.is_empty() {
+                        bail!("no sources enabled for this context; use sessiondb sources add");
+                    }
                     let mut results = Vec::new();
                     let mut first_error = None;
+                    let info = runtime.client.info().await?;
                     for source in &sources {
                         let result = async {
                             let registered =
@@ -349,6 +535,8 @@ async fn run(args: &Cli) -> Result<()> {
                                 &registered,
                                 &config.sync,
                                 args.quiet,
+                                watch.then(|| watched_files.entry(registered.id).or_default()),
+                                &info,
                             )
                             .await
                         }
@@ -366,7 +554,12 @@ async fn run(args: &Cli) -> Result<()> {
                         }
                     }
                     emit(args, &json!({"sources":results}), || {
-                        for report in &results {
+                        for report in results.iter().filter(|report| {
+                            !watch
+                                || report.accepted_files > 0
+                                || !report.rejections.is_empty()
+                                || !report.retryable_errors.is_empty()
+                        }) {
                             println!(
                                 "{}: {} file(s) accepted",
                                 report.source_id, report.accepted_files
@@ -388,11 +581,18 @@ async fn run(args: &Cli) -> Result<()> {
                     }
                     Ok(())
                 };
-                let result = tokio::select! { result=pass=>result,_=tokio::signal::ctrl_c()=>return Err(Interrupted.into()) };
+                let result = tokio::select! { result=pass=>result,signal=&mut shutdown=>return Err(signal?.into()) };
                 if !watch {
                     result?;
                     break;
                 }
+                state
+                    .watch_finished(
+                        runtime.client.server(),
+                        &runtime.context,
+                        result.as_ref().err().map(|e| format!("{e:#}")),
+                    )
+                    .await?;
                 if let Err(error) = result {
                     if matches!(error.downcast_ref::<sessiondb_client::Error>(),Some(sessiondb_client::Error::Problem(p)) if matches!(p.status,401|403))
                     {
@@ -402,7 +602,7 @@ async fn run(args: &Cli) -> Result<()> {
                         eprintln!("Sync will retry: {error:#}");
                     }
                 }
-                tokio::select! { _=tokio::time::sleep(Duration::from_secs(config.sync.reconcile_interval_seconds.max(1)))=>{},_=tokio::signal::ctrl_c()=>return Err(Interrupted.into()) }
+                tokio::select! { _=tokio::time::sleep(Duration::from_secs(config.sync.reconcile_interval_seconds.max(1)))=>{},signal=&mut shutdown=>return Err(signal?.into()) }
             }
         }
         Command::Sessions { command } => {
@@ -547,7 +747,7 @@ async fn run(args: &Cli) -> Result<()> {
             let client =
                 config::authenticated(server(args, &config)?, Duration::from_secs(args.timeout))
                     .await?;
-            let value = json!({"server":client.server(),"info":client.info().await?,"sync":LocalState::open(&args.state_dir).await?.status().await?});
+            let value = json!({"server":client.server(),"info":client.info().await?,"sync":sync_status(&LocalState::open(&args.state_dir).await?).await?});
             emit(args, &value, || {
                 println!(
                     "{}",
@@ -732,7 +932,7 @@ async fn source_command(
     Ok(())
 }
 #[derive(Debug)]
-struct Interrupted;
+struct Interrupted(u8);
 impl std::fmt::Display for Interrupted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("interrupted; pending synchronization is saved")

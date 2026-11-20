@@ -2,7 +2,7 @@
 
 SessionDB runs with PostgreSQL and an S3-compatible store. This guide covers server configuration, synchronous acceptance, cleanup, health, migrations, and backup/restore. See [access control](access-control.md) for the shared instance key.
 
-Status: initial operating model with later target-v1 features called out in [implementation status](implementation.md). The repository contains migrations, a server Dockerfile, and a local Compose profile. Published images, binary releases, and client-service installers remain later work.
+Status: initial operating model with later target-v1 features called out in [implementation status](implementation.md). The repository contains migrations, a server Dockerfile, and a local Compose profile. Published images and binary releases remain later work.
 
 ## Deployment topology
 
@@ -44,7 +44,7 @@ Clients use `Authorization: Bearer <key>`, via `SESSIONDB_API_KEY` or the option
 - Structured logs include request IDs, status, latency, and bounded error codes; exclude transcripts and credentials.
 - Shutdown drains bounded requests. A disconnected client retries its saved snapshot; acceptance is recovered by digest/version, not by server job state.
 
-Foreground `sync --watch` currently performs polling and reconnects after transient outages. Linux systemd/macOS launchd installers remain planned; stopping the client stops collection without mutating source metadata.
+`sessiondb sync install` runs the same polling watcher as a user-login service on Linux and macOS. Use `sync status` for service state, last pass and backlog counts, and `sync logs` for diagnostics. See [background sync](sync.md#background-service) for lifecycle and retry commands.
 
 ## Migrations and upgrades
 

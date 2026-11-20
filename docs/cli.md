@@ -18,7 +18,7 @@ sessiondb sync --watch
 
 A context selects only a server URL. `SESSIONDB_API_KEY` authenticates every client operation; all key holders have identical full access. `--detect` registers selected native store roots for supported harnesses. Use `--harness` and `--root` for an explicit store, or configuration for unattended setup. Starting cwd and project classification do not determine whether a session can be collected. See [automatic sync](sync.md).
 
-Planned `sessiondb sync install` installs the current context and selected source roots as a user-level service. It will use systemd on Linux and launchd on macOS. Planned `sessiondb sync uninstall` removes that service without deleting local harness files or remote history. The current `sync --watch` runs in the foreground using periodic reconciliation.
+`sessiondb sync install` installs and starts a login service using systemd on Linux or launchd on macOS. It pins the selected context and server, absolute executable, config and state paths, and request timeout. It picks up source and sync settings from that config on each pass. Installing again refreshes and restarts the service. See [background sync](sync.md#background-service) for credentials, logs and lifecycle.
 
 ## Command groups
 
@@ -27,7 +27,7 @@ Planned `sessiondb sync install` installs the current context and selected sourc
 | `sessions` | `list`, `show`, `messages`, `export`; events/update/delete are planned |
 | `search` | Planned keyword, semantic, and hybrid queries |
 | `sources` | `list`, `add`, `show`; collection starts/stops on the client |
-| `sync` | One pass; `--watch`; `status`; install/uninstall are planned |
+| `sync` | One pass, `--watch`, `install`, `start`, `stop`, `uninstall`, `status`, `logs [--follow]`, `rejected`, `retry` |
 | `embeddings` | Planned profile management; backfill execution contract is not yet defined |
 | `context` | `create`, `list`, `show`, `use`, `remove` |
 | `projects` | Planned `list`, `create`, `show`, `update`; no archive lifecycle |
@@ -71,7 +71,7 @@ Use TOML configuration in the platform configuration directory (`$XDG_CONFIG_HOM
 
 See the [client configuration example](examples/client.toml). It contains no credentials or unsupported future settings. Preserve existing registrations, pending files, and checkpoints across upgrades; do not reset deployed client state to apply a server fix. Recovery persists pending per-file snapshots and advances checkpoints individually after HTTP 200; `sync status --json` reports `pending_files`.
 
-The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. Only `[sync] reconcile_interval_seconds` and `upload_concurrency` are current sync settings; debounce/batch settings and future matching rules are not runnable configuration.
+The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. It also reports `rejected_files`, the last completed watch pass with its context, timestamp and error, and the native service name, definition path and state. `sync rejected --json` lists remembered paths and reasons for the selected server. `sync retry` clears those rejection hashes in this state directory so the next watch pass tests the files again. One-shot sync always retries them. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. Only `[sync] reconcile_interval_seconds` and `upload_concurrency` are current sync settings; debounce/batch settings and future matching rules are not runnable configuration.
 
 ## Rust client crate
 

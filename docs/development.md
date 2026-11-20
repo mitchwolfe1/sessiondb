@@ -67,7 +67,7 @@ Use a directory containing accepted fixtures: the full fixture tree also contain
 
 Use `--harness claude` or `--harness pi` with a directory containing accepted fixtures for that format. To collect your native stores, use `sessiondb sources add --detect`, or provide a harness and root explicitly. Collection follows enabled stores, independently of starting cwd or project assignment.
 
-`sessiondb sync --watch` reconciles periodically until interrupted. Notifications and service installation remain planned. `sessiondb sync status --json` reports accepted checkpoints and `pending_files`. Pending snapshots are persisted before transfer and each successful file receipt advances its checkpoint independently.
+`sessiondb sync --watch` reconciles periodically until interrupted. Use `sessiondb sync install` to run that watcher as a login service and `sessiondb sync uninstall` to remove it. `sessiondb sync status --json` reports accepted checkpoints and `pending_files`. Pending snapshots are persisted before transfer and each successful file receipt advances its checkpoint independently.
 
 The API verifies and fully parses one file before storing originals/artifacts and publishing its catalog state before HTTP 200. Unsupported or malformed native content rejects the entire file with HTTP 400 before storage; there is no background parse job or acceptance wait command.
 
@@ -115,6 +115,12 @@ cargo test --locked -p sessiondb-cli --test end_to_end -- --ignored
 ```
 
 The suite uses isolated loopback PostgreSQL/S3 services and synthetic keys/transcripts, then removes its containers/volumes. It covers binary/SDK authentication, per-file verified acceptance and whole-file rejection, native export, appends/rewrites, lost responses, watch/outage recovery, rejected-file repair, restart persistence, and backup/restore. Historical tolerant-parser results are not proof that strict rejection works.
+
+On a Linux login with a systemd user manager and Docker, run the background service integration separately. It installs a uniquely named watcher for a temporary state directory and loopback server, exercises its lifecycle, and removes the test unit.
+
+```sh
+cargo test --locked -p sessiondb-cli --test background_service -- --ignored
+```
 
 Validate documentation contracts separately:
 

@@ -9,7 +9,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - S3 immutable originals/artifacts and age-based unreferenced-object cleanup.
 - Required nonempty instance key on every `/v1` operation, including info; equal full access for all correct-key clients.
 - Optional OS credential storage, contexts, CLI JSON, and shell completions.
-- Source registration, one-shot and polling watch sync, persistent per-file snapshots/checkpoints, and `pending_files` recovery. A sync pass reports individual native-file rejections and continues collecting other files.
+- Source registration, one-shot and polling watch sync, Linux systemd and macOS launchd user-service management, persistent rejection hashes, per-file snapshots/checkpoints, and `pending_files` recovery. A sync pass reports individual native-file rejections and continues collecting other files.
 - Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
 - Codex inline message and tool-result images, reasoning configuration updates, and web page actions. Claude session and request metadata and tool-reference results.
 - Readiness, request IDs, and optional aggregate request metrics.
@@ -18,7 +18,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 ## Planned
 
-Keyword search, embedding profiles/providers, hybrid retrieval, project administration/matching, metadata mutation, change feeds, normalized/STS exports, service installation, and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
+Keyword search, embedding profiles/providers, hybrid retrieval, project administration/matching, metadata mutation, change feeds, normalized/STS exports and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
 
 An unavailable planned route returns `501 not_implemented`; unsupported parameters return input errors. CLI help lists available commands. Source pause, project archive, transcript MIME, upload TTLs, and generic workers are not part of the current design.
 

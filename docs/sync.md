@@ -1,6 +1,6 @@
 # Automatic sync
 
-The client collects native Codex, Claude Code, and Pi stores, backfills history, and uploads later changes regardless of starting cwd or project labels. One-shot sync and polling watch are implemented; filesystem notifications and OS service installation remain planned.
+The client collects native Codex, Claude Code, and Pi stores, backfills history, and uploads later changes regardless of starting cwd or project labels. One-shot sync, foreground polling, and user-login services are implemented.
 
 Status: accepted synchronous per-file protocol; see [ADR 0014](decisions/0014-sessions-and-synchronous-files.md).
 
@@ -11,6 +11,25 @@ Discover Codex under `CODEX_HOME` or `~/.codex`, including native archived sessi
 `sessiondb sync` runs one pass; `sessiondb sync --watch` reconciles periodically until interrupted. Stop the client/watch process to stop collection; there is no server pause flag. Local disappearance or an offline device does not remove accepted history.
 
 For active JSONL, capture a bounded snapshot through the last complete newline. Defer incomplete tail bytes until the next pass. Complete malformed lines remain in the captured snapshot and cause rejection; do not silently remove them. Preserve native parent/child/subagent files and allowlisted artifacts, without sweeping adjacent credential directories.
+
+## Background service
+
+Configure a context and its source roots, then save its API key with `sessiondb auth login --key-stdin` or supply the key in the user service manager's environment. The generated service definition contains only nonsecret arguments. An API key exported in an interactive shell is scoped to that shell and its children.
+
+```sh
+sessiondb sync install
+sessiondb sync status
+sessiondb sync logs --follow
+sessiondb sync stop
+sessiondb sync start
+sessiondb sync uninstall
+```
+
+Installation is opt-in. It starts a systemd user unit on Linux or a LaunchAgent in the user's GUI login domain on macOS. It runs immediately and at subsequent logins under the same user. `stop` stops it for the current login. `uninstall` also removes the login registration, preserving checkpoints, native files, credentials, and remote data. The default service is `sessiondb-sync.service` or `io.sessiondb.sync`. An explicit state directory has its own service identity and sync lock. Use the same `--state-dir` to manage it. [systemd services](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) and [Apple’s launch agent guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html) describe the underlying managers.
+
+The installer captures the current context, server origin, timeout, config path and state directory. Changes to that context's source roots and polling interval take effect at the next pass. Reinstall to change the service target or to restart with a replacement binary. Linux logs go to the user journal. macOS logs go to `sync.log` in the state directory. `sync logs` shows recent lines on either platform.
+
+Watch reuses a local file digest while its Unix identity, size and modification/change times match. It refreshes the remote file listing when the source sync time changes, after recovered uploads, and at least every 15 minutes of polling. Files changed during capture are deferred to the next watch pass. One-shot sync performs a full reconciliation.
 
 ## One-file HTTP contract
 
@@ -33,7 +52,7 @@ After a disconnect or lost response, retry the same metadata and snapshot using 
 
 Otherwise the server compares `expected_version` again before committing. A stale value returns `409 version_conflict`; refresh source files and reconcile rather than blindly overwriting newer bytes. A request interrupted before publication leaves the previous accepted state intact; unreferenced prepared objects are cleaned later.
 
-Client state holds pending snapshots and accepted checkpoints. `sessiondb sync status --json` reports their counts. On `400 unsupported_native_record`, sync reports the source-relative path and reason, discards that pending snapshot, and continues with the remaining saved and newly discovered files. Each rejected path is attempted once per pass and remains eligible on the next pass after a local repair or server upgrade. Only successful receipts advance checkpoints. A one-shot sync with any rejection exits nonzero. Authentication errors stop attempts until a valid key is supplied. Watch can recover from transient outages on a later reconciliation.
+Client state holds pending snapshots and accepted checkpoints. `sessiondb sync status --json` reports their counts. On `400 unsupported_native_record`, sync reports the source-relative path and reason, discards that pending snapshot, and continues with the remaining saved and newly discovered files. The client remembers the rejected complete-prefix SHA-256, source-relative path, server origin and server version. A watch pass skips an unchanged rejection and reports it in `cached_rejections`. A changed prefix or changed server version is retried automatically. After a parser rebuild that keeps the same server version, use `sessiondb sync retry` to clear the remembered hashes for that server. One-shot sync explicitly retries all current files that still need upload. Only successful receipts advance checkpoints. A one-shot sync with any rejection exits nonzero. Authentication errors stop attempts until a valid key is supplied. Watch can recover from transient outages on a later reconciliation.
 
 A structured `500 internal_error` on an individual upload retains the exact pending snapshot and its expected version. The client continues with other paths and reports an incomplete pass. The next pass retries the saved snapshot before capturing newer bytes for that path. The JSON report lists these paths under `retryable_errors`.
 
