@@ -35,6 +35,8 @@ Otherwise the server compares `expected_version` again before committing. A stal
 
 Client state holds pending snapshots and accepted checkpoints. `sessiondb sync status --json` reports their counts. On `400 unsupported_native_record`, sync reports the source-relative path and reason, discards that pending snapshot, and continues with the remaining saved and newly discovered files. Each rejected path is attempted once per pass and remains eligible on the next pass after a local repair or server upgrade. Only successful receipts advance checkpoints. A one-shot sync with any rejection exits nonzero. Authentication errors stop attempts until a valid key is supplied. Watch can recover from transient outages on a later reconciliation.
 
+A structured `500 internal_error` on an individual upload retains the exact pending snapshot and its expected version. The client continues with other paths and reports an incomplete pass. The next pass retries the saved snapshot before capturing newer bytes for that path. The JSON report lists these paths under `retryable_errors`.
+
 ## Appends and rewrites
 
 Byte-changing uploads receive a new version. The server compares the full prior prefix: verified growth keeps the generation ID and advances its immutable snapshot reference. A shorter file or changed earlier bytes creates a new generation and preserves the old one. Header similarity alone does not prove an append.

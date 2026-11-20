@@ -84,6 +84,7 @@ impl NativeSession {
         index: usize,
         media_type: &str,
         data: &str,
+        native_image_ids: Option<&mut HashSet<Uuid>>,
     ) -> Result<Uuid, AdapterError> {
         if !media_type.starts_with("image/") || media_type.len() == 6 {
             return Err(invalid(record, "invalid image media type"));
@@ -96,10 +97,14 @@ impl NativeSession {
         } else {
             record.anchor.record_id.clone()
         };
-        let id = Uuid::new_v5(
+        let mut id = Uuid::new_v5(
             &Uuid::NAMESPACE_URL,
             format!("sessiondb:{harness}:{}:{entry}:{index}", self.native_key).as_bytes(),
         );
+        if native_image_ids.is_some_and(|ids| !ids.insert(id)) {
+            // Keep the original artifact ID and give a later occurrence its own reference.
+            id = Uuid::new_v5(&id, &(self.artifacts.len() as u64).to_be_bytes());
+        }
         self.artifacts.push(NativeArtifact {
             id,
             media_type: media_type.into(),

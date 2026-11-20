@@ -6,6 +6,8 @@ A Docker integration test recovers a mixed queue after an object-storage outage.
 
 A separate PostgreSQL/S3 test uploads inline Codex images in a message and a tool result, reads the normalized content and both distinct artifacts through the API, and verifies the original bytes. Adapter tests cover the supported configuration, communication, page action, Claude metadata, and tool-reference records, including malformed variants. These changes use the existing catalog migrations.
 
+A synthetic Claude append with repeated message UUIDs reproduced a duplicate message primary key on the earlier server. The regression verifies stable IDs for the original prefix, distinct IDs and source anchors for replays, both branches and image references, and byte-identical reads from the original-content API. The CLI recovery test also forces an isolated per-file catalog error, verifies that other files are accepted, and retries the saved snapshot after the catalog error clears.
+
 ## Native compatibility and deployed title repair
 
 Synthetic regressions cover observed Codex web searches/tool definitions/world-state/usage records and Claude mode, permission, attachment, and title records. Unknown or malformed native kinds still reject the whole file. No personal transcript content was added to repository fixtures.

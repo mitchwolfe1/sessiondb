@@ -46,6 +46,8 @@ Mode/permission changes, native attachments, and AI/custom titles are structural
 
 Session-owner, cost, bridge, tool-usage, ATIS, file-history-delta, and API request/shape/blob metadata are retained as structural events. A tool result can contain a `tool_reference` block naming a tool. Its JSON retains the name, order, and recorded extension fields.
 
+Claude can replay a preserved segment using earlier message and attachment UUIDs. Each normalized message occurrence retains its native record UUID and byte/line anchor. Later occurrences get distinct canonical IDs, and descendants follow the corresponding occurrence on their recorded branch.
+
 Subagent files may share their parent's session ID; agent identity and source file scope keep them separate. Nested workflow directories and `fork-context-ref` records must not merge a child into its parent. Resolve external tool outputs only through the adapter's artifact allowlist.
 
 ## Pi

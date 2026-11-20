@@ -377,6 +377,12 @@ async fn run(args: &Cli) -> Result<()> {
                         return Err(error);
                     }
                     let rejected: usize = results.iter().map(|r| r.rejections.len()).sum();
+                    let pending: usize = results.iter().map(|r| r.retryable_errors.len()).sum();
+                    if pending > 0 {
+                        bail!(
+                            "{pending} file(s) pending after server errors, {rejected} file(s) rejected"
+                        );
+                    }
                     if rejected > 0 {
                         bail!("{rejected} file(s) rejected");
                     }

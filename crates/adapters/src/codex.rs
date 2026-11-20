@@ -354,7 +354,7 @@ fn image<'a>(
     }) {
         return Err(invalid(record, "invalid image media type"));
     }
-    let id = session.add_inline_image(Harness::Codex, record, index, media_type, data)?;
+    let id = session.add_inline_image(Harness::Codex, record, index, media_type, data, None)?;
     Ok((id, media_type))
 }
 fn blocks(

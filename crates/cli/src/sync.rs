@@ -103,6 +103,8 @@ pub struct SourceReport {
     pub deferred_tail_files: usize,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub rejections: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub retryable_errors: BTreeMap<String, String>,
 }
 
 pub async fn source(
@@ -135,7 +137,12 @@ pub async fn source(
         .join("pending")
         .join(Uuid::new_v4().to_string());
     let dir = directory.clone();
-    let rejected_paths = report.rejections.keys().cloned().collect();
+    let attempted_failures = report
+        .rejections
+        .keys()
+        .chain(report.retryable_errors.keys())
+        .cloned()
+        .collect();
     let scan = match tokio::task::spawn_blocking(move || {
         scan(
             &root,
@@ -143,7 +150,7 @@ pub async fn source(
             &remote,
             &dir,
             limits.max_file_bytes,
-            &rejected_paths,
+            &attempted_failures,
         )
     })
     .await?
@@ -173,7 +180,7 @@ fn scan(
     remote: &HashMap<String, SourceFile>,
     directory: &Path,
     max_bytes: u64,
-    rejected_paths: &HashSet<String>,
+    attempted_failures: &HashSet<String>,
 ) -> Result<Scan> {
     if !root.is_dir() {
         bail!("native store {} is unavailable", root.display());
@@ -195,7 +202,7 @@ fn scan(
             .to_str()
             .context("session path must be UTF-8")?
             .replace(std::path::MAIN_SEPARATOR, "/");
-        if rejected_paths.contains(&relative) {
+        if attempted_failures.contains(&relative) {
             continue;
         }
         let mut options = OpenOptions::new();
@@ -270,6 +277,12 @@ fn scan(
     Ok(Scan { files, deferred })
 }
 
+enum UploadOutcome {
+    Accepted,
+    Rejected(String, String),
+    Pending(String, String),
+}
+
 async fn resume(
     client: &Client,
     state: &LocalState,
@@ -298,7 +311,17 @@ async fn resume(
                         "Rejected {} for source {}: {reason}",
                         pending.metadata.path, pending.source_id
                     );
-                    return Ok(Some((pending.metadata.path, reason)));
+                    return Ok(UploadOutcome::Rejected(pending.metadata.path, reason));
+                }
+                Err(sessiondb_client::Error::Problem(problem))
+                    if problem.status == 500 && problem.code == "internal_error" =>
+                {
+                    let reason = sessiondb_client::Error::Problem(problem).to_string();
+                    eprintln!(
+                        "Pending {} for source {}: {reason}",
+                        pending.metadata.path, pending.source_id
+                    );
+                    return Ok(UploadOutcome::Pending(pending.metadata.path, reason));
                 }
                 Err(error) => {
                     return Err(error).with_context(|| format!("upload {}", pending.metadata.path));
@@ -312,15 +335,18 @@ async fn resume(
                     pending.metadata.path, pending.source_id
                 );
             }
-            Ok::<_, anyhow::Error>(None)
+            Ok::<_, anyhow::Error>(UploadOutcome::Accepted)
         })
         .buffer_unordered(options.upload_concurrency.clamp(1, 16));
     while let Some(result) = uploads.next().await {
         match result? {
-            Some((path, reason)) => {
+            UploadOutcome::Rejected(path, reason) => {
                 report.rejections.insert(path, reason);
             }
-            None => report.accepted_files += 1,
+            UploadOutcome::Pending(path, reason) => {
+                report.retryable_errors.insert(path, reason);
+            }
+            UploadOutcome::Accepted => report.accepted_files += 1,
         }
     }
     Ok(())

@@ -37,11 +37,13 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
             history_boundary: None,
         });
     }
-    let parents = parent_map(records, "parentUuid");
+    let mut parents = parent_map(records.iter().rev(), "parentUuid");
     let mut mapping = HashMap::new();
+    let mut message_keys = HashSet::new();
+    let mut image_ids = HashSet::new();
     for record in records {
         let value = &record.value;
-        optional_str(value, "parentUuid", record)?;
+        let native_parent = optional_str(value, "parentUuid", record)?;
         if optional_str(value, "sessionId", record)?.is_some_and(|value| value != id) {
             return Err(invalid(record, "inconsistent native session identifier"));
         }
@@ -54,11 +56,21 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
         let kind = required_str(value, "type", record)?;
         if !matches!(kind, "user" | "assistant") {
             let event_type = claude_event_type(kind, value, record)?;
+            // A replayed structural node can have a different parent on this branch.
+            if let Some(id) = str_at(value, "uuid") {
+                let parent = resolve_parent(native_parent, &parents, &mapping);
+                parents.insert(id.to_owned(), native_parent.map(str::to_owned));
+                if let Some(parent) = parent {
+                    mapping.insert(id.to_owned(), parent);
+                } else {
+                    mapping.remove(id);
+                }
+            }
             session.events.push(event(record, event_type));
             continue;
         }
         required_str(value, "uuid", record)?;
-        let parent = resolve_parent(str_at(value, "parentUuid"), &parents, &mapping);
+        let parent = resolve_parent(native_parent, &parents, &mapping);
         let p = object(required(value, "message", record)?, record)?;
         let native_role = required_str(p, "role", record)?;
         if native_role != kind {
@@ -94,10 +106,18 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
                             record,
                             index,
                             Harness::Claude,
+                            Some(&mut image_ids),
                         )?,
                     }
                 } else {
-                    block(b, &mut session, record, index, Harness::Claude)?
+                    block(
+                        b,
+                        &mut session,
+                        record,
+                        index,
+                        Harness::Claude,
+                        Some(&mut image_ids),
+                    )?
                 };
                 if let Some((_, content)) = parts.last_mut().filter(|(role, _)| *role == block_role)
                 {
@@ -149,6 +169,13 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
                 }
                 current_parent = Some(last.key.clone());
             } else {
+                if !message_keys.insert(m.key.clone()) {
+                    // Claude can replay the same UUID after reparenting a preserved segment.
+                    m.key = format!("{}:replay:{}", m.key, record.anchor.line);
+                    if !message_keys.insert(m.key.clone()) {
+                        return Err(invalid(record, "ambiguous replayed message identifier"));
+                    }
+                }
                 current_parent = Some(m.key.clone());
                 session.messages.push(m);
             }
@@ -322,7 +349,7 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
             history_boundary: None,
         });
     }
-    let parents = parent_map(records, "parentId");
+    let parents = parent_map(records.iter(), "parentId");
     let mut mapping = HashMap::new();
     for record in records {
         let value = &record.value;
@@ -382,7 +409,7 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
             vec![FullContentBlock::ToolResult {
                 call_id: optional_str(p, "toolCallId", record)?.map(str::to_owned),
                 status: status(p.get("isError"), record)?,
-                content: outputs(native_content, &mut session, record, 0, Harness::Pi)?,
+                content: outputs(native_content, &mut session, record, 0, Harness::Pi, None)?,
             }]
         } else if let Some(text) = native_content.as_str() {
             vec![FullContentBlock::text(text)]
@@ -392,7 +419,7 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
                 .ok_or_else(|| invalid(record, "expected string or array message content"))?
                 .iter()
                 .enumerate()
-                .map(|(i, b)| block(b, &mut session, record, i, Harness::Pi))
+                .map(|(i, b)| block(b, &mut session, record, i, Harness::Pi, None))
                 .collect::<Result<Vec<_>, _>>()?
         };
         let mut m = message(
@@ -412,9 +439,11 @@ pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
     Ok(session)
 }
 
-fn parent_map(records: &[Record], field: &str) -> HashMap<String, Option<String>> {
+fn parent_map<'a>(
+    records: impl Iterator<Item = &'a Record>,
+    field: &str,
+) -> HashMap<String, Option<String>> {
     records
-        .iter()
         .map(|r| {
             (
                 r.anchor.record_id.clone(),
@@ -445,6 +474,7 @@ fn block(
     record: &Record,
     index: usize,
     harness: Harness,
+    image_ids: Option<&mut HashSet<Uuid>>,
 ) -> Result<FullContentBlock, AdapterError> {
     let kind = required_str(b, "type", record)?;
     Ok(match kind {
@@ -487,7 +517,8 @@ fn block(
                     required_str(b, "data", record)?,
                 )
             };
-            let id = session.add_inline_image(harness, record, index, media_type, data)?;
+            let id =
+                session.add_inline_image(harness, record, index, media_type, data, image_ids)?;
             FullContentBlock::Artifact {
                 artifact_id: id,
                 media_type: media_type.into(),
@@ -504,6 +535,7 @@ fn outputs(
     record: &Record,
     base_index: usize,
     harness: Harness,
+    mut image_ids: Option<&mut HashSet<Uuid>>,
 ) -> Result<Vec<ToolOutputBlock>, AdapterError> {
     if let Some(text) = value.as_str() {
         return Ok(vec![ToolOutputBlock::Text { text: text.into() }]);
@@ -527,7 +559,14 @@ fn outputs(
             if !matches!(str_at(b, "type"), Some("text" | "image")) {
                 return Err(invalid(record, "unsupported tool output block kind"));
             }
-            match block(b, session, record, base_index + i, harness)? {
+            match block(
+                b,
+                session,
+                record,
+                base_index + i,
+                harness,
+                image_ids.as_deref_mut(),
+            )? {
                 FullContentBlock::Text { text } => Ok(ToolOutputBlock::Text { text }),
                 FullContentBlock::Artifact {
                     artifact_id,

@@ -61,6 +61,8 @@ Support `--help`, `--version`, generated shell completions, `--server`, `--conte
 
 Exit codes distinguish success (`0`), operational failure (`1`), usage (`2`), authentication (`3`), and missing resources (`4`). A sync pass with rejected native files reports their paths and reasons and finishes other uploads. In `sync --json`, affected source reports include a `rejections` object mapping source-relative paths to reasons. One-shot sync exits `1` after reporting these rejections. Interrupted watch exits with the signal-derived status.
 
+A server `internal_error` on a file upload appears in the source report under `retryable_errors`. The snapshot remains pending while the client processes other files. A one-shot pass with retryable errors also exits `1`.
+
 ## Configuration
 
 Use TOML configuration in the platform configuration directory (`$XDG_CONFIG_HOME/sessiondb/config.toml` on Linux). Resolve settings in order: explicit flags, environment variables, selected context, file defaults, built-in defaults. Environment variables include `SESSIONDB_URL`, `SESSIONDB_API_KEY`, and `SESSIONDB_CONFIG`.

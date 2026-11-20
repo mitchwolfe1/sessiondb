@@ -909,6 +909,14 @@ async fn authenticated_sync_storage_and_recovery() {
     )
     .unwrap();
     fs::write(local.join("rejected.jsonl"), &unknown_bytes).unwrap();
+    // Force a per-file publication error in this disposable catalog.
+    sqlx::query("ALTER TABLE source_files ADD CONSTRAINT synthetic_retry CHECK (path <> 'b-retryable.jsonl')")
+        .execute(&pool).await.unwrap();
+    fs::write(
+        local.join("b-retryable.jsonl"),
+        fixture("codex/precision.jsonl"),
+    )
+    .unwrap();
     docker(&["pause", &services.s3]);
     let interrupted = cli(&server, root.path(), &["--timeout", "1", "sync", "--json"]).await;
     docker(&["unpause", &services.s3]);
@@ -916,7 +924,7 @@ async fn authenticated_sync_storage_and_recovery() {
     let interrupted_status = cli(&server, root.path(), &["sync", "status", "--json"]).await;
     assert_eq!(
         serde_json::from_slice::<Value>(&interrupted_status.stdout).unwrap()["pending_files"],
-        2
+        3
     );
     fs::write(local.join("second-rejected.jsonl"), &unknown_bytes).unwrap();
     fs::write(
@@ -930,6 +938,19 @@ async fn authenticated_sync_storage_and_recovery() {
     let report = &output["sources"][0];
     assert_eq!(report["accepted_files"], 2);
     assert_eq!(report["rejections"].as_object().unwrap().len(), 2);
+    assert_eq!(report["retryable_errors"].as_object().unwrap().len(), 1);
+    assert!(
+        report["retryable_errors"]["b-retryable.jsonl"]
+            .as_str()
+            .unwrap()
+            .contains("internal_error")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .matches("Pending b-retryable.jsonl for source")
+            .count(),
+        1
+    );
     for path in ["rejected.jsonl", "second-rejected.jsonl"] {
         assert!(
             report["rejections"][path]
@@ -946,7 +967,7 @@ async fn authenticated_sync_storage_and_recovery() {
     }
     let status_output = cli(&server, root.path(), &["sync", "status", "--json"]).await;
     let status_value: Value = serde_json::from_slice(&status_output.stdout).unwrap();
-    assert_eq!(status_value["pending_files"], 0);
+    assert_eq!(status_value["pending_files"], 1);
     let accepted = owner
         .source_files(source_id, &ListOptions::default())
         .await
@@ -964,6 +985,10 @@ async fn authenticated_sync_storage_and_recovery() {
         cli_file.version
     );
     let repaired = fixture("codex/fork/parent.jsonl");
+    sqlx::query("ALTER TABLE source_files DROP CONSTRAINT synthetic_retry")
+        .execute(&pool)
+        .await
+        .unwrap();
     fs::remove_file(local.join("second-rejected.jsonl")).unwrap();
     fs::write(local.join("rejected.jsonl"), &repaired).unwrap();
     let output = cli(&server, root.path(), &["sync", "--json"]).await;
@@ -973,7 +998,7 @@ async fn authenticated_sync_storage_and_recovery() {
         String::from_utf8_lossy(&output.stderr)
     );
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["sources"][0]["accepted_files"], 1);
+    assert_eq!(result["sources"][0]["accepted_files"], 2);
     let repaired_file = owner
         .source_files(source_id, &ListOptions::default())
         .await
@@ -1155,6 +1180,107 @@ async fn authenticated_sync_storage_and_recovery() {
 
 fn zip_bytes(bytes: &[u8]) -> zip::ZipArchive<Cursor<&[u8]>> {
     zip::ZipArchive::new(Cursor::new(bytes)).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires Docker and built workspace binaries; uses isolated synthetic services"]
+async fn claude_replayed_records_preserve_both_branches_on_append() {
+    let root = tempfile::tempdir().unwrap();
+    let services = Services::start().await;
+    let mut server = Server::start(root.path(), &services).await;
+    let client = client(&server);
+    let source = source(&client, Harness::Claude, "replayed-claude").await;
+    let user = |id: &str| {
+        json!({"type":"user","uuid":id,"sessionId":"fixture",
+        "message":{"role":"user","content":"A synthetic request"}})
+    };
+    let bridge = |parent: &str| {
+        json!({"type":"attachment","uuid":"bridge","parentUuid":parent,
+        "attachment":{"type":"synthetic_context"}})
+    };
+    let copy = json!({"type":"user","uuid":"copy","parentUuid":"bridge","sessionId":"fixture",
+        "message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}});
+    let reply = |id: &str| {
+        json!({"type":"assistant","uuid":id,"parentUuid":"copy","sessionId":"fixture",
+        "message":{"role":"assistant","content":"Synthetic answer"}})
+    };
+    let mut bytes = Vec::new();
+    for row in [
+        user("root-a"),
+        bridge("root-a"),
+        copy.clone(),
+        reply("first"),
+    ] {
+        serde_json::to_writer(&mut bytes, &row).unwrap();
+        bytes.push(b'\n');
+    }
+    let file = ingest(&client, source.id, "branches.jsonl", bytes.clone(), None).await;
+    let session = file.session_ids[0];
+    let before = client
+        .messages(session, &MessageFilter::default())
+        .await
+        .unwrap()
+        .data;
+    for row in [user("root-b"), bridge("root-b"), copy, reply("second")] {
+        serde_json::to_writer(&mut bytes, &row).unwrap();
+        bytes.push(b'\n');
+    }
+    let upload = descriptor("branches.jsonl", &bytes, Some(file.file.version));
+    client
+        .upload_file(source.id, &upload, Cursor::new(bytes.clone()))
+        .await
+        .unwrap_or_else(|e| {
+            let log = fs::read_to_string(&server.log).unwrap();
+            panic!(
+                "{e}: {:?}",
+                log.lines().rfind(|l| l.contains("request failed"))
+            );
+        });
+    let messages = client
+        .messages(session, &MessageFilter::default())
+        .await
+        .unwrap()
+        .data;
+    assert_eq!(messages.len(), 6);
+    assert_eq!(
+        messages[..3].iter().map(|m| m.id).collect::<Vec<_>>(),
+        before.iter().map(|m| m.id).collect::<Vec<_>>()
+    );
+    for start in [0, 3] {
+        assert_eq!(
+            messages[start + 1].conversation_parent_id,
+            Some(messages[start].id)
+        );
+        assert_eq!(
+            messages[start + 2].conversation_parent_id,
+            Some(messages[start + 1].id)
+        );
+        assert_eq!(
+            messages[start + 1].source_refs[0].record_id.as_deref(),
+            Some("copy")
+        );
+    }
+    assert_ne!(messages[1].id, messages[4].id);
+    assert_eq!(messages[1].source_refs[0].line, 3);
+    assert_eq!(messages[4].source_refs[0].line, 7);
+    assert_ne!(messages[1].content, messages[4].content);
+    for index in [1, 4] {
+        let ContentBlock::Full(FullContentBlock::Artifact { artifact_id, .. }) =
+            &messages[index].content[0]
+        else {
+            panic!("expected image")
+        };
+        let mut image = Vec::new();
+        client.artifact_to(*artifact_id, &mut image).await.unwrap();
+        assert_eq!(image, vec![0]);
+    }
+    let mut original = Vec::new();
+    client
+        .original_to(source.id, file.file.id, None, &mut original)
+        .await
+        .unwrap();
+    assert_eq!(original, bytes);
+    server.stop();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
