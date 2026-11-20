@@ -3,6 +3,7 @@
 mod codex;
 mod tree;
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -76,6 +77,40 @@ pub struct NativeSession {
     pub artifacts: Vec<NativeArtifact>,
 }
 impl NativeSession {
+    fn add_inline_image(
+        &mut self,
+        harness: Harness,
+        record: &Record,
+        index: usize,
+        media_type: &str,
+        data: &str,
+    ) -> Result<Uuid, AdapterError> {
+        if !media_type.starts_with("image/") || media_type.len() == 6 {
+            return Err(invalid(record, "invalid image media type"));
+        }
+        let bytes = STANDARD
+            .decode(data)
+            .map_err(|_| invalid(record, "invalid inline artifact base64"))?;
+        let entry = if harness == Harness::Codex {
+            format!("line:{}", record.anchor.line)
+        } else {
+            record.anchor.record_id.clone()
+        };
+        let id = Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!("sessiondb:{harness}:{}:{entry}:{index}", self.native_key).as_bytes(),
+        );
+        self.artifacts.push(NativeArtifact {
+            id,
+            media_type: media_type.into(),
+            kind: ArtifactKind::Image,
+            bytes,
+            native_entry_id: record.anchor.record_id.clone(),
+            content_index: index,
+        });
+        Ok(id)
+    }
+
     pub fn title(&self) -> String {
         for (kind, field) in [("custom-title", "customTitle"), ("ai-title", "aiTitle")] {
             if let Some(title) = self
@@ -256,6 +291,24 @@ fn object<'a>(value: &'a Value, record: &Record) -> Result<&'a Value, AdapterErr
     } else {
         Err(invalid(record, "expected an object field"))
     }
+}
+fn string_array(value: &Value, record: &Record) -> Result<(), AdapterError> {
+    let values = value
+        .as_array()
+        .ok_or_else(|| invalid(record, "expected a string array"))?;
+    if values.iter().any(|value| !value.is_string()) {
+        return Err(invalid(record, "expected a string array"));
+    }
+    Ok(())
+}
+fn unsigned_integer(value: &Value, record: &Record) -> Result<(), AdapterError> {
+    if !value
+        .as_number()
+        .is_some_and(|number| number.as_str().bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return Err(invalid(record, "expected an unsigned integer"));
+    }
+    Ok(())
 }
 fn validate_timestamp(value: &Value, record: &Record) -> Result<(), AdapterError> {
     if let Some(value) = value.get("timestamp")

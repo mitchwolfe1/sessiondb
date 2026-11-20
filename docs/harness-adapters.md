@@ -30,6 +30,8 @@ Resolve call/results by native call IDs where available. Preserve opaque encrypt
 
 Known web-search items normalize recorded actions as tool calls without fabricating IDs or results. Tool-definition items, world-state snapshots, and token-usage records remain complete structural events. Complete injected AGENTS.md and environment-context messages retain native content and roles but use harness origin, so they do not supply default human-request titles.
 
+Web-search records support searches, page opens, and in-page finds. A completion record with no action remains an event. Reasoning configuration updates and agent-to-agent messages and their metadata remain structural events, preserving the recorded author, recipient, and content. Base64 data images in messages and tool results produce ordered artifact references with the recorded media type.
+
 Newer metadata can distinguish thread ID, root session ID, fork ancestry, and `history_base` references to a bounded parent rollout. Resolve references through retained source bindings; preserve unresolved references when a parent is missing. Rollback and compaction are recorded events, not permission to erase original source bytes.
 
 Codex's local SQLite history projections and prompt-recall file are not substitutes for the native rollout. V1 collection uses rollout files and explicitly selected artifacts rather than synchronizing the provider's live SQLite databases.
@@ -41,6 +43,8 @@ Do not require a fixed first-line header. Session metadata can appear on repeate
 Tool calls are assistant `tool_use` blocks; results can be `tool_result` blocks in user messages. Preserve meta/summary markers and distinguish them from a direct human input. Include parent-linked non-message nodes needed to connect conversation branches.
 
 Mode/permission changes, native attachments, and AI/custom titles are structural events with their complete native fields. Attachment nodes remain part of ancestor traversal; recognizing them does not authorize following arbitrary paths or fetching external content.
+
+Session-owner, cost, bridge, tool-usage, ATIS, file-history-delta, and API request/shape/blob metadata are retained as structural events. A tool result can contain a `tool_reference` block naming a tool. Its JSON retains the name, order, and recorded extension fields.
 
 Subagent files may share their parent's session ID; agent identity and source file scope keep them separate. Nested workflow directories and `fork-context-ref` records must not merge a child into its parent. Resolve external tool outputs only through the adapter's artifact allowlist.
 

@@ -53,16 +53,46 @@ pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
         match kind {
             "response_item" => {
                 let kind = required_str(p, "type", record)?;
-                if kind == "additional_tools" {
-                    validate_ordinal(record)?;
-                    validate_additional_tools(p, record)?;
-                    session.events.push(event(record, kind));
-                    continue;
-                }
                 let (r, content) = match kind {
+                    "agent_message" => {
+                        validate_ordinal(record)?;
+                        for field in ["id", "author", "recipient"] {
+                            required_str(p, field, record)?;
+                        }
+                        if let Some(meta) = p.get("internal_chat_message_metadata_passthrough") {
+                            object(meta, record)?;
+                        }
+                        for block in content_items(required(p, "content", record)?, record)? {
+                            match required_str(block, "type", record)? {
+                                "input_text" => required_str(block, "text", record)?,
+                                "encrypted_content" => {
+                                    required_str(block, "encrypted_content", record)?
+                                }
+                                _ => {
+                                    return Err(invalid(
+                                        record,
+                                        "unsupported agent message content kind",
+                                    ));
+                                }
+                            };
+                        }
+                        session.events.push(event(record, kind));
+                        continue;
+                    }
+                    "additional_tools" | "configuration_update" => {
+                        validate_ordinal(record)?;
+                        if kind == "additional_tools" {
+                            validate_additional_tools(p, record)?;
+                        } else {
+                            let reasoning = object(required(p, "reasoning", record)?, record)?;
+                            required_str(reasoning, "effort", record)?;
+                        }
+                        session.events.push(event(record, kind));
+                        continue;
+                    }
                     "message" => (
                         role(required_str(p, "role", record)?, record)?,
-                        blocks(required(p, "content", record)?, record)?,
+                        blocks(required(p, "content", record)?, record, &mut session)?,
                     ),
                     "function_call" | "custom_tool_call" => {
                         let input = if kind == "custom_tool_call" {
@@ -88,7 +118,7 @@ pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
                     }
                     "function_call_output" | "custom_tool_call_output" => {
                         let value = required(p, "output", record)?;
-                        let output = outputs(value, record)?;
+                        let output = outputs(value, record, &mut session)?;
                         (
                             Role::Tool,
                             vec![FullContentBlock::ToolResult {
@@ -100,15 +130,28 @@ pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
                     }
                     "web_search_call" => {
                         validate_ordinal(record)?;
-                        required_str(p, "status", record)?;
-                        let action = object(required(p, "action", record)?, record)?;
-                        if required_str(action, "type", record)? != "search" {
-                            return Err(invalid(record, "unsupported web search action kind"));
-                        }
-                        required_str(action, "query", record)?;
-                        string_array(required(action, "queries", record)?, record)?;
+                        let status = required_str(p, "status", record)?;
                         optional_str(p, "id", record)?;
                         let call_id = optional_str(p, "call_id", record)?.map(str::to_owned);
+                        if status == "completed" && p.get("action").is_none() {
+                            session.events.push(event(record, kind));
+                            continue;
+                        }
+                        let action = object(required(p, "action", record)?, record)?;
+                        match required_str(action, "type", record)? {
+                            "search" => {
+                                optional_str(action, "query", record)?;
+                                string_array(required(action, "queries", record)?, record)?;
+                            }
+                            "open_page" => {
+                                optional_str(action, "url", record)?;
+                            }
+                            "find_in_page" => {
+                                required_str(action, "url", record)?;
+                                required_str(action, "pattern", record)?;
+                            }
+                            _ => return Err(invalid(record, "unsupported web search action kind")),
+                        }
                         session.events.push(event(record, kind));
                         (
                             Role::Assistant,
@@ -123,13 +166,11 @@ pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
                         let mut content = Vec::new();
                         for key in ["summary", "content"] {
                             if let Some(value) = p.get(key).filter(|v| !v.is_null()) {
-                                for block in blocks(value, record)? {
-                                    if let FullContentBlock::Text { text } = block {
-                                        content.push(FullContentBlock::Reasoning {
-                                            text,
-                                            redacted: false,
-                                        });
-                                    }
+                                for block in content_items(value, record)? {
+                                    content.push(FullContentBlock::Reasoning {
+                                        text: text_block(block, record)?.into(),
+                                        redacted: false,
+                                    });
                                 }
                             }
                         }
@@ -157,6 +198,13 @@ pub(super) fn parse(records: &[Record]) -> Result<NativeSession, AdapterError> {
                 session.events.push(event(record, kind));
             }
             "turn_context" | "compacted" => session.events.push(event(record, kind)),
+            "inter_agent_communication_metadata" => {
+                validate_ordinal(record)?;
+                if !required(p, "trigger_turn", record)?.is_boolean() {
+                    return Err(invalid(record, "expected a boolean trigger_turn"));
+                }
+                session.events.push(event(record, kind));
+            }
             "world_state" => {
                 validate_ordinal(record)?;
                 if !required(p, "full", record)?.is_boolean() {
@@ -266,26 +314,6 @@ fn validate_additional_tools(value: &Value, record: &Record) -> Result<(), Adapt
     Ok(())
 }
 
-fn string_array(value: &Value, record: &Record) -> Result<(), AdapterError> {
-    let values = value
-        .as_array()
-        .ok_or_else(|| invalid(record, "expected a string array"))?;
-    if values.iter().any(|value| !value.is_string()) {
-        return Err(invalid(record, "expected a string array"));
-    }
-    Ok(())
-}
-
-fn unsigned_integer(value: &Value, record: &Record) -> Result<(), AdapterError> {
-    if !value
-        .as_number()
-        .is_some_and(|number| number.as_str().bytes().all(|byte| byte.is_ascii_digit()))
-    {
-        return Err(invalid(record, "expected an unsigned integer"));
-    }
-    Ok(())
-}
-
 fn validate_ordinal(record: &Record) -> Result<(), AdapterError> {
     if let Some(ordinal) = record.value.get("ordinal") {
         unsigned_integer(ordinal, record)?;
@@ -293,25 +321,71 @@ fn validate_ordinal(record: &Record) -> Result<(), AdapterError> {
     Ok(())
 }
 
-fn blocks(value: &Value, record: &Record) -> Result<Vec<FullContentBlock>, AdapterError> {
-    let items = value
+fn content_items<'a>(value: &'a Value, record: &Record) -> Result<&'a [Value], AdapterError> {
+    value
         .as_array()
-        .ok_or_else(|| invalid(record, "expected a content array"))?;
-    items
+        .map(Vec::as_slice)
+        .ok_or_else(|| invalid(record, "expected a content array"))
+}
+fn text_block<'a>(block: &'a Value, record: &Record) -> Result<&'a str, AdapterError> {
+    match required_str(block, "type", record)? {
+        "input_text" | "output_text" | "text" | "summary_text" | "reasoning_text" => {
+            required_str(block, "text", record)
+        }
+        _ => Err(invalid(record, "unsupported content block kind")),
+    }
+}
+fn image<'a>(
+    block: &'a Value,
+    record: &Record,
+    index: usize,
+    session: &mut NativeSession,
+) -> Result<(Uuid, &'a str), AdapterError> {
+    optional_str(block, "detail", record)?;
+    let (media_type, data) = required_str(block, "image_url", record)?
+        .strip_prefix("data:")
+        .and_then(|url| url.split_once(";base64,"))
+        .ok_or_else(|| invalid(record, "expected an inline base64 image"))?;
+    if !media_type.strip_prefix("image/").is_some_and(|subtype| {
+        !subtype.is_empty()
+            && subtype
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"+.-".contains(&b))
+    }) {
+        return Err(invalid(record, "invalid image media type"));
+    }
+    let id = session.add_inline_image(Harness::Codex, record, index, media_type, data)?;
+    Ok((id, media_type))
+}
+fn blocks(
+    value: &Value,
+    record: &Record,
+    session: &mut NativeSession,
+) -> Result<Vec<FullContentBlock>, AdapterError> {
+    content_items(value, record)?
         .iter()
-        .map(|b| {
-            let kind = required_str(b, "type", record)?;
-            match kind {
-                "input_text" | "output_text" | "text" | "summary_text" | "reasoning_text" => {
-                    Ok(FullContentBlock::text(required_str(b, "text", record)?))
-                }
-                _ => Err(invalid(record, "unsupported content block kind")),
+        .enumerate()
+        .map(|(i, b)| {
+            if str_at(b, "type") == Some("input_image") {
+                let (artifact_id, media_type) = image(b, record, i, session)?;
+                Ok(FullContentBlock::Artifact {
+                    artifact_id,
+                    media_type: media_type.into(),
+                    kind: ArtifactKind::Image,
+                    alt: None,
+                })
+            } else {
+                Ok(FullContentBlock::text(text_block(b, record)?))
             }
         })
         .collect()
 }
 
-fn outputs(value: &Value, record: &Record) -> Result<Vec<ToolOutputBlock>, AdapterError> {
+fn outputs(
+    value: &Value,
+    record: &Record,
+    session: &mut NativeSession,
+) -> Result<Vec<ToolOutputBlock>, AdapterError> {
     if let Some(text) = value.as_str() {
         return Ok(vec![ToolOutputBlock::Text { text: text.into() }]);
     }
@@ -320,10 +394,20 @@ fn outputs(value: &Value, record: &Record) -> Result<Vec<ToolOutputBlock>, Adapt
     {
         return items
             .iter()
-            .map(|item| match required_str(item, "type", record)? {
+            .enumerate()
+            .map(|(i, item)| match required_str(item, "type", record)? {
                 "text" | "input_text" | "output_text" => Ok(ToolOutputBlock::Text {
                     text: required_str(item, "text", record)?.into(),
                 }),
+                "input_image" => {
+                    let (artifact_id, media_type) = image(item, record, i, session)?;
+                    Ok(ToolOutputBlock::Artifact {
+                        artifact_id,
+                        media_type: media_type.into(),
+                        kind: ArtifactKind::Image,
+                        alt: None,
+                    })
+                }
                 _ => Err(invalid(record, "unsupported tool output block kind")),
             })
             .collect();

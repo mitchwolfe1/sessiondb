@@ -2,6 +2,70 @@ use serde_json::{Value, json};
 use sessiondb_adapters::{AdapterError, NativeSession, parse};
 use sessiondb_types::{FullContentBlock, Harness, Origin, Role, ToolInput};
 
+#[test]
+fn native_page_actions_and_configuration_metadata_preserve_their_records() {
+    let update = json!({"type":"response_item","ordinal":3,"payload":{
+        "type":"configuration_update","reasoning":{"effort":"high"},"nativeExtra":true}});
+    let communication =
+        json!({"type":"inter_agent_communication_metadata","payload":{"trigger_turn":false}});
+    let message = json!({"type":"response_item","payload":{"type":"agent_message","id":"agent-item",
+        "author":"a","recipient":"b","content":[{"type":"input_text","text":"A synthetic handoff"},
+            {"type":"encrypted_content","encrypted_content":"synthetic-opaque"}]}});
+    let mut records = vec![header(), update, communication, message];
+    let actions = [
+        json!({"type":"search","queries":["synthetic"]}),
+        json!({"type":"open_page","url":"https://example.org/page"}),
+        json!({"type":"open_page"}),
+        json!({"type":"find_in_page","url":"https://example.org/page","pattern":"example"}),
+    ];
+    for action in &actions {
+        records.push(json!({"type":"response_item","payload":{
+            "type":"web_search_call","status":"completed","action":action}}));
+    }
+    records.push(
+        json!({"type":"response_item","payload":{"type":"web_search_call","status":"completed"}}),
+    );
+    let parsed = session(&records);
+    assert_eq!(parsed.messages.len(), actions.len());
+    for (message, action) in parsed.messages.iter().zip(actions) {
+        assert!(matches!(&message.content[..], [FullContentBlock::ToolCall {
+            call_id: None, name, input: ToolInput::Json(input)
+        }] if name == "web_search" && input == &action));
+    }
+    let events: Vec<_> = parsed.events.iter().map(|e| &e.data).collect();
+    assert_eq!(events, records.iter().skip(1).collect::<Vec<_>>());
+}
+
+#[test]
+fn malformed_configuration_page_actions_and_images_reject_the_whole_file() {
+    let mut invalid = vec![
+        json!({"type":"response_item","payload":{"type":"configuration_update","reasoning":{}}}),
+        json!({"type":"inter_agent_communication_metadata","payload":{"trigger_turn":"false"}}),
+        json!({"type":"response_item","payload":{"type":"agent_message","id":"agent-item","author":"a","recipient":"b","content":[{"type":"unknown"}]}}),
+        json!({"type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{"type":"open_page","url":42}}}),
+        json!({"type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{"type":"find_in_page","url":"u"}}}),
+    ];
+    for url in [
+        "https://example.org/p.png",
+        "data:text/plain;base64,AA==",
+        "data:image/png;base64,%%",
+    ] {
+        invalid.push(
+            json!({"type":"response_item","payload":{"type":"message","role":"user",
+            "content":[{"type":"input_image","image_url":url}]}}),
+        );
+    }
+    for record in invalid {
+        let error = parse(
+            Harness::Codex,
+            "synthetic.jsonl",
+            &bytes(&[header(), user("good", &["First"]), record]),
+        )
+        .expect_err("invalid record must reject the file");
+        assert!(matches!(error, AdapterError::InvalidRecord { line: 3, .. }));
+    }
+}
+
 fn header() -> Value {
     json!({"type":"session_meta","payload":{"id":"synthetic-codex","cwd":"/fixture"}})
 }

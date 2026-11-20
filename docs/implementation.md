@@ -11,6 +11,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - Optional OS credential storage, contexts, CLI JSON, and shell completions.
 - Source registration, one-shot and polling watch sync, persistent per-file snapshots/checkpoints, and `pending_files` recovery. A sync pass reports individual native-file rejections and continues collecting other files.
 - Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
+- Codex inline message and tool-result images, reasoning configuration updates, and web page actions. Claude session and request metadata and tool-reference results.
 - Readiness, request IDs, and optional aggregate request metrics.
 
 [OpenAPI](openapi.yaml) marks **15 baseline operations** with `x-first-build` and **17 implemented operations**, including the two artifact reads, with `x-implemented`. `/v1/info` advertises actual operation capabilities.

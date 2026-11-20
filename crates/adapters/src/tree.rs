@@ -1,5 +1,4 @@
 use super::*;
-use base64::{Engine, engine::general_purpose::STANDARD};
 use sessiondb_types::{ToolInput, ToolOutputBlock, ToolStatus};
 
 pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, AdapterError> {
@@ -54,42 +53,7 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
         optional_str(value, "cwd", record)?;
         let kind = required_str(value, "type", record)?;
         if !matches!(kind, "user" | "assistant") {
-            let event_type = match kind {
-                "mode" | "permission-mode" | "ai-title" => {
-                    required_str(value, "sessionId", record)?;
-                    let field = match kind {
-                        "mode" => "mode",
-                        "permission-mode" => "permissionMode",
-                        _ => "aiTitle",
-                    };
-                    required_str(value, field, record)?;
-                    kind
-                }
-                "custom-title" => {
-                    required_str(value, "customTitle", record)?;
-                    kind
-                }
-                "attachment" => {
-                    required_str(value, "uuid", record)?;
-                    optional_bool(value, "isSidechain", record)?;
-                    let attachment = object(required(value, "attachment", record)?, record)?;
-                    if required_str(attachment, "type", record)?.is_empty() {
-                        return Err(invalid(record, "empty native attachment type"));
-                    }
-                    kind
-                }
-                "system"
-                | "progress"
-                | "queue-operation"
-                | "file-history-snapshot"
-                | "summary"
-                | "last-prompt"
-                | "agent-name"
-                | "agent-color"
-                | "tag"
-                | "pr-link" => optional_str(value, "subtype", record)?.unwrap_or(kind),
-                _ => return Err(invalid(record, "unsupported outer record kind")),
-            };
+            let event_type = claude_event_type(kind, value, record)?;
             session.events.push(event(record, event_type));
             continue;
         }
@@ -194,6 +158,146 @@ pub(super) fn claude(path: &str, records: &[Record]) -> Result<NativeSession, Ad
         }
     }
     Ok(session)
+}
+
+fn claude_event_type<'a>(
+    kind: &'a str,
+    value: &'a Value,
+    record: &Record,
+) -> Result<&'a str, AdapterError> {
+    Ok(match kind {
+        "mode" | "permission-mode" | "ai-title" => {
+            required_str(value, "sessionId", record)?;
+            let field = match kind {
+                "mode" => "mode",
+                "permission-mode" => "permissionMode",
+                _ => "aiTitle",
+            };
+            required_str(value, field, record)?;
+            kind
+        }
+        "custom-title" => {
+            required_str(value, "customTitle", record)?;
+            kind
+        }
+        "attachment" => {
+            required_str(value, "uuid", record)?;
+            optional_bool(value, "isSidechain", record)?;
+            let attachment = object(required(value, "attachment", record)?, record)?;
+            if required_str(attachment, "type", record)?.is_empty() {
+                return Err(invalid(record, "empty native attachment type"));
+            }
+            kind
+        }
+        "session-owner" => {
+            for field in ["sessionId", "accountUuid", "organizationUuid"] {
+                required_str(value, field, record)?;
+            }
+            kind
+        }
+        "atis-latch" => {
+            required_str(value, "sessionId", record)?;
+            required_str(value, "atis", record)?;
+            kind
+        }
+        "tools-used" => {
+            required_str(value, "sessionId", record)?;
+            string_array(required(value, "tools", record)?, record)?;
+            kind
+        }
+        "bridge-session" => {
+            required_str(value, "sessionId", record)?;
+            required_str(value, "bridgeSessionId", record)?;
+            unsigned_integer(required(value, "lastSequenceNum", record)?, record)?;
+            optional_str(value, "ownerAccountUuid", record)?;
+            optional_str(value, "ownerOrganizationUuid", record)?;
+            kind
+        }
+        "cost-state" => {
+            required_str(value, "sessionId", record)?;
+            if !required(value, "totalCostUSD", record)?.is_number()
+                || !required(value, "hasUnknownModelCost", record)?.is_boolean()
+            {
+                return Err(invalid(record, "invalid cost state"));
+            }
+            for field in [
+                "startTime",
+                "totalAPIDuration",
+                "totalDuration",
+                "totalLinesAdded",
+                "totalLinesRemoved",
+                "totalToolDuration",
+            ] {
+                unsigned_integer(required(value, field, record)?, record)?;
+            }
+            if let Some(duration) = value.get("totalAPIDurationWithoutRetries") {
+                unsigned_integer(duration, record)?;
+            }
+            object(required(value, "modelUsage", record)?, record)?;
+            kind
+        }
+        "file-history-delta" => {
+            for field in ["messageId", "snapshotMessageId", "trackingPath"] {
+                required_str(value, field, record)?;
+            }
+            object(required(value, "backup", record)?, record)?;
+            kind
+        }
+        "api-request-blob" => {
+            required_str(value, "sessionId", record)?;
+            required_str(value, "hash", record)?;
+            object(required(value, "message", record)?, record)?;
+            kind
+        }
+        "api-request-shape" => {
+            required_str(value, "sessionId", record)?;
+            required_str(value, "shapeHash", record)?;
+            let shape = object(required(value, "shape", record)?, record)?;
+            for key in ["system", "tools"] {
+                if !required(shape, key, record)?.is_array() {
+                    return Err(invalid(record, "invalid API request shape"));
+                }
+            }
+            kind
+        }
+        "api-request" => {
+            for field in [
+                "id",
+                "sessionId",
+                "version",
+                "timestamp",
+                "shapeHash",
+                "querySource",
+            ] {
+                required_str(value, field, record)?;
+            }
+            unsigned_integer(required(value, "keep", record)?, record)?;
+            string_array(required(value, "tail", record)?, record)?;
+            object(required(value, "params", record)?, record)?;
+            if !required(value, "cacheControl", record)?.is_array() {
+                return Err(invalid(record, "invalid API request cache controls"));
+            }
+            optional_str(value, "base", record)?;
+            if let Some(cut) = value.get("cut") {
+                object(cut, record)?;
+                required_str(value, "cutRequestDigest", record)?;
+            } else {
+                required_str(value, "requestDigest", record)?;
+            }
+            kind
+        }
+        "system"
+        | "progress"
+        | "queue-operation"
+        | "file-history-snapshot"
+        | "summary"
+        | "last-prompt"
+        | "agent-name"
+        | "agent-color"
+        | "tag"
+        | "pr-link" => optional_str(value, "subtype", record)?.unwrap_or(kind),
+        _ => return Err(invalid(record, "unsupported outer record kind")),
+    })
 }
 
 pub(super) fn pi(records: &[Record]) -> Result<NativeSession, AdapterError> {
@@ -383,28 +487,7 @@ fn block(
                     required_str(b, "data", record)?,
                 )
             };
-            if !media_type.starts_with("image/") || media_type.len() == 6 {
-                return Err(invalid(record, "invalid image media type"));
-            }
-            let bytes = STANDARD
-                .decode(data)
-                .map_err(|_| invalid(record, "invalid inline artifact base64"))?;
-            let id = Uuid::new_v5(
-                &Uuid::NAMESPACE_URL,
-                format!(
-                    "sessiondb:{}:{}:{}:{index}",
-                    harness, session.native_key, record.anchor.record_id
-                )
-                .as_bytes(),
-            );
-            session.artifacts.push(NativeArtifact {
-                id,
-                media_type: media_type.into(),
-                kind: ArtifactKind::Image,
-                bytes,
-                native_entry_id: record.anchor.record_id.clone(),
-                content_index: index,
-            });
+            let id = session.add_inline_image(harness, record, index, media_type, data)?;
             FullContentBlock::Artifact {
                 artifact_id: id,
                 media_type: media_type.into(),
@@ -437,6 +520,10 @@ fn outputs(
         .iter()
         .enumerate()
         .map(|(i, b)| {
+            if harness == Harness::Claude && str_at(b, "type") == Some("tool_reference") {
+                required_str(b, "tool_name", record)?;
+                return Ok(ToolOutputBlock::Json { value: b.clone() });
+            }
             if !matches!(str_at(b, "type"), Some("text" | "image")) {
                 return Err(invalid(record, "unsupported tool output block kind"));
             }

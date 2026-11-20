@@ -22,6 +22,58 @@ fn user() -> Value {
 }
 
 #[test]
+fn recorded_session_and_request_metadata_stays_out_of_the_message_sequence() {
+    let events = [
+        json!({"type":"session-owner","sessionId":"fixture","accountUuid":"account","organizationUuid":"organization"}),
+        json!({"type":"atis-latch","sessionId":"fixture","atis":"synthetic"}),
+        json!({"type":"tools-used","sessionId":"fixture","tools":["lookup"]}),
+        json!({"type":"bridge-session","sessionId":"fixture","bridgeSessionId":"bridge","lastSequenceNum":7}),
+        json!({"type":"file-history-delta","messageId":"native","snapshotMessageId":"snapshot","trackingPath":"example","backup":{"version":1}}),
+        json!({"type":"cost-state","sessionId":"fixture","modelUsage":{"synthetic":{"inputTokens":7}},
+            "totalCostUSD":0.25,"hasUnknownModelCost":false,"startTime":10,"totalAPIDuration":4,
+            "totalDuration":6,"totalLinesAdded":1,"totalLinesRemoved":0,"totalToolDuration":1}),
+        json!({"type":"api-request-blob","sessionId":"fixture","hash":"digest","message":{"content":[]}}),
+        json!({"type":"api-request-shape","sessionId":"fixture","shapeHash":"shape","shape":{"system":[],"tools":[]}}),
+        json!({"type":"api-request","sessionId":"fixture","version":"1","id":"req","timestamp":"2026-01-01T00:00:00Z",
+            "querySource":"fixture","keep":0,"tail":["digest"],"params":{},"cacheControl":[],"shapeHash":"shape","requestDigest":"req-digest"}),
+    ];
+    let result = json!({"type":"user","uuid":"result","parentUuid":"user","sessionId":"fixture","message":{
+        "role":"user","content":[{"type":"tool_result","content":[{"type":"text","text":"Found"},
+        {"type":"tool_reference","tool_name":"lookup","extension":{"recorded":true}}]}]}});
+    let mut records = vec![user()];
+    records.extend_from_slice(&events);
+    records.push(result.clone());
+    let parsed = session(&records, "fixture.jsonl");
+    assert_eq!(parsed.messages.len(), 2);
+    assert_eq!(
+        parsed.events.iter().map(|e| &e.data).collect::<Vec<_>>(),
+        events.iter().collect::<Vec<_>>()
+    );
+    let content = serde_json::to_value(&parsed.messages[1].content).unwrap();
+    assert_eq!(
+        content[0]["content"][1]["value"],
+        result["message"]["content"][0]["content"][1]
+    );
+}
+
+#[test]
+fn malformed_session_metadata_and_tool_references_reject_the_snapshot() {
+    for record in [
+        json!({"type":"session-owner","sessionId":"fixture","accountUuid":"account"}),
+        json!({"type":"tools-used","sessionId":"fixture","tools":[5]}),
+        json!({"type":"cost-state","sessionId":"fixture","totalCostUSD":"invalid"}),
+        json!({"type":"api-request-blob","sessionId":"fixture","hash":"digest","message":false}),
+        json!({"type":"api-request-shape","sessionId":"fixture","shapeHash":"s","shape":{"system":[],"tools":false}}),
+        json!({"type":"user","uuid":"result","sessionId":"fixture","message":{"role":"user","content":[
+            {"type":"tool_result","content":[{"type":"tool_reference","tool_name":7}]}]}}),
+    ] {
+        let input = snapshot(&[user(), record]);
+        let error = parse(Harness::Claude, "fixture.jsonl", input.as_bytes()).unwrap_err();
+        assert!(matches!(error, AdapterError::InvalidRecord { line: 2, .. }));
+    }
+}
+
+#[test]
 fn control_records_retain_complete_native_metadata_and_message_ancestry() {
     let records = [
         json!({"type":"mode","mode":"plan","sessionId":"fixture","extension":{"enabled":true}}),

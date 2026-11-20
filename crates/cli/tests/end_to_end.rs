@@ -1159,6 +1159,77 @@ fn zip_bytes(bytes: &[u8]) -> zip::ZipArchive<Cursor<&[u8]>> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires Docker and built workspace binaries; uses isolated synthetic services"]
+async fn codex_message_and_tool_images_round_trip() {
+    let root = tempfile::tempdir().unwrap();
+    let services = Services::start().await;
+    let mut server = Server::start(root.path(), &services).await;
+    let client = client(&server);
+    let source = source(&client, Harness::Codex, "codex-images").await;
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=";
+    let image = json!({"type":"input_image","detail":"high","image_url":format!("data:image/png;base64,{png}")});
+    let records = [
+        json!({"type":"session_meta","payload":{"id":"fixture-codex-images"}}),
+        json!({"type":"response_item","payload":{"type":"configuration_update","reasoning":{"effort":"high"}}}),
+        json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"A fixture."},image]}}),
+        json!({"type":"response_item","payload":{"type":"custom_tool_call","name":"lookup","input":"fixture","call_id":"lookup-1"}}),
+        json!({"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"lookup-1","output":[image]}}),
+    ];
+    let mut bytes = Vec::new();
+    for record in records {
+        serde_json::to_writer(&mut bytes, &record).unwrap();
+        bytes.push(b'\n');
+    }
+    let receipt = ingest(&client, source.id, "images.jsonl", bytes.clone(), None).await;
+    let messages = client
+        .messages(receipt.session_ids[0], &MessageFilter::default())
+        .await
+        .unwrap()
+        .data;
+    assert_eq!(messages.len(), 3);
+    let user = client.content(messages[0].id).await.unwrap();
+    let result = client.content(messages[2].id).await.unwrap();
+    let FullContentBlock::Artifact {
+        artifact_id: first, ..
+    } = &user.content[1]
+    else {
+        panic!("expected message image")
+    };
+    let FullContentBlock::ToolResult {
+        content, call_id, ..
+    } = &result.content[0]
+    else {
+        panic!("expected tool result")
+    };
+    assert_eq!(call_id.as_deref(), Some("lookup-1"));
+    let ToolOutputBlock::Artifact {
+        artifact_id: second,
+        ..
+    } = &content[0]
+    else {
+        panic!("expected tool result image")
+    };
+    assert_ne!(first, second);
+    for id in [first, second] {
+        let meta = client.artifact(*id).await.unwrap();
+        assert_eq!(
+            (meta.media_type.as_str(), meta.byte_length),
+            ("image/png", 68)
+        );
+        let mut data = Vec::new();
+        client.artifact_to(*id, &mut data).await.unwrap();
+        assert_eq!(&data[..8], b"\x89PNG\r\n\x1a\n");
+    }
+    let mut original = Vec::new();
+    client
+        .original_to(source.id, receipt.file.id, None, &mut original)
+        .await
+        .unwrap();
+    assert_eq!(original, bytes);
+    server.stop();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires Docker and built workspace binaries; uses isolated synthetic services"]
 async fn native_json_control_characters_round_trip() {
     let root = tempfile::tempdir().unwrap();
     let services = Services::start().await;
