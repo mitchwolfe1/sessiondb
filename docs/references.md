@@ -9,7 +9,7 @@ Reviewed on 2026-11-15. Native formats and evolving AI conventions require reche
 - [Cargo workspaces](https://doc.rust-lang.org/cargo/reference/workspaces.html) — shared Cargo metadata, commands, dependencies, and lockfile.
 - [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) — naming, interoperability, documentation, and public client ergonomics.
 - [axum](https://docs.rs/axum/latest/axum/) and [Tokio](https://docs.rs/tokio/latest/tokio/) — candidate service/runtime.
-- [clap](https://docs.rs/clap/latest/clap/) — conventional command parsing, help, and completions.
+- [clap](https://docs.rs/clap/latest/clap/) — command parsing and help.
 - [SQLx](https://docs.rs/sqlx/latest/sqlx/) — candidate PostgreSQL integration.
 - [reqwest](https://docs.rs/reqwest/latest/reqwest/) — candidate reusable HTTP client.
 - [Apache Arrow object_store](https://docs.rs/object_store/latest/object_store/) — candidate blob abstraction; verify required signing features before selection.

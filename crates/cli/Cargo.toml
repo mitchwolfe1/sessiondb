@@ -16,7 +16,6 @@ sessiondb-client.workspace = true
 sessiondb-adapters.workspace = true
 anyhow.workspace = true
 clap.workspace = true
-clap_complete.workspace = true
 chrono.workspace = true
 directories.workspace = true
 futures-util.workspace = true

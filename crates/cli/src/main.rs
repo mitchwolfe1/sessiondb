@@ -4,7 +4,7 @@ mod state;
 mod sync;
 
 use anyhow::{Context as _, Result, bail};
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use config::{ConfiguredSource, FileConfig};
 use serde::Serialize;
 use serde_json::json;
@@ -74,10 +74,6 @@ enum Command {
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
-    },
-    Completion {
-        #[arg(value_enum)]
-        shell: clap_complete::Shell,
     },
     Version,
 }
@@ -446,14 +442,6 @@ async fn run(args: &Cli) -> Result<()> {
         return sync_command(args, cmd).await;
     }
     match &args.command {
-        Command::Completion { shell } => {
-            clap_complete::generate(
-                *shell,
-                &mut Cli::command(),
-                "sessiondb",
-                &mut std::io::stdout(),
-            );
-        }
         Command::Version => emit(args, &json!({"version":env!("CARGO_PKG_VERSION")}), || {
             println!("sessiondb {}", env!("CARGO_PKG_VERSION"))
         })?,
