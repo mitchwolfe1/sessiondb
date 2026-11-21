@@ -11,7 +11,7 @@ use serde_json::json;
 use sessiondb_client::Client;
 use sessiondb_types::*;
 use state::LocalState;
-use std::{collections::HashMap, path::PathBuf, process::ExitCode, time::Duration};
+use std::{collections::HashMap, io::IsTerminal, path::PathBuf, process::ExitCode, time::Duration};
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
@@ -41,14 +41,13 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    Auth {
-        #[command(subcommand)]
-        command: AuthCommand,
-    },
-    /// Verify access to a server and save it as the default.
+    /// Verify access and save the server URL and API key.
     Connect {
         #[arg(value_name = "SERVER_URL")]
         url: String,
+        /// Read a replacement key from standard input.
+        #[arg(long)]
+        key_stdin: bool,
     },
     Sources {
         #[command(subcommand)]
@@ -76,16 +75,6 @@ enum Command {
         command: ConfigCommand,
     },
     Version,
-}
-#[derive(Subcommand)]
-enum AuthCommand {
-    Login {
-        /// Read the instance API key from stdin and save it in the OS credential store.
-        #[arg(long, required = true)]
-        key_stdin: bool,
-    },
-    Logout,
-    Status,
 }
 #[derive(Subcommand)]
 enum SourceCommand {
@@ -201,13 +190,16 @@ fn server<'a>(args: &'a Cli, config: &'a FileConfig) -> Result<&'a str> {
         .or(config.server.as_deref())
         .context("select a server with sessiondb connect <SERVER_URL> or --server")
 }
-async fn client_for(args: &Cli, config: &FileConfig) -> Result<Client> {
-    let client =
-        config::authenticated(server(args, config)?, Duration::from_secs(args.timeout)).await?;
+fn client_for(args: &Cli, config: &FileConfig) -> Result<Client> {
+    let url = config::normalize_server(server(args, config)?)?;
     if args.verbose > 0 {
-        eprintln!("Using {}", client.server());
+        eprintln!("Using {url}");
     }
-    Ok(client)
+    Ok(Client::new(
+        &url,
+        config.request_key(&url)?,
+        Duration::from_secs(args.timeout),
+    )?)
 }
 
 async fn load_config(args: &Cli) -> Result<FileConfig> {
@@ -409,6 +401,15 @@ fn service_upgrade_args(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsSt
     args
 }
 
+fn authentication_failure(error: &sessiondb_client::Error) -> bool {
+    match error {
+        sessiondb_client::Error::Authentication(_) => true,
+        sessiondb_client::Error::Problem(problem) => matches!(problem.status, 401 | 403),
+        sessiondb_client::Error::Http(status) => matches!(status.as_u16(), 401 | 403),
+        _ => false,
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let args = Cli::parse_from(service_upgrade_args(std::env::args_os().collect()));
@@ -419,9 +420,8 @@ async fn main() -> ExitCode {
                 signal.0
             } else {
                 match error.downcast_ref::<sessiondb_client::Error>() {
-                    Some(sessiondb_client::Error::Problem(p)) if matches!(p.status, 401 | 403) => 3,
+                    Some(error) if authentication_failure(error) => 3,
                     Some(sessiondb_client::Error::Problem(p)) if p.status == 404 => 4,
-                    Some(sessiondb_client::Error::Authentication(_)) => 3,
                     _ => 1,
                 }
             };
@@ -455,7 +455,11 @@ async fn run(args: &Cli) -> Result<()> {
                 .or(config.server.as_deref())
                 .map(config::normalize_server)
                 .transpose()?;
-            let value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,"sources":config.sources,"sync":config.sync});
+            let has_key = selected.as_deref().is_some_and(|url| {
+                std::env::var_os("SESSIONDB_API_KEY").is_some() || config.saved_key(url).is_some()
+            });
+            let value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,
+                "api_key":has_key.then_some("[redacted]"),"sources":config.sources,"sync":config.sync});
             emit(args, &value, || {
                 println!(
                     "{}",
@@ -463,18 +467,7 @@ async fn run(args: &Cli) -> Result<()> {
                 )
             })?;
         }
-        Command::Connect { url } => {
-            let client = config::authenticated(url, Duration::from_secs(args.timeout)).await?;
-            client.info().await?;
-            let _writer = config::write_lock(&args.config)?;
-            let mut config = load_config(args).await?;
-            config.server = Some(client.server().to_owned());
-            config::save(&args.config, &config)?;
-            emit(args, &json!({"server":client.server()}), || {
-                println!("Default server set to {}", client.server())
-            })?;
-        }
-        Command::Auth { command } => auth_command(args, &load_config(args).await?, command).await?,
+        Command::Connect { url, key_stdin } => connect(args, url, *key_stdin).await?,
         Command::Sources { command } => {
             let _writer = if matches!(command, SourceCommand::Add { .. }) {
                 Some(config::write_lock(&args.config)?)
@@ -500,7 +493,13 @@ async fn run(args: &Cli) -> Result<()> {
             if *watch {
                 state.upgrade_watch_state().await?;
             }
-            let client = client_for(args, &config).await?;
+            let target = config::normalize_server(server(args, &config)?)?;
+            let timeout = Duration::from_secs(args.timeout);
+            let mut key = config.request_key(&target)?;
+            let mut client = Client::new(&target, key.clone(), timeout)?;
+            if args.verbose > 0 {
+                eprintln!("Using {target}");
+            }
             let mut watched_files = HashMap::new();
             let shutdown = sync_shutdown();
             tokio::pin!(shutdown);
@@ -513,6 +512,11 @@ async fn run(args: &Cli) -> Result<()> {
                 let pass = async {
                     if *watch {
                         config = load_config(args).await?;
+                        let updated_key = config.request_key(&target)?;
+                        if updated_key != key {
+                            client = Client::new(&target, updated_key.clone(), timeout)?;
+                            key = updated_key;
+                        }
                     }
                     let sources: Vec<_> = config
                         .sources
@@ -593,7 +597,9 @@ async fn run(args: &Cli) -> Result<()> {
                     )
                     .await?;
                 if let Err(error) = result {
-                    if matches!(error.downcast_ref::<sessiondb_client::Error>(),Some(sessiondb_client::Error::Problem(p)) if matches!(p.status,401|403))
+                    if error
+                        .downcast_ref::<sessiondb_client::Error>()
+                        .is_some_and(authentication_failure)
                     {
                         return Err(error);
                     }
@@ -605,7 +611,7 @@ async fn run(args: &Cli) -> Result<()> {
             }
         }
         Command::Sessions { command } => {
-            let client = client_for(args, &load_config(args).await?).await?;
+            let client = client_for(args, &load_config(args).await?)?;
             match command {
                 SessionCommand::List {
                     page,
@@ -725,7 +731,7 @@ async fn run(args: &Cli) -> Result<()> {
             }
         }
         Command::Messages { command } => {
-            let client = client_for(args, &load_config(args).await?).await?;
+            let client = client_for(args, &load_config(args).await?)?;
             match command {
                 MessageCommand::Show { id } => {
                     let value = client.message(*id).await?;
@@ -743,9 +749,7 @@ async fn run(args: &Cli) -> Result<()> {
         }
         Command::Status => {
             let config = load_config(args).await?;
-            let client =
-                config::authenticated(server(args, &config)?, Duration::from_secs(args.timeout))
-                    .await?;
+            let client = client_for(args, &config)?;
             let value = json!({"server":client.server(),"info":client.info().await?,"sync":sync_status(&LocalState::open(&args.state_dir).await?).await?});
             emit(args, &value, || {
                 println!(
@@ -757,60 +761,80 @@ async fn run(args: &Cli) -> Result<()> {
     }
     Ok(())
 }
-async fn auth_command(args: &Cli, config: &FileConfig, command: &AuthCommand) -> Result<()> {
-    let server = config::normalize_server(server(args, config)?)?;
-    match command {
-        AuthCommand::Login { key_stdin: _ } => {
-            let mut api_key = String::new();
-            tokio::io::stdin()
-                .take(64 * 1024 + 1)
-                .read_to_string(&mut api_key)
-                .await
-                .context("read API key from stdin")?;
-            if api_key.len() > 64 * 1024 {
-                bail!("API key input exceeds 64 KiB");
-            }
-            let api_key = api_key.trim_end_matches(['\r', '\n']).to_owned();
-            let client = Client::new(&server, api_key.clone(), Duration::from_secs(args.timeout))?;
-            client.info().await?;
-            config::store(server.clone(), api_key).await.context(
-                "OS credential storage is required; headless clients can use SESSIONDB_API_KEY",
-            )?;
-            if config.server.is_none() {
-                // Keep first-time keyring setup usable as a bootstrap. Saving a key
-                // for another origin must leave an existing default in place.
-                let _writer = config::write_lock(&args.config)?;
-                let mut latest = load_config(args).await?;
-                if latest.server.is_none() {
-                    latest.server = Some(server.clone());
-                    config::save(&args.config, &latest)?;
-                }
-            }
-            emit(args, &json!({"server":server,"saved":true}), || {
-                println!("API key saved in the OS credential store.")
-            })?;
-        }
-        AuthCommand::Logout => {
-            config::remove_credentials(server).await?;
-        }
-        AuthCommand::Status => {
-            let client = config::authenticated(&server, Duration::from_secs(args.timeout)).await?;
-            client.info().await?;
-            emit(
-                args,
-                &json!({"server":client.server(),"authenticated":true}),
-                || println!("API key accepted by {}", client.server()),
-            )?;
-        }
+fn prompt_key(origin: &str) -> Result<String> {
+    if !std::io::stdin().is_terminal() {
+        return Err(sessiondb_client::Error::Authentication(format!(
+            "run sessiondb connect {origin} in a terminal, supply --key-stdin, or set SESSIONDB_API_KEY"
+        )).into());
     }
+    rpassword::prompt_password(format!("API key for {origin}: "))
+        .context("read API key from terminal")
+}
+
+async fn stdin_key(origin: &str) -> Result<String> {
+    if std::io::stdin().is_terminal() {
+        return prompt_key(origin);
+    }
+    const MAX: u64 = 64 * 1024;
+    let mut input = String::new();
+    tokio::io::stdin()
+        .take(MAX + 1)
+        .read_to_string(&mut input)
+        .await
+        .context("read API key from stdin")?;
+    if input.len() as u64 > MAX {
+        bail!("API key input exceeds 64 KiB");
+    }
+    Ok(input.trim_end_matches(['\r', '\n']).to_owned())
+}
+
+async fn verify_key(origin: &str, key: &str, timeout: Duration) -> sessiondb_client::Result<()> {
+    Client::new(origin, key.to_owned(), timeout)?.info().await?;
     Ok(())
 }
+
+async fn connect(args: &Cli, url: &str, key_stdin: bool) -> Result<()> {
+    let origin = config::normalize_server(url)?;
+    let config = load_config(args).await?;
+    let explicit = if key_stdin {
+        Some(stdin_key(&origin).await?)
+    } else {
+        config::environment_key()?
+    };
+    let (mut key, from_disk) = match (explicit, config.saved_key(&origin)) {
+        (Some(key), _) => (key, false),
+        (None, Some(key)) => (key.to_owned(), true),
+        (None, None) => (prompt_key(&origin)?, false),
+    };
+    let timeout = Duration::from_secs(args.timeout);
+    if let Err(error) = verify_key(&origin, &key, timeout).await {
+        if !from_disk || !authentication_failure(&error) {
+            return Err(error.into());
+        }
+        if !std::io::stdin().is_terminal() {
+            return Err(anyhow::Error::new(error).context(
+                "saved API key rejected; reconnect in a terminal or supply a replacement key",
+            ));
+        }
+        eprintln!("Saved API key rejected.");
+        key = prompt_key(&origin)?;
+        verify_key(&origin, &key, timeout).await?;
+    }
+    let _lock = config::write_lock(&args.config)?;
+    let mut latest = load_config(args).await?;
+    latest.remember(origin.clone(), key);
+    config::save(&args.config, &latest)?;
+    emit(args, &json!({"server":origin}), || {
+        println!("Connected to {origin}")
+    })
+}
+
 async fn source_command(
     args: &Cli,
     config: &mut FileConfig,
     command: &SourceCommand,
 ) -> Result<()> {
-    let client = client_for(args, config).await?;
+    let client = client_for(args, config)?;
     match command {
         SourceCommand::List { page } => {
             let value = client.sources(&page.options()).await?;

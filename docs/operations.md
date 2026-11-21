@@ -29,11 +29,11 @@ Secrets use fixed environment variables, as defined in [ADR 0017](decisions/0017
 
 Set both S3 variables or neither. If neither is set, the standard AWS credential chain is used, including instance/task roles. An incomplete or empty explicit pair fails instead of silently falling back.
 
-There are no `[database]` or `[auth]` TOML sections and no configurable secret-variable names. Supply secrets through the service/container environment or a protected environment file; SessionDB does not automatically load `.env` files. Do not put secret values in TOML.
+There are no `[database]` or `[auth]` TOML sections and no configurable secret-variable names. Supply secrets through the service/container environment or a protected environment file; SessionDB does not automatically load `.env` files. Keep server secrets in the service environment.
 
 Provision one strong shared key securely. Startup rejects an absent/empty key. There is no account bootstrap or external identity service. Every correct-key client can access all instance data and implemented mutations; use independent instances for isolation. See [authentication](authentication.md).
 
-Clients use `Authorization: Bearer <key>`, via `SESSIONDB_API_KEY` or the optional OS credential store. Rotate by replacing the server key and restarting, then updating clients. There is no per-client revocation, scope restriction, refresh, or overlapping legacy-key mode. Do not put keys in arguments, logs, ordinary config, or object requests.
+Clients send `Authorization: Bearer <key>` using the key saved by `sessiondb connect` or the `SESSIONDB_API_KEY` environment override. Rotate the instance key by replacing the server environment key, restarting the server, and reconnecting clients.
 
 ## Service behavior
 

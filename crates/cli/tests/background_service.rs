@@ -131,10 +131,7 @@ async fn user_service_uploads_recovers_and_uninstalls() {
     };
     fs::write(
         dropin.join("test.conf"),
-        format!(
-            "[Service]\nEnvironment=SESSIONDB_API_KEY={}\n",
-            server.api_key
-        ),
+        "[Service]\nUnsetEnvironment=SESSIONDB_API_KEY\n",
     )
     .unwrap();
     run(&server, root, &["sync", "install", "--json"]).await;
@@ -163,6 +160,14 @@ async fn user_service_uploads_recovers_and_uninstalls() {
     let migrated = fs::read_to_string(&config_path).unwrap();
     assert!(!migrated.contains("context"));
     let migrated: toml::Value = toml::from_str(&migrated).unwrap();
+    assert_eq!(
+        migrated["api_keys"][format!("{}/", server.url).as_str()].as_str(),
+        Some(server.api_key.as_str())
+    );
+    assert_eq!(
+        migrated["api_keys"][format!("{}/", alternate.url).as_str()].as_str(),
+        Some(alternate.api_key.as_str())
+    );
     assert_eq!(
         migrated["server"].as_str(),
         Some(format!("{}/", alternate.url).as_str())

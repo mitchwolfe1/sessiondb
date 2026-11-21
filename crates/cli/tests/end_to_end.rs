@@ -6,6 +6,7 @@ use sessiondb_types::*;
 use sha2::{Digest, Sha256};
 use std::{fs, io::Cursor, path::PathBuf, time::Duration};
 use support::{Server, Services, cli, docker};
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -274,7 +275,7 @@ async fn authenticated_sync_storage_and_recovery() {
         let output = command.output().unwrap();
         assert!(!output.status.success());
     }
-    let output = cli(&server, root.path(), &["auth", "status", "--json"]).await;
+    let output = cli(&server, root.path(), &["status", "--json"]).await;
     assert!(
         output.status.success(),
         "{}",
@@ -825,12 +826,23 @@ async fn authenticated_sync_storage_and_recovery() {
         fixture("codex/precision.jsonl"),
     )
     .unwrap();
-    let output = support::cli_with_saved_server(&server, root.path())
+    let mut connect = support::cli_with_saved_server(&server, root.path())
         .env("SESSIONDB_URL", "http://127.0.0.1:1")
-        .args(["connect", &server.url, "--json"])
-        .output()
+        .env("SESSIONDB_API_KEY", "unused-environment-override")
+        .args(["connect", &server.url, "--key-stdin", "--json"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    connect
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(format!("{}\r\n", server.api_key).as_bytes())
         .await
         .unwrap();
+    let output = connect.wait_with_output().await.unwrap();
     assert!(
         output.status.success(),
         "{}",
@@ -839,6 +851,24 @@ async fn authenticated_sync_storage_and_recovery() {
     let connected: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(connected, json!({"server":format!("{}/",server.url)}));
     let before = fs::read(root.path().join("client.toml")).unwrap();
+    let disk: toml::Value = toml::from_str(std::str::from_utf8(&before).unwrap()).unwrap();
+    assert_eq!(
+        disk["api_keys"][format!("{}/", server.url).as_str()].as_str(),
+        Some(server.api_key.as_str())
+    );
+    for json in [false, true] {
+        let mut show = support::cli_with_saved_server(&server, root.path());
+        show.env_remove("SESSIONDB_API_KEY")
+            .args(["config", "show"]);
+        if json {
+            show.arg("--json");
+        }
+        let out = show.output().await.unwrap();
+        assert!(out.status.success());
+        assert!(String::from_utf8_lossy(&out.stdout).contains("[redacted]"));
+        assert!(!String::from_utf8_lossy(&out.stdout).contains(&server.api_key));
+        assert!(!String::from_utf8_lossy(&out.stderr).contains(&server.api_key));
+    }
     let failed = support::cli_with_saved_server(&server, root.path())
         .env("SESSIONDB_API_KEY", "incorrect-test-key")
         .args(["connect", &server.url])
@@ -848,7 +878,8 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(failed.status.code(), Some(3));
     assert_eq!(fs::read(root.path().join("client.toml")).unwrap(), before);
     let saved = support::cli_with_saved_server(&server, root.path())
-        .args(["auth", "status", "--json"])
+        .env_remove("SESSIONDB_API_KEY")
+        .args(["status", "--json"])
         .output()
         .await
         .unwrap();
@@ -856,6 +887,16 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(
         serde_json::from_slice::<Value>(&saved.stdout).unwrap()["server"],
         connected["server"]
+    );
+    let other = support::cli_with_saved_server(&server, root.path())
+        .env_remove("SESSIONDB_API_KEY")
+        .args(["--server", "http://127.0.0.1:1", "status"])
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(other.status.code(), Some(3));
+    assert!(
+        String::from_utf8_lossy(&other.stderr).contains("sessiondb connect http://127.0.0.1:1/")
     );
     let output = cli(
         &server,

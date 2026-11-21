@@ -2,6 +2,8 @@
 
 ## Client connections
 
+Terminal verification exercised first-use hidden input, saved-key reuse and replacement of a rejected key. The CLI integration checks piped credentials, environment precedence, origin isolation, and redaction in both human and JSON output. Private config writes and parse-error redaction have regression coverage. The login-service integration authenticates from its saved config across restarts and a change of CLI default.
+
 The CLI integration verifies that `connect` saves a verified server URL, a supplied URL takes precedence over an environment override for that command, and a rejected key preserves the previous config bytes. The Linux login-service test loads an older named config, switches the default between two loopback servers, and verifies that the running and restarted watcher retains its original destination and source roots. Config and local-state tests cover old registration receipts and the saved watch heartbeat.
 
 ## Background sync

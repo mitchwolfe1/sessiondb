@@ -4,7 +4,7 @@ The initial implementation supports original-file storage, automatic sync, sessi
 
 ## Build
 
-Install the toolchain selected by [rust-toolchain.toml](../rust-toolchain.toml), a C/C++ build toolchain, CMake, and pkg-config. Linux CLI builds also need the D-Bus development package for OS credential storage; on Debian/Ubuntu this is `libdbus-1-dev`. The macOS CLI uses the native credential store.
+Install the toolchain selected by [rust-toolchain.toml](../rust-toolchain.toml), a C/C++ build toolchain, CMake, and pkg-config.
 
 ```sh
 cargo build --locked --workspace --bins
@@ -44,7 +44,7 @@ set +a
 sessiondb connect http://127.0.0.1:58080
 ```
 
-The private `.env` supplies the instance key; do not print or commit it. The server fails at startup if `SESSIONDB_API_KEY` is missing or empty. Environment-key clients need no login or OS credential-store session. Optionally, `sessiondb auth login --key-stdin` validates and saves a key in the OS store without a browser or network credential exchange. Credentials are never written into ordinary client configuration.
+The private `.env` supplies the instance key for this example. The server requires a nonempty `SESSIONDB_API_KEY`. The client validates the key, then saves it in its private config for subsequent commands and background sync.
 
 ## Try synthetic sessions
 

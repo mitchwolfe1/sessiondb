@@ -8,7 +8,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - API-mediated synchronous multipart upload: verify and fully normalize one file before HTTP 200, reject unsupported/malformed input as a whole, and safely recover lost responses.
 - S3 immutable originals/artifacts and age-based unreferenced-object cleanup.
 - Required nonempty instance key on every `/v1` operation, including info; equal full access for all correct-key clients.
-- Optional OS credential storage, verified URL-based connections, and CLI JSON.
+- Verified URL-based connections with per-server keys in a private client config, environment overrides, and CLI JSON.
 - Source registration, one-shot and polling watch sync, Linux systemd and macOS launchd user-service management, persistent rejection hashes, per-file snapshots/checkpoints, and `pending_files` recovery. A sync pass reports individual native-file rejections and continues collecting other files.
 - Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
 - Codex inline message and tool-result images, reasoning configuration updates, and web page actions. Claude session and request metadata and tool-reference results.

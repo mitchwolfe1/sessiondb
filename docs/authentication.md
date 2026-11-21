@@ -14,13 +14,13 @@ Verify the secret with a constant-time comparison. Never write it into logs, dia
 
 ## CLI and SDK
 
-`SESSIONDB_API_KEY` is sufficient for every CLI operation. `sessiondb connect SERVER_URL` verifies access and saves the default server URL. `sessiondb auth login --key-stdin` requires that flag, reads a supplied key, validates protected `/v1/info`, and saves it per normalized server URL in the OS credential store. It does not authenticate with a provider or exchange tokens. `SESSIONDB_API_KEY` overrides the saved key; an explicitly empty value fails without fallback. Logout removes only the local stored copy, not the environment value; status validates `/v1/info` and reports only the server/authenticated state, never the secret. See [CLI](cli.md) for the available interface.
+`sessiondb connect SERVER_URL` prompts for the shared key and verifies it against protected `/v1/info`. The CLI saves the verified key for that exact server origin in its private TOML configuration. Both the CLI and background watcher use that file. `SESSIONDB_API_KEY` overrides the saved key for scripts. `sessiondb status` checks access, and `config show` redacts credentials. See the [CLI guide](cli.md#configuration).
 
 The SDK requires `Client::new(server: &str, api_key: String, timeout: Duration)` with a nonempty key. It has no token provider, refresh task, or organization selection. Uploads and downloads use the API only; never send its bearer key to S3.
 
 ## Provisioning and rotation
 
-Provision a strong key through the operator's secret manager. Keep it outside backups and ordinary TOML. Replace the server environment key and restart, then update client environments/credential stores. There is no initial owner or overlapping legacy-key window. Object URLs are not issued to clients.
+Provision the server key through its environment. To rotate it, restart the server with the new key and run `sessiondb connect SERVER_URL` on clients to save the replacement. Clients using an environment override should update their environment.
 
 Anyone given the key can read every session and original, sync content, and invoke all implemented mutations. Do not distribute it to a consumer that should have read-only or partial access. Use separate instances when collection isolation is required; project labels and provenance are not access controls.
 

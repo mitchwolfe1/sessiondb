@@ -1,4 +1,4 @@
-# Client configuration. The API key belongs in the OS store or SESSIONDB_API_KEY.
+# sessiondb connect writes verified per-origin credentials to [api_keys] in this private client file.
 server = "https://sessions.example.com"
 
 [[sources]]

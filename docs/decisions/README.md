@@ -24,5 +24,6 @@ Decision records explain choices that affect several SessionDB components. Requi
 | [0018 Native compatibility and deployed upgrades](0018-deployed-native-compatibility.md) | Accepted | Known native tools/metadata, harness-origin titles, immutable initial migration and forward data repair |
 | [0019 Lossless native JSON payloads](0019-native-json-payloads.md) | Accepted implementation correction | Preserve valid control characters with PostgreSQL JSON and a typed JSON parameter codec |
 | [0020 Connect by URL](0020-connect-by-url.md) | Accepted | Verify and save one default server URL, with source roots and watchers bound to their destination |
+| [0021 Save the API key when connecting](0021-connect-stores-client-keys.md) | Accepted | One client setup command with private origin-bound key storage |
 
 An accepted direction does not mean every example field or default has been approved. Accept a proposed record after its assumptions and relevant open questions are reviewed. Supersede records with a new linked decision rather than erasing the rationale.

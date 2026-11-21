@@ -9,13 +9,12 @@ Status: target-v1 interface, with the initial command subset implemented. See [i
 ## First use
 
 ```sh
-# Supply SESSIONDB_API_KEY securely in the environment.
 sessiondb connect https://sessions.example.com
 sessiondb sources add --detect
 sessiondb sync --watch
 ```
 
-`connect SERVER_URL` checks the instance key against `/v1/info` and saves the URL as the default. The previous default stays available if authentication or the info request fails. To use the OS credential store on first connection, run `sessiondb --server SERVER_URL auth login --key-stdin` before `connect`. Use `sessiondb config show` to inspect the destination. `SESSIONDB_API_KEY` authenticates every client operation; all key holders have identical full access. `--detect` registers selected native store roots for supported harnesses. Use `--harness` and `--root` for an explicit store, or configuration for unattended setup. Starting cwd and project classification do not determine whether a session can be collected. See [automatic sync](sync.md).
+`connect SERVER_URL` prompts for the API key on first use, checks it against `/v1/info`, and saves the server URL and verified key. Subsequent commands and the watcher use that connection. Use `sessiondb status` to check access. `sources add --detect` registers native store roots. Use `--harness` and `--root` to select one explicitly. See [automatic sync](sync.md).
 
 `sessiondb sync install` installs and starts a login service using systemd on Linux or launchd on macOS. It pins the server URL, absolute executable, config and state paths, and request timeout. It picks up source and sync settings from that config on each pass. Installing again refreshes and restarts the service. See [background sync](sync.md#background-service) for credentials, logs and lifecycle.
 
@@ -28,9 +27,8 @@ sessiondb sync --watch
 | `sources` | `list`, `add`, `show`; collection starts/stops on the client |
 | `sync` | One pass, `--watch`, `install`, `start`, `stop`, `uninstall`, `status`, `logs [--follow]`, `rejected`, `retry` |
 | `embeddings` | Planned profile management; backfill execution contract is not yet defined |
-| `connect SERVER_URL` | Verify access and set the default server |
+| `connect SERVER_URL` | Verify and save the server URL and API key |
 | `projects` | Planned `list`, `create`, `show`, `update`; no archive lifecycle |
-| `auth` | `login --key-stdin`, `logout`, `status` (OS credential-store conveniences only) |
 | Top level | `status`, `config show`, `version` |
 
 Session and search commands cover everyday use. Connection and project commands configure server URLs and classification. Release sequencing is described in the [delivery plan](roadmap.md).
@@ -66,9 +64,11 @@ A server `internal_error` on a file upload appears in the source report under `r
 
 Use TOML configuration in the platform configuration directory (`$XDG_CONFIG_HOME/sessiondb/config.toml` on Linux). Resolve settings in order: explicit flags, environment variables, file defaults, built-in defaults. Environment variables include `SESSIONDB_URL`, `SESSIONDB_API_KEY`, and `SESSIONDB_CONFIG`.
 
-`config show` reports effective nonsecret values and their origin. `SESSIONDB_API_KEY` takes precedence over the OS credential store; an explicitly empty value fails rather than falling back. Keys never belong in the ordinary configuration file or command-line flags. `auth login --key-stdin` requires that flag, reads a nonempty key from stdin, validates protected `/v1/info`, and saves it per normalized server URL in the OS keyring (`sessiondb-api-key`). There is no browser or token exchange. `auth logout` deletes only the local stored copy; `auth status` validates `/v1/info` and reports the server/authentication status without revealing the key. Keep sync state in the platform state/data directory and make `status` report its path.
+The client saves verified keys in the `[api_keys]` table of its TOML file, indexed by normalized HTTP or HTTPS origin. On Linux the default is `~/.config/sessiondb/config.toml`. Unix config writes are atomic and use owner-only permissions (`0600`). `config show` displays a configured key as `[redacted]`.
 
-Each configured source stores its destination URL. `--server URL` and `SESSIONDB_URL` select a destination for an invocation. `connect URL` uses its positional URL even with an override present. Switching the default keeps existing roots assigned to their registered servers. On first-time keyring setup, `auth login --server URL --key-stdin` also initializes an empty default. See the [connection upgrade notes](decisions/0020-connect-by-url.md) for older configs and watchers.
+For automation, `SESSIONDB_API_KEY` overrides the saved key. An explicitly empty environment key fails authentication. `connect --key-stdin SERVER_URL` takes the key from standard input and takes precedence over the environment. Only a successful `connect` saves the supplied key. For rotation, run `connect` again: a rejected saved key prompts for a replacement in the terminal. To forget a saved key, remove that origin’s entry from `[api_keys]`.
+
+Each configured source stores its destination URL. `--server URL` and `SESSIONDB_URL` select a destination for an invocation. `connect URL` uses its positional URL even with an override present. Switching the default keeps existing roots assigned to their registered servers. See the [connection upgrade notes](decisions/0020-connect-by-url.md) for older configs and watchers.
 
 See the [client configuration example](examples/client.toml). It contains no credentials or unsupported future settings. Preserve existing registrations, pending files, and checkpoints across upgrades; do not reset deployed client state to apply a server fix. Recovery persists pending per-file snapshots and advances checkpoints individually after HTTP 200; `sync status --json` reports `pending_files`.
 

@@ -17,10 +17,7 @@ Build instructions and a local development setup are in [Build and run SessionDB
 Connect to a server, select native session stores, and enable automatic sync. Sessions are collected regardless of their starting directory. Project associations can be added or changed separately.
 
 ```sh
-# Provision SESSIONDB_API_KEY securely in the server and client environments first.
-sessiondb-server --config /etc/sessiondb/config.toml
 sessiondb connect https://sessions.example.com
-printf '%s' "$SESSIONDB_API_KEY" | sessiondb auth login --key-stdin
 sessiondb sources add --detect
 sessiondb sync install
 sessiondb sync status
@@ -31,7 +28,7 @@ sessiondb sessions messages SESSION_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
 
-On Linux and macOS, `sync install` starts a user-login service for the selected server URL. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. The watcher can use the API key saved with `sessiondb auth login --key-stdin`. [Background sync](docs/sync.md#background-service) covers setup and retries.
+`connect` prompts for the instance API key and saves it for that server. On Linux and macOS, `sync install` starts a login service that reads the same client config. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. [Background sync](docs/sync.md#background-service) covers setup and retries.
 
 ## Features
 

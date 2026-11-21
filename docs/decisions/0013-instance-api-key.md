@@ -1,5 +1,7 @@
 # One instance-wide API key
 
+[ADR 0021](0021-connect-stores-client-keys.md) supersedes the OS credential-store workflow described below.
+
 [ADR 0020](0020-connect-by-url.md) replaces the named CLI context examples with direct URL selection.
 
 Status: key boundary accepted; catalog/count/object-URL assumptions below superseded by [0014](0014-sessions-and-synchronous-files.md), HTTPS-only transport by [0016](0016-http-private-networks.md). Date: 2026-11-16.

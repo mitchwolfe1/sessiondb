@@ -58,7 +58,8 @@ server_config = "crates/server/src/config.rs"
 for path in [*ROOT.glob("docs/examples/*.toml"), ROOT / "dev/server.toml"]:
     config = tomllib.loads(path.read_text())
     if path.name == "client.toml":
-        assert set(config) <= rust_fields(client_config, "FileConfig")
+        assert set(config) <= rust_fields(client_config, "FileConfig") | {"api_keys"}
+        assert all(isinstance(key, str) for key in config.get("api_keys", {}).values())
         assert isinstance(config["server"], str)
         assert all(set(source) == rust_fields(client_config, "ConfiguredSource") for source in config["sources"])
         assert all(isinstance(source["server"], str) and source["server"] for source in config["sources"])

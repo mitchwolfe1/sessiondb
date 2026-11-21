@@ -1,19 +1,19 @@
 use anyhow::{Context, Result, bail};
 use directories::{BaseDirs, ProjectDirs};
 use serde::{Deserialize, Serialize};
-use sessiondb_client::Client;
 use sessiondb_types::Harness;
 use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
-    time::Duration,
 };
 use uuid::Uuid;
 
 #[derive(Default, Serialize)]
 pub struct FileConfig {
     pub server: Option<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    api_keys: BTreeMap<String, String>,
     pub device_label: Option<String>,
     pub sources: Vec<ConfiguredSource>,
     pub project_rules: Vec<ProjectRule>,
@@ -31,6 +31,7 @@ pub struct ConfiguredSource {
 #[serde(default, deny_unknown_fields)]
 struct StoredConfig {
     server: Option<String>,
+    api_keys: BTreeMap<String, String>,
     device_label: Option<String>,
     sources: Vec<StoredSource>,
     project_rules: Vec<ProjectRule>,
@@ -100,7 +101,19 @@ pub async fn load(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(FileConfig::default()),
         Err(e) => return Err(e).context("read client configuration"),
     };
-    let stored: StoredConfig = toml::from_str(&text).context("parse client configuration")?;
+    // TOML's default error display quotes the input line, which can contain a key.
+    let stored: StoredConfig = toml::from_str(&text).map_err(|e: toml::de::Error| {
+        let line = e
+            .span()
+            .and_then(|span| text.as_bytes().get(..span.start))
+            .map_or(1, |prefix| {
+                1 + prefix.iter().filter(|&&b| b == b'\n').count()
+            });
+        anyhow::anyhow!(
+            "invalid client configuration in {} at line {line}",
+            path.display()
+        )
+    })?;
     let selected = stored.current_context.as_deref().unwrap_or("default");
     let default_url = stored
         .contexts
@@ -124,8 +137,16 @@ pub async fn load(
             }
         }
     }
+    let mut api_keys = BTreeMap::new();
+    for (url, key) in stored.api_keys {
+        let origin = normalize_server(&url)?;
+        if api_keys.insert(origin, key).is_some() {
+            bail!("duplicate API key entries for the same server URL");
+        }
+    }
     Ok(FileConfig {
         server,
+        api_keys,
         device_label: stored.device_label,
         sources,
         project_rules: stored.project_rules,
@@ -204,12 +225,7 @@ async fn registered_servers(
 }
 
 pub fn write_lock(path: &Path) -> Result<std::fs::File> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty() && *p != Path::new("."))
-    {
-        private_dir(parent)?;
-    }
+    config_parent(path)?;
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -218,6 +234,21 @@ pub fn write_lock(path: &Path) -> Result<std::fs::File> {
     file.lock()
         .context("lock client configuration for update")?;
     Ok(file)
+}
+fn config_parent(path: &Path) -> Result<&Path> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut dirs = std::fs::DirBuilder::new();
+    dirs.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        dirs.mode(0o700);
+    }
+    dirs.create(parent)?;
+    Ok(parent)
 }
 pub fn private_dir(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path)?;
@@ -229,14 +260,13 @@ pub fn private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn save(path: &Path, config: &FileConfig) -> Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    if parent != Path::new(".") {
-        private_dir(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(config_parent(path)?)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
-    let mut file = tempfile::NamedTempFile::new_in(parent)?;
     file.write_all(toml::to_string_pretty(config)?.as_bytes())?;
     file.as_file().sync_all()?;
     file.persist(path).map_err(|e| e.error)?;
@@ -283,48 +313,90 @@ pub fn normalize_server(server: &str) -> Result<String> {
     Ok(url.into())
 }
 
-fn entry(server: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new("sessiondb-api-key", server)
-        .map_err(|_| anyhow::anyhow!("could not open OS credential store"))
-}
-pub async fn store(server: String, api_key: String) -> Result<()> {
-    tokio::task::spawn_blocking(move || {
-        entry(&server)?
-            .set_password(&api_key)
-            .map_err(|_| anyhow::anyhow!("could not save API key in OS credential store"))
-    })
-    .await?
-}
-pub async fn remove_credentials(server: String) -> Result<()> {
-    tokio::task::spawn_blocking(move || match entry(&server)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(_) => bail!("could not remove API key from OS credential store"),
-    })
-    .await?
-}
-pub async fn authenticated(server: &str, timeout: Duration) -> Result<Client> {
-    let server = normalize_server(server)?;
-    let api_key = match std::env::var("SESSIONDB_API_KEY") {
-        Ok(key) => key,
+pub fn environment_key() -> Result<Option<String>> {
+    match std::env::var("SESSIONDB_API_KEY") {
+        Ok(key) => Ok(Some(key)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
         Err(std::env::VarError::NotUnicode(_)) => bail!("SESSIONDB_API_KEY must be valid UTF-8"),
-        Err(std::env::VarError::NotPresent) => {
-            let account = server.clone();
-            tokio::task::spawn_blocking(move || {
-                entry(&account)?.get_password().map_err(|_| {
-                    anyhow::anyhow!(
-                        "set SESSIONDB_API_KEY or use sessiondb --server {account} auth login --key-stdin"
-                    )
-                })
+    }
+}
+
+impl FileConfig {
+    pub fn saved_key(&self, origin: &str) -> Option<&str> {
+        self.api_keys.get(origin).map(String::as_str)
+    }
+
+    pub fn request_key(&self, origin: &str) -> Result<String> {
+        environment_key()?
+            .or_else(|| self.api_keys.get(origin).cloned())
+            .ok_or_else(|| {
+                sessiondb_client::Error::Authentication(format!(
+                    "run sessiondb connect {origin} or set SESSIONDB_API_KEY"
+                ))
+                .into()
             })
-            .await??
-        }
-    };
-    Ok(Client::new(&server, api_key, timeout)?)
+    }
+
+    pub fn remember(&mut self, origin: String, key: String) {
+        self.api_keys.insert(origin.clone(), key);
+        self.server = Some(origin);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn saved_keys_are_private_and_scoped_to_normalized_origins() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "server='https://a.example'\n[api_keys]\n'https://A.example:443'='first-test-key'\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let mut config = load(&path, dir.path(), None).await.unwrap();
+        config.remember("https://b.example/".into(), "second-test-key".into());
+        save(&path, &config).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        let saved = load(&path, dir.path(), None).await.unwrap();
+        assert_eq!(saved.server.as_deref(), Some("https://b.example/"));
+        assert_eq!(
+            saved.saved_key("https://a.example/"),
+            Some("first-test-key")
+        );
+        assert_eq!(
+            saved.saved_key("https://b.example/"),
+            Some("second-test-key")
+        );
+        assert!(saved.saved_key("http://a.example/").is_none());
+        assert!(saved.saved_key("https://a.example:8443/").is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_private_config_does_not_echo_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        for contents in [
+            "[api_keys]\n'http://host/'=['private-test-token']",
+            "[api_keys]\n'http://host/'='private-test-token",
+        ] {
+            std::fs::write(&path, contents).unwrap();
+            let error = load(&path, dir.path(), None).await.err().unwrap();
+            assert!(error.to_string().contains("line"));
+            assert!(!format!("{error:#}").contains("private-test-token"));
+        }
+    }
 
     #[tokio::test]
     async fn legacy_names_resolve_to_origins_and_duplicate_roots_coalesce() {

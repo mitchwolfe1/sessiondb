@@ -1,5 +1,7 @@
 # Connect by server URL
 
+[ADR 0021](0021-connect-stores-client-keys.md) supersedes the OS credential-store workflow described below.
+
 Status: accepted. This replaces named CLI contexts in [0013](0013-instance-api-key.md) and [0016](0016-http-private-networks.md).
 
 `sessiondb connect SERVER_URL` authenticates to the supplied HTTP or HTTPS origin and saves its normalized URL after a successful info request. The URL identifies the destination. `config show` displays the effective server. Instance credentials continue to use the environment or the OS credential store keyed by origin.

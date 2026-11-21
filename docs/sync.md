@@ -14,7 +14,7 @@ For active JSONL, capture a bounded snapshot through the last complete newline. 
 
 ## Background service
 
-Connect to a server and select its source roots, then save its API key with `sessiondb auth login --key-stdin` or supply the key in the user service manager's environment. The generated service definition contains only nonsecret arguments. An API key exported in an interactive shell is scoped to that shell and its children.
+Run `sessiondb connect SERVER_URL` and select the source roots for that server. The watcher reads the saved key for its pinned URL from the same client config. A key supplied in the service manager’s environment overrides the saved key. The generated service definition contains only nonsecret arguments.
 
 ```sh
 sessiondb sync install
