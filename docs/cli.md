@@ -54,6 +54,8 @@ Session reads present bounded content; full-content and native export endpoints 
 
 Human output is a stable, readable table or transcript. `--json` writes structured API-shaped JSON to stdout. Export writes bytes to `--output` or stdout with `--output -`; diagnostics and progress stay on stderr. Disable color when redirected and honor `NO_COLOR`. Do not interleave progress with machine-readable output.
 
+Commands can be piped into tools such as `head`. An otherwise successful command exits quietly with code `0` when the reader closes stdout early.
+
 Support `--help`, `--version`, `--server`, `--config`, `--timeout`, and quiet/verbose modes consistently. Server-side filters behave the same through the CLI and SDK.
 
 Exit codes distinguish success (`0`), operational failure (`1`), usage (`2`), authentication (`3`), and missing resources (`4`). A sync pass with rejected native files reports their paths and reasons and finishes other uploads. In `sync --json`, affected source reports include a `rejections` object mapping source-relative paths to reasons. One-shot sync exits `1` after reporting these rejections. Interrupted watch exits with the signal-derived status.

@@ -11,7 +11,13 @@ use serde_json::json;
 use sessiondb_client::Client;
 use sessiondb_types::*;
 use state::LocalState;
-use std::{collections::HashMap, io::IsTerminal, path::PathBuf, process::ExitCode, time::Duration};
+use std::{
+    collections::HashMap,
+    io::{self, IsTerminal, Write},
+    path::PathBuf,
+    process::ExitCode,
+    time::Duration,
+};
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
@@ -205,12 +211,34 @@ fn client_for(args: &Cli, config: &FileConfig) -> Result<Client> {
 async fn load_config(args: &Cli) -> Result<FileConfig> {
     config::load(&args.config, &args.state_dir, args.server.as_deref()).await
 }
-fn emit(args: &Cli, value: &impl Serialize, human: impl FnOnce()) -> Result<()> {
-    if args.json {
-        println!("{}", serde_json::to_string(value)?);
-    } else {
-        human();
+
+#[derive(Debug)]
+struct StdoutError(io::Error);
+
+impl std::fmt::Display for StdoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("write stdout")
     }
+}
+
+impl std::error::Error for StdoutError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+fn emit(
+    args: &Cli,
+    value: &impl Serialize,
+    human: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+) -> Result<()> {
+    let mut out = io::stdout().lock();
+    let result = if args.json {
+        writeln!(out, "{}", serde_json::to_string(value)?)
+    } else {
+        human(&mut out)
+    };
+    result.and_then(|()| out.flush()).map_err(StdoutError)?;
     Ok(())
 }
 
@@ -229,28 +257,31 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
         SyncCommand::Status => {
             let state = LocalState::open(&args.state_dir).await?;
             let value = sync_status(&state).await?;
-            return emit(args, &value, || {
-                println!(
+            return emit(args, &value, |out| {
+                writeln!(
+                    out,
                     "Background sync  {}",
                     value["service"]["state"].as_str().unwrap_or("unsupported")
-                );
-                println!(
+                )?;
+                writeln!(
+                    out,
                     "Accepted files   {}\nPending uploads  {}\nKnown rejections {}",
                     value["accepted_files"], value["pending_files"], value["rejected_files"]
-                );
+                )?;
                 if let Some(at) = value["last_watch_pass"]["finished_at"].as_str() {
-                    println!("Last watch pass  {at}");
+                    writeln!(out, "Last watch pass  {at}")?;
                     if let Some(url) = value["last_watch_pass"]["server"].as_str() {
-                        println!("Watch target     {url}");
+                        writeln!(out, "Watch target     {url}")?;
                     }
                     if let Some(error) = value["last_watch_pass"]["error"].as_str() {
-                        println!("Last pass error  {error}");
+                        writeln!(out, "Last pass error  {error}")?;
                     }
                 }
-                println!(
+                writeln!(
+                    out,
                     "State file       {}",
                     value["state_path"].as_str().unwrap_or_default()
-                );
+                )
             });
         }
         SyncCommand::Retry | SyncCommand::Rejected => {
@@ -259,21 +290,25 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
             let server = config::normalize_server(server(args, &config)?)?;
             if matches!(cmd, SyncCommand::Retry) {
                 let count = state.retry_rejections(&server).await?;
-                return emit(args, &json!({"server":server,"cleared":count}), || {
-                    println!("{count} remembered rejection(s) cleared for the next pass")
+                return emit(args, &json!({"server":server,"cleared":count}), |out| {
+                    writeln!(
+                        out,
+                        "{count} remembered rejection(s) cleared for the next pass"
+                    )
                 });
             }
             let entries = state.list_rejections(&server).await?;
-            return emit(args, &json!({"server":server,"files":entries}), || {
+            return emit(args, &json!({"server":server,"files":entries}), |out| {
                 for entry in &entries {
-                    println!(
+                    writeln!(
+                        out,
                         "{}  {}  {}",
                         entry.source_id,
                         clean(&entry.path),
                         clean(&entry.reason)
-                    );
+                    )?;
                 }
-                println!("{} remembered rejection(s)", entries.len());
+                writeln!(out, "{} remembered rejection(s)", entries.len())
             });
         }
         _ => {}
@@ -334,8 +369,8 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
         _ => unreachable!(),
     }
     let status = svc.status()?;
-    emit(args, &status, || {
-        println!("Background sync  {} ({})", status.state, status.name)
+    emit(args, &status, |out| {
+        writeln!(out, "Background sync  {} ({})", status.state, status.name)
     })
 }
 
@@ -365,23 +400,24 @@ fn clean(text: &str) -> String {
         })
         .collect()
 }
-fn show_message(m: &Message) {
-    println!("{} [{}]", m.role, m.id);
+fn show_message(out: &mut dyn Write, m: &Message) -> io::Result<()> {
+    writeln!(out, "{} [{}]", m.role, m.id)?;
     for block in &m.content {
         match block {
             ContentBlock::Full(
                 FullContentBlock::Text { text } | FullContentBlock::Reasoning { text, .. },
-            ) => println!("{}", clean(text)),
-            other => println!("{}", serde_json::to_string(other).unwrap_or_default()),
-        }
+            ) => writeln!(out, "{}", clean(text)),
+            other => writeln!(out, "{}", serde_json::to_string(other).unwrap_or_default()),
+        }?;
     }
     if m.truncated {
-        println!(
+        writeln!(
+            out,
             "[Content shortened; use sessiondb messages content {}]",
             m.id
-        );
+        )?;
     }
-    println!();
+    writeln!(out)
 }
 
 // Older login services already pin a URL. Accept their exact generated invocation
@@ -415,6 +451,13 @@ async fn main() -> ExitCode {
     let args = Cli::parse_from(service_upgrade_args(std::env::args_os().collect()));
     match run(&args).await {
         Ok(()) => ExitCode::SUCCESS,
+        Err(error)
+            if error
+                .downcast_ref::<StdoutError>()
+                .is_some_and(|e| e.0.kind() == io::ErrorKind::BrokenPipe) =>
+        {
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             let code = if let Some(signal) = error.downcast_ref::<Interrupted>() {
                 signal.0
@@ -442,8 +485,8 @@ async fn run(args: &Cli) -> Result<()> {
         return sync_command(args, cmd).await;
     }
     match &args.command {
-        Command::Version => emit(args, &json!({"version":env!("CARGO_PKG_VERSION")}), || {
-            println!("sessiondb {}", env!("CARGO_PKG_VERSION"))
+        Command::Version => emit(args, &json!({"version":env!("CARGO_PKG_VERSION")}), |out| {
+            writeln!(out, "sessiondb {}", env!("CARGO_PKG_VERSION"))
         })?,
         Command::Config {
             command: ConfigCommand::Show,
@@ -460,8 +503,9 @@ async fn run(args: &Cli) -> Result<()> {
             });
             let value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,
                 "api_key":has_key.then_some("[redacted]"),"sources":config.sources,"sync":config.sync});
-            emit(args, &value, || {
-                println!(
+            emit(args, &value, |out| {
+                writeln!(
+                    out,
                     "{}",
                     serde_json::to_string_pretty(&value).unwrap_or_default()
                 )
@@ -509,6 +553,7 @@ async fn run(args: &Cli) -> Result<()> {
                 );
             }
             loop {
+                let mut output_failed = false;
                 let pass = async {
                     if *watch {
                         config = load_config(args).await?;
@@ -557,19 +602,23 @@ async fn run(args: &Cli) -> Result<()> {
                             }
                         }
                     }
-                    emit(args, &json!({"sources":results}), || {
+                    let output = emit(args, &json!({"sources":results}), |out| {
                         for report in results.iter().filter(|report| {
                             !watch
                                 || report.accepted_files > 0
                                 || !report.rejections.is_empty()
                                 || !report.retryable_errors.is_empty()
                         }) {
-                            println!(
+                            writeln!(
+                                out,
                                 "{}: {} file(s) accepted",
                                 report.source_id, report.accepted_files
-                            );
+                            )?;
                         }
-                    })?;
+                        Ok(())
+                    });
+                    output_failed = output.is_err();
+                    // Keep the actual sync failure if the reader also closed the summary pipe.
                     if let Some(error) = first_error {
                         return Err(error);
                     }
@@ -583,10 +632,10 @@ async fn run(args: &Cli) -> Result<()> {
                     if rejected > 0 {
                         bail!("{rejected} file(s) rejected");
                     }
-                    Ok(())
+                    output
                 };
                 let result = tokio::select! { result=pass=>result,signal=&mut shutdown=>return Err(signal?.into()) };
-                if !watch {
+                if !watch || output_failed {
                     result?;
                     break;
                 }
@@ -634,21 +683,24 @@ async fn run(args: &Cli) -> Result<()> {
                         ..Default::default()
                     };
                     let value = client.sessions(&filter).await?;
-                    emit(args, &value, || {
+                    emit(args, &value, |out| {
                         for s in &value.data {
-                            println!(
+                            writeln!(
+                                out,
                                 "{}\t{}\t{}",
                                 s.id,
                                 s.harness,
                                 clean(&s.title).replace('\n', " ")
-                            );
+                            )?;
                         }
+                        Ok(())
                     })?;
                 }
                 SessionCommand::Show { id } => {
                     let value = client.session(*id).await?;
-                    emit(args, &value, || {
-                        println!(
+                    emit(args, &value, |out| {
+                        writeln!(
+                            out,
                             "{}\nID: {}\nHarness: {}\nDirectory: {}\nMessages: {}",
                             clean(&value.title),
                             value.id,
@@ -686,10 +738,11 @@ async fn run(args: &Cli) -> Result<()> {
                             m.content_url = None;
                         }
                     }
-                    emit(args, &value, || {
+                    emit(args, &value, |out| {
                         for m in &value.data {
-                            show_message(m);
+                            show_message(out, m)?;
                         }
+                        Ok(())
                     })?;
                 }
                 SessionCommand::Export {
@@ -703,7 +756,15 @@ async fn run(args: &Cli) -> Result<()> {
                     }
                     if output.as_os_str() == "-" {
                         let mut stdout = tokio::io::stdout();
-                        client.export_to(*id, &mut stdout).await?;
+                        client
+                            .export_to(*id, &mut stdout)
+                            .await
+                            .map_err(|error| match error {
+                                sessiondb_client::Error::Io(e) => {
+                                    anyhow::Error::new(StdoutError(e))
+                                }
+                                other => other.into(),
+                            })?;
                     } else {
                         let parent = output
                             .parent()
@@ -735,14 +796,19 @@ async fn run(args: &Cli) -> Result<()> {
             match command {
                 MessageCommand::Show { id } => {
                     let value = client.message(*id).await?;
-                    emit(args, &value, || show_message(&value))?;
+                    emit(args, &value, |out| show_message(out, &value))?;
                 }
                 MessageCommand::Content { id } => {
                     let value = client.content(*id).await?;
-                    emit(args, &value, || {
+                    emit(args, &value, |out| {
                         for b in &value.content {
-                            println!("{}", serde_json::to_string_pretty(b).unwrap_or_default());
+                            writeln!(
+                                out,
+                                "{}",
+                                serde_json::to_string_pretty(b).unwrap_or_default()
+                            )?;
                         }
+                        Ok(())
                     })?;
                 }
             }
@@ -751,8 +817,9 @@ async fn run(args: &Cli) -> Result<()> {
             let config = load_config(args).await?;
             let client = client_for(args, &config)?;
             let value = json!({"server":client.server(),"info":client.info().await?,"sync":sync_status(&LocalState::open(&args.state_dir).await?).await?});
-            emit(args, &value, || {
-                println!(
+            emit(args, &value, |out| {
+                writeln!(
+                    out,
                     "{}",
                     serde_json::to_string_pretty(&value).unwrap_or_default()
                 )
@@ -824,8 +891,8 @@ async fn connect(args: &Cli, url: &str, key_stdin: bool) -> Result<()> {
     let mut latest = load_config(args).await?;
     latest.remember(origin.clone(), key);
     config::save(&args.config, &latest)?;
-    emit(args, &json!({"server":origin}), || {
-        println!("Connected to {origin}")
+    emit(args, &json!({"server":origin}), |out| {
+        writeln!(out, "Connected to {origin}")
     })
 }
 
@@ -838,16 +905,23 @@ async fn source_command(
     match command {
         SourceCommand::List { page } => {
             let value = client.sources(&page.options()).await?;
-            emit(args, &value, || {
+            emit(args, &value, |out| {
                 for s in &value.data {
-                    println!("{}\t{}\t{}", s.id, s.harness, clean(&s.root));
+                    writeln!(out, "{}\t{}\t{}", s.id, s.harness, clean(&s.root))?;
                 }
+                Ok(())
             })?;
         }
         SourceCommand::Show { id } => {
             let value = client.source(*id).await?;
-            emit(args, &value, || {
-                println!("{}\n{}\n{}", value.id, value.harness, clean(&value.root))
+            emit(args, &value, |out| {
+                writeln!(
+                    out,
+                    "{}\n{}\n{}",
+                    value.id,
+                    value.harness,
+                    clean(&value.root)
+                )
             })?;
         }
         SourceCommand::Add {
@@ -890,10 +964,11 @@ async fn source_command(
                 registered.push(source);
             }
             config::save(&args.config, config)?;
-            emit(args, &registered, || {
+            emit(args, &registered, |out| {
                 for s in &registered {
-                    println!("Enabled {} {} ({})", s.harness, clean(&s.root), s.id);
+                    writeln!(out, "Enabled {} {} ({})", s.harness, clean(&s.root), s.id)?;
                 }
+                Ok(())
             })?;
         }
     }

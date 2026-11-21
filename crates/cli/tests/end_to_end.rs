@@ -10,6 +10,24 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 const WAIT: Duration = Duration::from_secs(30);
+async fn cli_with_closed_stdout(
+    server: &Server,
+    root: &std::path::Path,
+    args: &[&str],
+) -> std::process::Output {
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let child = support::cli_command(server, root, args)
+        .stdout(writer)
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    tokio::time::timeout(WAIT, child.wait_with_output())
+        .await
+        .expect("CLI did not exit after stdout closed")
+        .unwrap()
+}
+
 fn fixture(name: &str) -> Vec<u8> {
     fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -686,6 +704,20 @@ async fn authenticated_sync_storage_and_recovery() {
         .await
         .unwrap();
     assert_eq!(ancestry.data.len(), 3);
+    let id = branch.id.to_string();
+    for args in [
+        &["sessions", "messages", id.as_str()][..],
+        &["sessions", "messages", id.as_str(), "--json"],
+        &["sessions", "export", id.as_str(), "--output", "-"],
+    ] {
+        let result = cli_with_closed_stdout(&server, root.path(), args).await;
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.stderr.is_empty());
+    }
     let image = ingest(
         &owner,
         pi.id,
@@ -963,6 +995,12 @@ async fn authenticated_sync_storage_and_recovery() {
     );
     let unchanged: Value = serde_json::from_slice(&unchanged.stdout).unwrap();
     assert_eq!(unchanged["sources"][0]["accepted_files"], 0);
+    let watch = cli_with_closed_stdout(&server, root.path(), &["sync", "--watch", "--json"]).await;
+    assert!(
+        watch.status.success(),
+        "{}",
+        String::from_utf8_lossy(&watch.stderr)
+    );
 
     // Drain the saved batch and still scan for new files when individual uploads reject.
     let config_path = root.path().join("client.toml");
@@ -1001,6 +1039,12 @@ async fn authenticated_sync_storage_and_recovery() {
     .unwrap();
     let rejected = cli(&server, root.path(), &["sync", "--json"]).await;
     assert_eq!(rejected.status.code(), Some(1));
+    let piped = cli_with_closed_stdout(&server, root.path(), &["sync", "--json"]).await;
+    assert_eq!(
+        piped.status.code(),
+        Some(1),
+        "a closed pipe must preserve a failed sync"
+    );
     let output: Value = serde_json::from_slice(&rejected.stdout).unwrap();
     let report = &output["sources"][0];
     assert_eq!(report["accepted_files"], 2);
