@@ -1,5 +1,9 @@
 # First implementation validation
 
+## Client connections
+
+The CLI integration verifies that `connect` saves a verified server URL, a supplied URL takes precedence over an environment override for that command, and a rejected key preserves the previous config bytes. The Linux login-service test loads an older named config, switches the default between two loopback servers, and verifies that the running and restarted watcher retains its original destination and source roots. Config and local-state tests cover old registration receipts and the saved watch heartbeat.
+
 ## Background sync
 
 The Linux user-service integration exercises installation, login enablement, status, stop/start, configuration reload, reinstallation and removal against disposable PostgreSQL and S3 services. It verifies that unchanged rejected files stay cached across service restarts, an explicit retry resubmits them, and repaired and newly discovered files are accepted. Scanner regressions cover server-version changes, matching remote data, local file replacement, and remote catalog restoration. Portable tests exercise launchd argument encoding, lifecycle commands, and rollback with a simulated manager. Live macOS login behavior still requires a macOS host.

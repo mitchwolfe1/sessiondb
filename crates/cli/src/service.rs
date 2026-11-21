@@ -531,20 +531,19 @@ mod tests {
     #[test]
     fn renders_literal_arguments_for_each_manager() {
         let dir = tempfile::tempdir().unwrap();
-        let special = "--context=$VALUE %n \"quoted\" \\ <&> \nend".to_owned();
+        let special = "--config=$VALUE %n \"quoted\" \\ <&> \nend".to_owned();
         let args = vec!["/bin/true".to_owned(), special];
         let mut service = agent(dir.path());
         let plist = service.definition(&args, None).unwrap();
         assert!(
-            plist
-                .contains("<string>--context=$VALUE %n \"quoted\" \\ &lt;&amp;&gt; \nend</string>")
+            plist.contains("<string>--config=$VALUE %n \"quoted\" \\ &lt;&amp;&gt; \nend</string>")
         );
         assert!(plist.contains("<key>RunAtLoad</key><true/>"));
         service.manager = Manager::Systemd;
         let unit = service.definition(&args, None).unwrap();
         assert!(
             unit.contains(
-                r#"ExecStart=":/bin/true" "--context=$VALUE %%n \"quoted\" \\ <&> \nend""#
+                r#"ExecStart=":/bin/true" "--config=$VALUE %%n \"quoted\" \\ <&> \nend""#
             )
         );
     }
@@ -571,7 +570,7 @@ mod tests {
         if let Some(root) = std::env::var_os(TEST_ROOT) {
             let root = PathBuf::from(root);
             let svc = agent(&root);
-            let args = vec!["/bin/true".into(), "--context=test & work".into()];
+            let args = vec!["/bin/true".into(), "--config=test & work".into()];
             fs::write(root.join("fail-next"), "").unwrap();
             assert!(svc.install(&args, None).is_err());
             assert_eq!(svc.status().unwrap().state, "uninstalled");

@@ -24,7 +24,7 @@ Clients send one bounded native file through the API, not directly to S3. Postgr
 | `sessiondb-types` | Public transport-independent resources, requests, responses, and errors. |
 | `sessiondb-adapters` | Harness discovery metadata and native normalization, without server/database dependencies. |
 | `sessiondb-client` | Typed async HTTP, bearer authentication, multipart upload, pagination, and downloads. |
-| `sessiondb-cli` | Human/machine output, contexts, local snapshots/checkpoints, one-shot and watch sync. |
+| `sessiondb-cli` | Human/machine output, server URL selection, local snapshots/checkpoints, one-shot and watch sync. |
 | `sessiondb-server` | HTTP, key verification, per-file ingestion, catalog reads, immutable object storage, orphan cleanup. |
 
 Use focused server modules rather than another framework or compatibility layer. Shared DTOs do not replace [OpenAPI](openapi.yaml); SDK callers do not depend on internal server structs.

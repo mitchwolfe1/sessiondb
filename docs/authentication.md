@@ -14,7 +14,7 @@ Verify the secret with a constant-time comparison. Never write it into logs, dia
 
 ## CLI and SDK
 
-`SESSIONDB_API_KEY` is sufficient for every CLI operation. A context selects only a server URL. `sessiondb auth login --key-stdin` requires that flag, reads a supplied key, validates protected `/v1/info`, and saves it per normalized server URL in the OS credential store. It does not authenticate with a provider or exchange tokens. `SESSIONDB_API_KEY` overrides the saved key; an explicitly empty value fails without fallback. Logout removes only the local stored copy, not the environment value; status validates `/v1/info` and reports only the server/authenticated state, never the secret. See [CLI](cli.md) for the available interface.
+`SESSIONDB_API_KEY` is sufficient for every CLI operation. `sessiondb connect SERVER_URL` verifies access and saves the default server URL. `sessiondb auth login --key-stdin` requires that flag, reads a supplied key, validates protected `/v1/info`, and saves it per normalized server URL in the OS credential store. It does not authenticate with a provider or exchange tokens. `SESSIONDB_API_KEY` overrides the saved key; an explicitly empty value fails without fallback. Logout removes only the local stored copy, not the environment value; status validates `/v1/info` and reports only the server/authenticated state, never the secret. See [CLI](cli.md) for the available interface.
 
 The SDK requires `Client::new(server: &str, api_key: String, timeout: Duration)` with a nonempty key. It has no token provider, refresh task, or organization selection. Uploads and downloads use the API only; never send its bearer key to S3.
 

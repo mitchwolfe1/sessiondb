@@ -22,7 +22,6 @@ Reviewed on 2026-11-15. Native formats and evolving AI conventions require reche
 - [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457.html) — structured HTTP errors.
 - [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) and [RFC 8252 OAuth for Native Apps](https://www.rfc-editor.org/rfc/rfc8252.html) — historical OIDC references for the superseded authentication experiments, not current deployment requirements.
 - [S3 GetObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html), [conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html), and [metadata](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html) — object access conventions; an ETag is not universally a content digest.
-- [Docker contexts](https://docs.docker.com/reference/cli/docker/context/) — familiar connection selection.
 - [psql](https://www.postgresql.org/docs/current/app-psql.html) — a first-class CLI client for a database service.
 - [Vector collection roles](https://vector.dev/docs/setup/deployment/roles/) — host collectors and central processing as separate operating roles.
 - [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) — commit message format.

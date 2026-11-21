@@ -1,21 +1,18 @@
 # Client configuration. The API key belongs in the OS store or SESSIONDB_API_KEY.
-current_context = "shared"
-
-[contexts.shared]
 server = "https://sessions.example.com"
 
 [[sources]]
-context = "shared"
+server = "https://sessions.example.com"
 harness = "codex"
 root = "~/.codex/sessions"
 
 [[sources]]
-context = "shared"
+server = "https://sessions.example.com"
 harness = "claude"
 root = "~/.claude/projects"
 
 [[sources]]
-context = "shared"
+server = "https://sessions.example.com"
 harness = "pi"
 root = "~/.pi/agent/sessions"
 

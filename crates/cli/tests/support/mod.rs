@@ -344,18 +344,21 @@ impl Drop for Server {
     }
 }
 
-pub fn cli_command(server: &Server, root: &Path, args: &[&str]) -> tokio::process::Command {
+pub fn cli_with_saved_server(server: &Server, root: &Path) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_sessiondb"));
     command
         .arg("--config")
         .arg(root.join("client.toml"))
         .arg("--state-dir")
         .arg(root.join("state"))
-        .arg("--server")
-        .arg(&server.url)
-        .env("SESSIONDB_API_KEY", &server.api_key)
-        .args(args);
+        .env_remove("SESSIONDB_URL")
+        .env("SESSIONDB_API_KEY", &server.api_key);
     command.kill_on_drop(true);
+    command
+}
+pub fn cli_command(server: &Server, root: &Path, args: &[&str]) -> tokio::process::Command {
+    let mut command = cli_with_saved_server(server, root);
+    command.arg("--server").arg(&server.url).args(args);
     command
 }
 pub async fn cli(server: &Server, root: &Path, args: &[&str]) -> std::process::Output {

@@ -825,11 +825,37 @@ async fn authenticated_sync_storage_and_recovery() {
         fixture("codex/precision.jsonl"),
     )
     .unwrap();
-    let output = cli(&server, root.path(), &["context", "create", "test"]).await;
+    let output = support::cli_with_saved_server(&server, root.path())
+        .env("SESSIONDB_URL", "http://127.0.0.1:1")
+        .args(["connect", &server.url, "--json"])
+        .output()
+        .await
+        .unwrap();
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    let connected: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(connected, json!({"server":format!("{}/",server.url)}));
+    let before = fs::read(root.path().join("client.toml")).unwrap();
+    let failed = support::cli_with_saved_server(&server, root.path())
+        .env("SESSIONDB_API_KEY", "incorrect-test-key")
+        .args(["connect", &server.url])
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(failed.status.code(), Some(3));
+    assert_eq!(fs::read(root.path().join("client.toml")).unwrap(), before);
+    let saved = support::cli_with_saved_server(&server, root.path())
+        .args(["auth", "status", "--json"])
+        .output()
+        .await
+        .unwrap();
+    assert!(saved.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&saved.stdout).unwrap()["server"],
+        connected["server"]
     );
     let output = cli(
         &server,

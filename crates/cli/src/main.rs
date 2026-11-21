@@ -5,7 +5,7 @@ mod sync;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use config::{ConfiguredSource, ContextConfig, FileConfig};
+use config::{ConfiguredSource, FileConfig};
 use serde::Serialize;
 use serde_json::json;
 use sessiondb_client::Client;
@@ -24,8 +24,6 @@ use uuid::Uuid;
 struct Cli {
     #[arg(long, global = true, env = "SESSIONDB_URL")]
     server: Option<String>,
-    #[arg(long, global = true)]
-    context: Option<String>,
     #[arg(long,global=true,env="SESSIONDB_CONFIG",default_value_os_t=config::default_config_path())]
     config: PathBuf,
     #[arg(long,global=true,env="SESSIONDB_STATE_DIR",default_value_os_t=config::default_state_path())]
@@ -47,9 +45,10 @@ enum Command {
         #[command(subcommand)]
         command: AuthCommand,
     },
-    Context {
-        #[command(subcommand)]
-        command: ContextCommand,
+    /// Verify access to a server and save it as the default.
+    Connect {
+        #[arg(value_name = "SERVER_URL")]
+        url: String,
     },
     Sources {
         #[command(subcommand)]
@@ -91,14 +90,6 @@ enum AuthCommand {
     },
     Logout,
     Status,
-}
-#[derive(Subcommand)]
-enum ContextCommand {
-    Create { name: String },
-    List,
-    Show,
-    Use { name: String },
-    Remove { name: String },
 }
 #[derive(Subcommand)]
 enum SourceCommand {
@@ -169,7 +160,7 @@ enum MessageCommand {
 enum SyncCommand {
     /// Show the background service, last watch pass, and local sync counts.
     Status,
-    /// Install and start a watcher for this context at user login.
+    /// Install and start a watcher for this server at user login.
     Install,
     /// Start the installed watcher.
     Start,
@@ -208,36 +199,23 @@ impl PageArgs {
     }
 }
 
-struct Runtime {
-    client: Client,
-    context: String,
-}
-fn selected_context<'a>(args: &'a Cli, config: &'a FileConfig) -> &'a str {
-    args.context
-        .as_deref()
-        .or(config.current_context.as_deref())
-        .unwrap_or("default")
-}
 fn server<'a>(args: &'a Cli, config: &'a FileConfig) -> Result<&'a str> {
     args.server
         .as_deref()
-        .or_else(|| {
-            config
-                .contexts
-                .get(selected_context(args, config))
-                .map(|c| c.server.as_str())
-        })
         .or(config.server.as_deref())
-        .context("select a server with --server or sessiondb context create")
+        .context("select a server with sessiondb connect <SERVER_URL> or --server")
 }
-async fn runtime(args: &Cli, config: &FileConfig) -> Result<Runtime> {
-    let context = selected_context(args, config).to_owned();
-    let server = server(args, config)?;
-    let client = config::authenticated(server, Duration::from_secs(args.timeout)).await?;
+async fn client_for(args: &Cli, config: &FileConfig) -> Result<Client> {
+    let client =
+        config::authenticated(server(args, config)?, Duration::from_secs(args.timeout)).await?;
     if args.verbose > 0 {
         eprintln!("Using {}", client.server());
     }
-    Ok(Runtime { client, context })
+    Ok(client)
+}
+
+async fn load_config(args: &Cli) -> Result<FileConfig> {
+    config::load(&args.config, &args.state_dir, args.server.as_deref()).await
 }
 fn emit(args: &Cli, value: &impl Serialize, human: impl FnOnce()) -> Result<()> {
     if args.json {
@@ -274,15 +252,9 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
                 );
                 if let Some(at) = value["last_watch_pass"]["finished_at"].as_str() {
                     println!("Last watch pass  {at}");
-                    println!(
-                        "Watch target     {} ({})",
-                        value["last_watch_pass"]["context"]
-                            .as_str()
-                            .unwrap_or_default(),
-                        value["last_watch_pass"]["server"]
-                            .as_str()
-                            .unwrap_or_default()
-                    );
+                    if let Some(url) = value["last_watch_pass"]["server"].as_str() {
+                        println!("Watch target     {url}");
+                    }
                     if let Some(error) = value["last_watch_pass"]["error"].as_str() {
                         println!("Last pass error  {error}");
                     }
@@ -294,7 +266,7 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
             });
         }
         SyncCommand::Retry | SyncCommand::Rejected => {
-            let config = config::load(&args.config)?;
+            let config = load_config(args).await?;
             let state = LocalState::open(&args.state_dir).await?;
             let server = config::normalize_server(server(args, &config)?)?;
             if matches!(cmd, SyncCommand::Retry) {
@@ -333,15 +305,11 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
     let _lock = svc.lock()?;
     match cmd {
         SyncCommand::Install => {
-            let config = config::load(&args.config)?;
-            let context = selected_context(args, &config);
-            let roots: Vec<_> = config
-                .sources
-                .iter()
-                .filter(|s| s.context == context)
-                .collect();
+            let config = load_config(args).await?;
+            let url = config::normalize_server(server(args, &config)?)?;
+            let roots: Vec<_> = config.sources.iter().filter(|s| s.server == url).collect();
             if roots.is_empty() {
-                bail!("no sources enabled for this context; use sessiondb sources add");
+                bail!("no sources enabled for this server; use sessiondb sources add");
             }
             let mut cwd = None;
             for source in roots {
@@ -365,11 +333,7 @@ async fn sync_command(args: &Cli, cmd: &SyncCommand) -> Result<()> {
                     "--state-dir={}",
                     directory.to_str().context("state path must be UTF-8")?
                 ),
-                format!("--context={context}"),
-                format!(
-                    "--server={}",
-                    config::normalize_server(server(args, &config)?)?
-                ),
+                format!("--server={url}"),
                 format!("--timeout={}", args.timeout),
                 "sync".into(),
                 "--watch".into(),
@@ -432,9 +396,26 @@ fn show_message(m: &Message) {
     println!();
 }
 
+// Older login services already pin a URL. Accept their exact generated invocation
+// until the next sync install replaces the definition.
+fn service_upgrade_args(mut args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    if let [_, config, state, old_name, url, timeout, command, watch] = args.as_slice()
+        && config.as_encoded_bytes().starts_with(b"--config=")
+        && state.as_encoded_bytes().starts_with(b"--state-dir=")
+        && old_name.as_encoded_bytes().starts_with(b"--context=")
+        && url.as_encoded_bytes().starts_with(b"--server=")
+        && timeout.as_encoded_bytes().starts_with(b"--timeout=")
+        && command == "sync"
+        && watch == "--watch"
+    {
+        args.remove(3);
+    }
+    args
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    let args = Cli::parse();
+    let args = Cli::parse_from(service_upgrade_args(std::env::args_os().collect()));
     match run(&args).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -464,7 +445,6 @@ async fn run(args: &Cli) -> Result<()> {
         }
         return sync_command(args, cmd).await;
     }
-    let mut config = config::load(&args.config)?;
     match &args.command {
         Command::Completion { shell } => {
             clap_complete::generate(
@@ -480,7 +460,14 @@ async fn run(args: &Cli) -> Result<()> {
         Command::Config {
             command: ConfigCommand::Show,
         } => {
-            let value = json!({"config_path":args.config,"state_path":args.state_dir,"context":selected_context(args,&config),"server":server(args,&config).ok(),"sources":config.sources,"sync":config.sync});
+            let config = load_config(args).await?;
+            let selected = args
+                .server
+                .as_deref()
+                .or(config.server.as_deref())
+                .map(config::normalize_server)
+                .transpose()?;
+            let value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,"sources":config.sources,"sync":config.sync});
             emit(args, &value, || {
                 println!(
                     "{}",
@@ -488,18 +475,44 @@ async fn run(args: &Cli) -> Result<()> {
                 )
             })?;
         }
-        Command::Context { command } => context_command(args, &mut config, command).await?,
-        Command::Auth { command } => auth_command(args, &mut config, command).await?,
-        Command::Sources { command } => source_command(args, &mut config, command).await?,
+        Command::Connect { url } => {
+            let client = config::authenticated(url, Duration::from_secs(args.timeout)).await?;
+            client.info().await?;
+            let _writer = config::write_lock(&args.config)?;
+            let mut config = load_config(args).await?;
+            config.server = Some(client.server().to_owned());
+            config::save(&args.config, &config)?;
+            emit(args, &json!({"server":client.server()}), || {
+                println!("Default server set to {}", client.server())
+            })?;
+        }
+        Command::Auth { command } => auth_command(args, &load_config(args).await?, command).await?,
+        Command::Sources { command } => {
+            let _writer = if matches!(command, SourceCommand::Add { .. }) {
+                Some(config::write_lock(&args.config)?)
+            } else {
+                None
+            };
+            let mut config = load_config(args).await?;
+            source_command(args, &mut config, command).await?;
+        }
         Command::Sync { watch, .. } => {
+            let mut config = load_config(args).await?;
             let state = LocalState::open(&args.state_dir).await?;
             let _lock = sync::lock(&state.directory)?;
-            let new_device = config.device_label.is_none();
-            let device = config::device(&mut config);
-            if new_device {
+            let device = if let Some(device) = &config.device_label {
+                device.clone()
+            } else {
+                let _writer = config::write_lock(&args.config)?;
+                config = load_config(args).await?;
+                let device = config::device(&mut config);
                 config::save(&args.config, &config)?;
+                device
+            };
+            if *watch {
+                state.upgrade_watch_state().await?;
             }
-            let runtime = runtime(args, &config).await?;
+            let client = client_for(args, &config).await?;
             let mut watched_files = HashMap::new();
             let shutdown = sync_shutdown();
             tokio::pin!(shutdown);
@@ -511,26 +524,25 @@ async fn run(args: &Cli) -> Result<()> {
             loop {
                 let pass = async {
                     if *watch {
-                        config = config::load(&args.config)?;
+                        config = load_config(args).await?;
                     }
                     let sources: Vec<_> = config
                         .sources
                         .iter()
-                        .filter(|s| s.context == runtime.context)
+                        .filter(|s| s.server == client.server())
                         .collect();
                     if sources.is_empty() {
-                        bail!("no sources enabled for this context; use sessiondb sources add");
+                        bail!("no sources enabled for this server; use sessiondb sources add");
                     }
                     let mut results = Vec::new();
                     let mut first_error = None;
-                    let info = runtime.client.info().await?;
+                    let info = client.info().await?;
                     for source in &sources {
                         let result = async {
                             let registered =
-                                sync::ensure_source(&runtime.client, &state, &device, source)
-                                    .await?;
+                                sync::ensure_source(&client, &state, &device, source).await?;
                             sync::source(
-                                &runtime.client,
+                                &client,
                                 &state,
                                 &registered,
                                 &config.sync,
@@ -588,8 +600,7 @@ async fn run(args: &Cli) -> Result<()> {
                 }
                 state
                     .watch_finished(
-                        runtime.client.server(),
-                        &runtime.context,
+                        client.server(),
                         result.as_ref().err().map(|e| format!("{e:#}")),
                     )
                     .await?;
@@ -606,7 +617,7 @@ async fn run(args: &Cli) -> Result<()> {
             }
         }
         Command::Sessions { command } => {
-            let runtime = runtime(args, &config).await?;
+            let client = client_for(args, &load_config(args).await?).await?;
             match command {
                 SessionCommand::List {
                     page,
@@ -628,7 +639,7 @@ async fn run(args: &Cli) -> Result<()> {
                         before: *before,
                         ..Default::default()
                     };
-                    let value = runtime.client.sessions(&filter).await?;
+                    let value = client.sessions(&filter).await?;
                     emit(args, &value, || {
                         for s in &value.data {
                             println!(
@@ -641,7 +652,7 @@ async fn run(args: &Cli) -> Result<()> {
                     })?;
                 }
                 SessionCommand::Show { id } => {
-                    let value = runtime.client.session(*id).await?;
+                    let value = client.session(*id).await?;
                     emit(args, &value, || {
                         println!(
                             "{}\nID: {}\nHarness: {}\nDirectory: {}\nMessages: {}",
@@ -659,8 +670,7 @@ async fn run(args: &Cli) -> Result<()> {
                     leaf,
                     full,
                 } => {
-                    let mut value = runtime
-                        .client
+                    let mut value = client
                         .messages(
                             *id,
                             &MessageFilter {
@@ -672,7 +682,7 @@ async fn run(args: &Cli) -> Result<()> {
                         .await?;
                     if *full {
                         for m in &mut value.data {
-                            let content = runtime.client.content(m.id).await?;
+                            let content = client.content(m.id).await?;
                             m.content = content
                                 .content
                                 .into_iter()
@@ -699,7 +709,7 @@ async fn run(args: &Cli) -> Result<()> {
                     }
                     if output.as_os_str() == "-" {
                         let mut stdout = tokio::io::stdout();
-                        runtime.client.export_to(*id, &mut stdout).await?;
+                        client.export_to(*id, &mut stdout).await?;
                     } else {
                         let parent = output
                             .parent()
@@ -708,7 +718,7 @@ async fn run(args: &Cli) -> Result<()> {
                         let temporary = tempfile::NamedTempFile::new_in(parent)
                             .context("create export output")?;
                         let mut file = tokio::fs::File::from_std(temporary.reopen()?);
-                        runtime.client.export_to(*id, &mut file).await?;
+                        client.export_to(*id, &mut file).await?;
                         file.sync_all().await?;
                         drop(file);
                         if *force {
@@ -727,14 +737,14 @@ async fn run(args: &Cli) -> Result<()> {
             }
         }
         Command::Messages { command } => {
-            let runtime = runtime(args, &config).await?;
+            let client = client_for(args, &load_config(args).await?).await?;
             match command {
                 MessageCommand::Show { id } => {
-                    let value = runtime.client.message(*id).await?;
+                    let value = client.message(*id).await?;
                     emit(args, &value, || show_message(&value))?;
                 }
                 MessageCommand::Content { id } => {
-                    let value = runtime.client.content(*id).await?;
+                    let value = client.content(*id).await?;
                     emit(args, &value, || {
                         for b in &value.content {
                             println!("{}", serde_json::to_string_pretty(b).unwrap_or_default());
@@ -744,6 +754,7 @@ async fn run(args: &Cli) -> Result<()> {
             }
         }
         Command::Status => {
+            let config = load_config(args).await?;
             let client =
                 config::authenticated(server(args, &config)?, Duration::from_secs(args.timeout))
                     .await?;
@@ -758,65 +769,7 @@ async fn run(args: &Cli) -> Result<()> {
     }
     Ok(())
 }
-async fn context_command(
-    args: &Cli,
-    config: &mut FileConfig,
-    command: &ContextCommand,
-) -> Result<()> {
-    match command {
-        ContextCommand::Create { name } => {
-            if name.is_empty()
-                || name.chars().any(char::is_whitespace)
-                || config.contexts.contains_key(name)
-            {
-                bail!("context name is invalid or already exists");
-            }
-            let server = server(args, config)?.to_owned();
-            let client = config::authenticated(&server, Duration::from_secs(args.timeout)).await?;
-            client.info().await?;
-            config.contexts.insert(
-                name.clone(),
-                ContextConfig {
-                    server: client.server().into(),
-                },
-            );
-            if config.current_context.is_none() {
-                config.current_context = Some(name.clone());
-            }
-            config::save(&args.config, config)?;
-        }
-        ContextCommand::Use { name } => {
-            if !config.contexts.contains_key(name) {
-                bail!("context does not exist");
-            }
-            config.current_context = Some(name.clone());
-            config::save(&args.config, config)?;
-        }
-        ContextCommand::Remove { name } => {
-            if config.contexts.remove(name).is_none() {
-                bail!("context does not exist");
-            }
-            if config.current_context.as_ref() == Some(name) {
-                config.current_context = None;
-            }
-            config::save(&args.config, config)?;
-        }
-        ContextCommand::List => emit(args, &config.contexts, || {
-            for (name, c) in &config.contexts {
-                println!("{}\t{}", clean(name), c.server);
-            }
-        })?,
-        ContextCommand::Show => {
-            let name = selected_context(args, config);
-            let value = config.contexts.get(name).context("no context selected")?;
-            emit(args, value, || {
-                println!("{}: {}", clean(name), value.server)
-            })?;
-        }
-    }
-    Ok(())
-}
-async fn auth_command(args: &Cli, config: &mut FileConfig, command: &AuthCommand) -> Result<()> {
+async fn auth_command(args: &Cli, config: &FileConfig, command: &AuthCommand) -> Result<()> {
     let server = config::normalize_server(server(args, config)?)?;
     match command {
         AuthCommand::Login { key_stdin: _ } => {
@@ -835,8 +788,16 @@ async fn auth_command(args: &Cli, config: &mut FileConfig, command: &AuthCommand
             config::store(server.clone(), api_key).await.context(
                 "OS credential storage is required; headless clients can use SESSIONDB_API_KEY",
             )?;
-            config.server = Some(server.clone());
-            config::save(&args.config, config)?;
+            if config.server.is_none() {
+                // Keep first-time keyring setup usable as a bootstrap. Saving a key
+                // for another origin must leave an existing default in place.
+                let _writer = config::write_lock(&args.config)?;
+                let mut latest = load_config(args).await?;
+                if latest.server.is_none() {
+                    latest.server = Some(server.clone());
+                    config::save(&args.config, &latest)?;
+                }
+            }
             emit(args, &json!({"server":server,"saved":true}), || {
                 println!("API key saved in the OS credential store.")
             })?;
@@ -861,10 +822,10 @@ async fn source_command(
     config: &mut FileConfig,
     command: &SourceCommand,
 ) -> Result<()> {
-    let runtime = runtime(args, config).await?;
+    let client = client_for(args, config).await?;
     match command {
         SourceCommand::List { page } => {
-            let value = runtime.client.sources(&page.options()).await?;
+            let value = client.sources(&page.options()).await?;
             emit(args, &value, || {
                 for s in &value.data {
                     println!("{}\t{}\t{}", s.id, s.harness, clean(&s.root));
@@ -872,7 +833,7 @@ async fn source_command(
             })?;
         }
         SourceCommand::Show { id } => {
-            let value = runtime.client.source(*id).await?;
+            let value = client.source(*id).await?;
             emit(args, &value, || {
                 println!("{}\n{}\n{}", value.id, value.harness, clean(&value.root))
             })?;
@@ -906,17 +867,12 @@ async fn source_command(
             for (harness, root) in roots {
                 let root = config::expand(&root)?.canonicalize()?;
                 let configured = ConfiguredSource {
-                    context: runtime.context.clone(),
+                    server: client.server().to_owned(),
                     harness,
                     root,
                 };
-                let source =
-                    sync::ensure_source(&runtime.client, &state, &device, &configured).await?;
-                if !config.sources.iter().any(|s| {
-                    s.context == configured.context
-                        && s.root == configured.root
-                        && s.harness == configured.harness
-                }) {
+                let source = sync::ensure_source(&client, &state, &device, &configured).await?;
+                if !config.sources.contains(&configured) {
                     config.sources.push(configured);
                 }
                 registered.push(source);
@@ -939,3 +895,46 @@ impl std::fmt::Display for Interrupted {
     }
 }
 impl std::error::Error for Interrupted {}
+
+#[cfg(test)]
+mod connection_cli_tests {
+    use super::*;
+    use std::ffi::OsString;
+    #[test]
+    fn an_old_installed_watcher_can_restart_with_its_pinned_url() {
+        let old = [
+            "sessiondb",
+            "--config=/fixture/client.toml",
+            "--state-dir=/fixture/state",
+            "--context=former-name",
+            "--server=http://original.example/",
+            "--timeout=45",
+            "sync",
+            "--watch",
+        ];
+        let args = Cli::try_parse_from(service_upgrade_args(
+            old.iter().map(OsString::from).collect(),
+        ))
+        .unwrap();
+        assert_eq!(args.server.as_deref(), Some("http://original.example/"));
+        assert_eq!(args.timeout, 45);
+        assert!(matches!(
+            args.command,
+            Command::Sync {
+                watch: true,
+                command: None
+            }
+        ));
+        assert!(Cli::try_parse_from(["sessiondb", "context", "use", "old"]).is_err());
+        let named = ["sessiondb", "--context=old", "sessions", "list"];
+        assert!(
+            Cli::try_parse_from(service_upgrade_args(
+                named.iter().map(OsString::from).collect()
+            ))
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from(["sessiondb", "connect", "http://host", "--name", "old"]).is_err()
+        );
+    }
+}

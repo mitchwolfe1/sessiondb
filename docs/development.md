@@ -41,8 +41,7 @@ In another terminal, add `target/debug` to PATH and connect:
 set -a
 source .env
 set +a
-sessiondb context create local --server http://127.0.0.1:58080
-sessiondb context use local
+sessiondb connect http://127.0.0.1:58080
 ```
 
 The private `.env` supplies the instance key; do not print or commit it. The server fails at startup if `SESSIONDB_API_KEY` is missing or empty. Environment-key clients need no login or OS credential-store session. Optionally, `sessiondb auth login --key-stdin` validates and saves a key in the OS store without a browser or network credential exchange. Credentials are never written into ordinary client configuration.

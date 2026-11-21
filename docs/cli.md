@@ -10,15 +10,14 @@ Status: target-v1 interface, with the initial command subset implemented. See [i
 
 ```sh
 # Supply SESSIONDB_API_KEY securely in the environment.
-sessiondb context create shared --server https://sessions.example.com
-sessiondb context use shared
+sessiondb connect https://sessions.example.com
 sessiondb sources add --detect
 sessiondb sync --watch
 ```
 
-A context selects only a server URL. `SESSIONDB_API_KEY` authenticates every client operation; all key holders have identical full access. `--detect` registers selected native store roots for supported harnesses. Use `--harness` and `--root` for an explicit store, or configuration for unattended setup. Starting cwd and project classification do not determine whether a session can be collected. See [automatic sync](sync.md).
+`connect SERVER_URL` checks the instance key against `/v1/info` and saves the URL as the default. The previous default stays available if authentication or the info request fails. To use the OS credential store on first connection, run `sessiondb --server SERVER_URL auth login --key-stdin` before `connect`. Use `sessiondb config show` to inspect the destination. `SESSIONDB_API_KEY` authenticates every client operation; all key holders have identical full access. `--detect` registers selected native store roots for supported harnesses. Use `--harness` and `--root` for an explicit store, or configuration for unattended setup. Starting cwd and project classification do not determine whether a session can be collected. See [automatic sync](sync.md).
 
-`sessiondb sync install` installs and starts a login service using systemd on Linux or launchd on macOS. It pins the selected context and server, absolute executable, config and state paths, and request timeout. It picks up source and sync settings from that config on each pass. Installing again refreshes and restarts the service. See [background sync](sync.md#background-service) for credentials, logs and lifecycle.
+`sessiondb sync install` installs and starts a login service using systemd on Linux or launchd on macOS. It pins the server URL, absolute executable, config and state paths, and request timeout. It picks up source and sync settings from that config on each pass. Installing again refreshes and restarts the service. See [background sync](sync.md#background-service) for credentials, logs and lifecycle.
 
 ## Command groups
 
@@ -29,7 +28,7 @@ A context selects only a server URL. `SESSIONDB_API_KEY` authenticates every cli
 | `sources` | `list`, `add`, `show`; collection starts/stops on the client |
 | `sync` | One pass, `--watch`, `install`, `start`, `stop`, `uninstall`, `status`, `logs [--follow]`, `rejected`, `retry` |
 | `embeddings` | Planned profile management; backfill execution contract is not yet defined |
-| `context` | `create`, `list`, `show`, `use`, `remove` |
+| `connect SERVER_URL` | Verify access and set the default server |
 | `projects` | Planned `list`, `create`, `show`, `update`; no archive lifecycle |
 | `auth` | `login --key-stdin`, `logout`, `status` (OS credential-store conveniences only) |
 | Top level | `status`, `config show`, `completion`, `version` |
@@ -57,7 +56,7 @@ Session reads present bounded content; full-content and native export endpoints 
 
 Human output is a stable, readable table or transcript. `--json` writes structured API-shaped JSON to stdout. Export writes bytes to `--output` or stdout with `--output -`; diagnostics and progress stay on stderr. Disable color when redirected and honor `NO_COLOR`. Do not interleave progress with machine-readable output.
 
-Support `--help`, `--version`, generated shell completions, `--server`, `--context`, `--config`, `--timeout`, and quiet/verbose modes consistently. Server-side filters behave the same through the CLI and SDK.
+Support `--help`, `--version`, generated shell completions, `--server`, `--config`, `--timeout`, and quiet/verbose modes consistently. Server-side filters behave the same through the CLI and SDK.
 
 Exit codes distinguish success (`0`), operational failure (`1`), usage (`2`), authentication (`3`), and missing resources (`4`). A sync pass with rejected native files reports their paths and reasons and finishes other uploads. In `sync --json`, affected source reports include a `rejections` object mapping source-relative paths to reasons. One-shot sync exits `1` after reporting these rejections. Interrupted watch exits with the signal-derived status.
 
@@ -65,13 +64,15 @@ A server `internal_error` on a file upload appears in the source report under `r
 
 ## Configuration
 
-Use TOML configuration in the platform configuration directory (`$XDG_CONFIG_HOME/sessiondb/config.toml` on Linux). Resolve settings in order: explicit flags, environment variables, selected context, file defaults, built-in defaults. Environment variables include `SESSIONDB_URL`, `SESSIONDB_API_KEY`, and `SESSIONDB_CONFIG`.
+Use TOML configuration in the platform configuration directory (`$XDG_CONFIG_HOME/sessiondb/config.toml` on Linux). Resolve settings in order: explicit flags, environment variables, file defaults, built-in defaults. Environment variables include `SESSIONDB_URL`, `SESSIONDB_API_KEY`, and `SESSIONDB_CONFIG`.
 
 `config show` reports effective nonsecret values and their origin. `SESSIONDB_API_KEY` takes precedence over the OS credential store; an explicitly empty value fails rather than falling back. Keys never belong in the ordinary configuration file or command-line flags. `auth login --key-stdin` requires that flag, reads a nonempty key from stdin, validates protected `/v1/info`, and saves it per normalized server URL in the OS keyring (`sessiondb-api-key`). There is no browser or token exchange. `auth logout` deletes only the local stored copy; `auth status` validates `/v1/info` and reports the server/authentication status without revealing the key. Keep sync state in the platform state/data directory and make `status` report its path.
 
+Each configured source stores its destination URL. `--server URL` and `SESSIONDB_URL` select a destination for an invocation. `connect URL` uses its positional URL even with an override present. Switching the default keeps existing roots assigned to their registered servers. On first-time keyring setup, `auth login --server URL --key-stdin` also initializes an empty default. See the [connection upgrade notes](decisions/0020-connect-by-url.md) for older configs and watchers.
+
 See the [client configuration example](examples/client.toml). It contains no credentials or unsupported future settings. Preserve existing registrations, pending files, and checkpoints across upgrades; do not reset deployed client state to apply a server fix. Recovery persists pending per-file snapshots and advances checkpoints individually after HTTP 200; `sync status --json` reports `pending_files`.
 
-The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. It also reports `rejected_files`, the last completed watch pass with its context, timestamp and error, and the native service name, definition path and state. `sync rejected --json` lists remembered paths and reasons for the selected server. `sync retry` clears those rejection hashes in this state directory so the next watch pass tests the files again. One-shot sync always retries them. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. Only `[sync] reconcile_interval_seconds` and `upload_concurrency` are current sync settings; debounce/batch settings and future matching rules are not runnable configuration.
+The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. It also reports `rejected_files`, the last completed watch pass with its server URL, timestamp and error, and the native service name, definition path and state. `sync rejected --json` lists remembered paths and reasons for the selected server. `sync retry` clears those rejection hashes in this state directory so the next watch pass tests the files again. One-shot sync always retries them. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. Only `[sync] reconcile_interval_seconds` and `upload_concurrency` are current sync settings; debounce/batch settings and future matching rules are not runnable configuration.
 
 ## Rust client crate
 

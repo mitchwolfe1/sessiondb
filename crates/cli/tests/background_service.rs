@@ -10,7 +10,7 @@ use std::{
     process::Command,
     time::Duration,
 };
-use support::{Server, Services, cli};
+use support::{Server, Services};
 
 struct Cleanup {
     root: PathBuf,
@@ -72,12 +72,8 @@ async fn user_service_uploads_recovers_and_uninstalls() {
     let root = temp.path();
     let services = Services::start().await;
     let mut server = Server::start(root, &services).await;
-    let context = cli(&server, root, &["context", "create", "background"]).await;
-    assert!(
-        context.status.success(),
-        "{}",
-        String::from_utf8_lossy(&context.stderr)
-    );
+    let connected = run(&server, root, &["connect", &server.url, "--json"]).await;
+    assert_eq!(connected["server"], format!("{}/", server.url));
     let native = root.join("native");
     fs::create_dir(&native).unwrap();
     let good = b"{\"type\":\"session_meta\",\"payload\":{\"id\":\"service-fixture\"}}\n";
@@ -101,6 +97,20 @@ async fn user_service_uploads_recovers_and_uninstalls() {
     let mut cfg: toml::Value = toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
     cfg["sync"]["reconcile_interval_seconds"] = 1.into();
     cfg["sources"][0]["root"] = "native".into();
+    // Start with a config written by the previous release, including a relative root.
+    let old_config = cfg.as_table_mut().unwrap();
+    let saved_url = old_config.remove("server").unwrap();
+    old_config.insert("current_context".into(), "old-name".into());
+    old_config.insert(
+        "contexts".into(),
+        toml::Value::Table(toml::Table::from_iter([(
+            "old-name".into(),
+            toml::Value::Table(toml::Table::from_iter([("server".into(), saved_url)])),
+        )])),
+    );
+    let original_source = cfg["sources"][0].as_table_mut().unwrap();
+    original_source.remove("server");
+    original_source.insert("context".into(), "old-name".into());
     fs::write(&config_path, toml::to_string(&cfg).unwrap()).unwrap();
     let initial = run(&server, root, &["sync", "status", "--json"]).await;
     assert_eq!(initial["service"]["installed"], false);
@@ -128,13 +138,49 @@ async fn user_service_uploads_recovers_and_uninstalls() {
     )
     .unwrap();
     run(&server, root, &["sync", "install", "--json"]).await;
-    assert!(!fs::read_to_string(&unit).unwrap().contains(&server.api_key));
+    let definition = fs::read_to_string(&unit).unwrap();
+    assert!(!definition.contains(&server.api_key));
+    assert!(!definition.contains("--context"));
+    assert!(definition.contains(&format!("--server={}/", server.url)));
     let first = wait_for(&server, root, |s| {
         s["accepted_files"] == 1 && s["rejected_files"] == 1 && s["last_watch_pass"].is_object()
     })
     .await;
     assert_eq!(first["service"]["state"], "running");
     assert_eq!(first["service"]["enabled_at_login"], true);
+    let alternate_root = tempfile::tempdir().unwrap();
+    let alternate = Server::start(alternate_root.path(), &services).await;
+    let switched = support::cli_with_saved_server(&alternate, root)
+        .args(["connect", &alternate.url, "--json"])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        switched.status.success(),
+        "{}",
+        String::from_utf8_lossy(&switched.stderr)
+    );
+    let migrated = fs::read_to_string(&config_path).unwrap();
+    assert!(!migrated.contains("context"));
+    let migrated: toml::Value = toml::from_str(&migrated).unwrap();
+    assert_eq!(
+        migrated["server"].as_str(),
+        Some(format!("{}/", alternate.url).as_str())
+    );
+    assert_eq!(
+        migrated["sources"][0]["server"].as_str(),
+        Some(format!("{}/", server.url).as_str())
+    );
+    let unconfigured = support::cli_with_saved_server(&alternate, root)
+        .args(["sync", "install"])
+        .output()
+        .await
+        .unwrap();
+    assert!(!unconfigured.status.success());
+    assert!(
+        String::from_utf8_lossy(&unconfigured.stderr)
+            .contains("no sources enabled for this server")
+    );
     let rejects = run(&server, root, &["sync", "rejected", "--json"]).await;
     let rejected_at = rejects["files"][0]["rejected_at"].clone();
     assert_eq!(rejects["files"][0]["path"], "bad.jsonl");
@@ -152,7 +198,13 @@ async fn user_service_uploads_recovers_and_uninstalls() {
     assert_eq!(stopped["enabled_at_login"], true);
     fs::write(native.join("new.jsonl"), good).unwrap();
     run(&server, root, &["sync", "start", "--json"]).await;
-    wait_for(&server, root, |s| s["accepted_files"] == 2).await;
+    let resumed = wait_for(&server, root, |s| s["accepted_files"] == 2).await;
+    assert_eq!(
+        resumed["last_watch_pass"]["server"],
+        format!("{}/", server.url)
+    );
+    assert!(resumed["last_watch_pass"].get("context").is_none());
+    run(&server, root, &["connect", &server.url, "--json"]).await;
     assert_eq!(
         run(&server, root, &["sync", "rejected", "--json"]).await["files"][0]["rejected_at"],
         rejected_at

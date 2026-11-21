@@ -65,7 +65,7 @@ impl LocalState {
                 PRIMARY KEY(server,source_id,path)
             );
             CREATE TABLE IF NOT EXISTS last_watch_pass(
-                id INTEGER PRIMARY KEY CHECK(id=1),server TEXT NOT NULL,context TEXT NOT NULL,
+                id INTEGER PRIMARY KEY CHECK(id=1),server TEXT NOT NULL,
                 finished_at TEXT NOT NULL,error TEXT
             );",
         )
@@ -271,14 +271,21 @@ impl LocalState {
             })
             .collect()
     }
-    pub async fn watch_finished(
-        &self,
-        server: &str,
-        context: &str,
-        error: Option<String>,
-    ) -> Result<()> {
-        sqlx::query("INSERT INTO last_watch_pass(id,server,context,finished_at,error) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET server=excluded.server,context=excluded.context,finished_at=excluded.finished_at,error=excluded.error")
-            .bind(server).bind(context).bind(chrono::Utc::now().to_rfc3339()).bind(error).execute(&self.pool).await?;
+    // The watcher holds the sync lock here, so an old worker cannot be writing
+    // its previous heartbeat format while the column is removed.
+    pub async fn upgrade_watch_state(&self) -> Result<()> {
+        let old:bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pragma_table_info('last_watch_pass') WHERE name='context')")
+            .fetch_one(&self.pool).await?;
+        if old {
+            sqlx::query("ALTER TABLE last_watch_pass DROP COLUMN context")
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+    pub async fn watch_finished(&self, server: &str, error: Option<String>) -> Result<()> {
+        sqlx::query("INSERT INTO last_watch_pass(id,server,finished_at,error) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET server=excluded.server,finished_at=excluded.finished_at,error=excluded.error")
+            .bind(server).bind(chrono::Utc::now().to_rfc3339()).bind(error).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn status(&self) -> Result<serde_json::Value> {
@@ -298,21 +305,48 @@ impl LocalState {
         let rejected: i64 = sqlx::query_scalar("SELECT count(*) FROM rejected_files")
             .fetch_one(&self.pool)
             .await?;
-        let pass: Option<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT server,context,finished_at,error FROM last_watch_pass WHERE id=1",
-        )
-        .fetch_optional(&self.pool)
-        .await?;
+        let pass: Option<(String, String, Option<String>)> =
+            sqlx::query_as("SELECT server,finished_at,error FROM last_watch_pass WHERE id=1")
+                .fetch_optional(&self.pool)
+                .await?;
         Ok(serde_json::json!({
             "state_path": self.directory.join("state.sqlite"),
             "sources": sources,
             "accepted_files": files,
             "pending_files": pending,
             "rejected_files": rejected,
-            "last_watch_pass": pass.map(|(server,context,finished_at,error)| serde_json::json!({
-                "server":server, "context":context, "finished_at":finished_at, "error":error
+            "last_watch_pass": pass.map(|(server,finished_at,error)| serde_json::json!({
+                "server":server, "finished_at":finished_at, "error":error
             })),
             "last_accepted_at": accepted_at
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn a_legacy_watch_pass_stays_readable_until_the_new_watcher_upgrades_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = LocalState::open(dir.path()).await.unwrap();
+        sqlx::raw_sql("DROP TABLE last_watch_pass; CREATE TABLE last_watch_pass(id INTEGER PRIMARY KEY CHECK(id=1),server TEXT NOT NULL,context TEXT NOT NULL,finished_at TEXT NOT NULL,error TEXT);
+          INSERT INTO last_watch_pass VALUES(1,'https://old.example/','previous-name','previous-pass','previous-error');")
+            .execute(&state.pool).await.unwrap();
+        let previous = state.status().await.unwrap()["last_watch_pass"].clone();
+        assert_eq!(
+            previous,
+            serde_json::json!({"server":"https://old.example/","finished_at":"previous-pass","error":"previous-error"})
+        );
+        state.upgrade_watch_state().await.unwrap();
+        state.upgrade_watch_state().await.unwrap();
+        assert_eq!(state.status().await.unwrap()["last_watch_pass"], previous);
+        state
+            .watch_finished("https://old.example/", None)
+            .await
+            .unwrap();
+        let next = state.status().await.unwrap();
+        assert!(next["last_watch_pass"]["error"].is_null());
+        assert_ne!(next["last_watch_pass"]["finished_at"], "previous-pass");
     }
 }

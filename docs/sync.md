@@ -14,7 +14,7 @@ For active JSONL, capture a bounded snapshot through the last complete newline. 
 
 ## Background service
 
-Configure a context and its source roots, then save its API key with `sessiondb auth login --key-stdin` or supply the key in the user service manager's environment. The generated service definition contains only nonsecret arguments. An API key exported in an interactive shell is scoped to that shell and its children.
+Connect to a server and select its source roots, then save its API key with `sessiondb auth login --key-stdin` or supply the key in the user service manager's environment. The generated service definition contains only nonsecret arguments. An API key exported in an interactive shell is scoped to that shell and its children.
 
 ```sh
 sessiondb sync install
@@ -27,7 +27,7 @@ sessiondb sync uninstall
 
 Installation is opt-in. It starts a systemd user unit on Linux or a LaunchAgent in the user's GUI login domain on macOS. It runs immediately and at subsequent logins under the same user. `stop` stops it for the current login. `uninstall` also removes the login registration, preserving checkpoints, native files, credentials, and remote data. The default service is `sessiondb-sync.service` or `io.sessiondb.sync`. An explicit state directory has its own service identity and sync lock. Use the same `--state-dir` to manage it. [systemd services](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) and [Apple’s launch agent guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html) describe the underlying managers.
 
-The installer captures the current context, server origin, timeout, config path and state directory. Changes to that context's source roots and polling interval take effect at the next pass. Reinstall to change the service target or to restart with a replacement binary. Linux logs go to the user journal. macOS logs go to `sync.log` in the state directory. `sync logs` shows recent lines on either platform.
+The installer captures the server origin, timeout, config path and state directory. Changes to that server’s source roots and the polling interval take effect at the next pass. The installed watcher stays on its original server when you connect the CLI elsewhere. Reinstall to change the service target or to restart with a replacement binary. Linux logs go to the user journal. macOS logs go to `sync.log` in the state directory. `sync logs` shows recent lines on either platform.
 
 Watch reuses a local file digest while its Unix identity, size and modification/change times match. It refreshes the remote file listing when the source sync time changes, after recovered uploads, and at least every 15 minutes of polling. Files changed during capture are deferred to the next watch pass. One-shot sync performs a full reconciliation.
 

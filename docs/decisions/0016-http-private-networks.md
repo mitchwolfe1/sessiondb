@@ -1,5 +1,7 @@
 # HTTP on private networks
 
+[ADR 0020](0020-connect-by-url.md) replaces the named CLI context examples with direct URL selection.
+
 Status: accepted. Date: 2026-11-18. Supersedes the HTTPS-only transport requirement in [0013](0013-instance-api-key.md), not its shared-key authentication boundary.
 
 ## Decision

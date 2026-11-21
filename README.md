@@ -19,8 +19,7 @@ Connect to a server, select native session stores, and enable automatic sync. Se
 ```sh
 # Provision SESSIONDB_API_KEY securely in the server and client environments first.
 sessiondb-server --config /etc/sessiondb/config.toml
-sessiondb context create shared --server https://sessions.example.com
-sessiondb context use shared
+sessiondb connect https://sessions.example.com
 printf '%s' "$SESSIONDB_API_KEY" | sessiondb auth login --key-stdin
 sessiondb sources add --detect
 sessiondb sync install
@@ -32,7 +31,7 @@ sessiondb sessions messages SESSION_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
 
-On Linux and macOS, `sync install` starts a user-login service for the selected context. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. The watcher can use the API key saved with `sessiondb auth login --key-stdin`. [Background sync](docs/sync.md#background-service) covers setup and retries.
+On Linux and macOS, `sync install` starts a user-login service for the selected server URL. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. The watcher can use the API key saved with `sessiondb auth login --key-stdin`. [Background sync](docs/sync.md#background-service) covers setup and retries.
 
 ## Features
 

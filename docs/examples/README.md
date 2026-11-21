@@ -5,7 +5,7 @@ These are synthetic examples of the SessionDB interface, including later target-
 | File | Purpose |
 | --- | --- |
 | [server.toml](server.toml) | Server-only S3, authentication, telemetry, and max_file_bytes |
-| [client.toml](client.toml) | Server context and selected native store roots |
+| [client.toml](client.toml) | Default server URL and selected native store roots |
 | [source-create.json](source-create.json) | A native store source with no project binding |
 | [session.json](session.json) | A home-launched session associated with a project elsewhere |
 | [message.json](message.json) | Typed assistant text and JSON tool input |
