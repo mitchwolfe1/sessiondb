@@ -35,6 +35,10 @@ Native bundle export includes source-relative paths and a manifest instead of re
 
 STS and ATIF are projections over selected conversation history. Define which branch and which structural events were included. Incomplete timing remains unknown; the exporter cannot reconstruct unrecorded operations. Agent Trace code attribution is a different schema from an execution trace or transcript.
 
+## On-demand agent lookup
+
+The [SessionDB history skill](../skills/sessiondb-history/SKILL.md) gives shell-capable agents the search and source-reading workflow. Install the skill directory in a harness's discovered skill location. Codex and Pi can share `~/.agents/skills/sessiondb-history`. Claude Code can load the same directory through `~/.claude/skills/sessiondb-history`. A lookup uses the CLI connection already configured for that user. Skill discovery itself issues no history request.
+
 ## hype-history migration
 
 [ADR 0022](decisions/0022-replace-hype-history.md) makes SessionDB the successor to the entire history tool. The proposed cutover has three steps.
