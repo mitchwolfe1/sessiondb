@@ -96,6 +96,16 @@ class BrowserCase(unittest.TestCase):
         self.assertFalse(score["evidence_before_report_read"])
         self.assertFalse(score["pass"])
 
+    def test_source_id_with_an_unrelated_excerpt_does_not_count_as_evidence(self):
+        self.world["history"] = {"native_labels": ["c3"]}
+        self.trace.append({"tool": "search_history", "args": {}, "result": {
+            "messages": [{"id": "c3", "text": "The weekly delivery report."}]
+        }})
+        self.call("browser", connection=NATIVE, operation="read", tab_id="237")
+        score = grade(self.world, self.trace, "Needs owner review")
+        self.assertTrue(score["pass"])
+        self.assertFalse(score["evidence_before_report_read"])
+
     def test_overlapping_calls_do_not_get_credit_for_prior_evidence(self):
         self.call("read_around", message_id="c3")
         self.call("browser", connection=NATIVE, operation="read", tab_id="237")

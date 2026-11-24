@@ -215,6 +215,9 @@ def run_trial(
             raise RuntimeError("A fixture tool failed; see trace.jsonl")
         result["score"] = grade(world, trace, answer)
         lookups = [e for e in trace if e["tool"] in {"search_history", "read_around"}]
+        if args.sessiondb_url:
+            from native import retrieval_metrics
+            result.update(retrieval_metrics(lookups))
         result.update(
             tool_calls=len(trace),
             history_calls=len(lookups),
@@ -255,7 +258,18 @@ def main():
     parser.add_argument(
         "--judge", action="store_true", help="Also run a blind subscription judge"
     )
+    parser.add_argument("--sessiondb-url", help="Seed and query this empty disposable SessionDB")
+    parser.add_argument("--sessiondb-bin", default="sessiondb", help="Native CLI used with --sessiondb-url")
     args = parser.parse_args()
+    if args.sessiondb_url:
+        try:
+            from native import retrieval_metrics
+            retrieval_metrics([])
+        except ImportError:
+            parser.error("Install tiktoken for native retrieval metrics")
+        args.sessiondb_bin = shutil.which(args.sessiondb_bin)
+        if not args.sessiondb_bin or not os.environ.get("SESSIONDB_API_KEY"):
+            parser.error("Supply a built SessionDB CLI and the disposable instance's SESSIONDB_API_KEY")
     args.output = args.output.expanduser().resolve()
     env = model_environment()
     auth = subprocess.run(
@@ -301,8 +315,9 @@ def main():
         "codex_version": subprocess.check_output(
             ["codex", "--version"], text=True
         ).strip(),
+        "history_backend": "sessiondb" if args.sessiondb_url else "hype-history",
         "history_version": subprocess.check_output(
-            ["hype-history", "--version"], text=True
+            [args.sessiondb_bin if args.sessiondb_url else "hype-history", "--version"], text=True
         ).strip(),
         "corpus_sha256": hashlib.sha256(corpus).hexdigest(),
         "home_entry_count": len(home_entries),
@@ -314,7 +329,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="browser-trial-") as tmp:
         root = Path(tmp)
         (root / "actor").mkdir()
-        history = build_history(json.loads(corpus), root)
+        history = build_history(json.loads(corpus), root, native_url=args.sessiondb_url, native_cli=args.sessiondb_bin)
         for pair, status in enumerate(statuses, start=1):
             tab_id = str(rng.randrange(1000, 1000000))
             arms = ("off", "keyword") if pair % 2 else ("keyword", "off")

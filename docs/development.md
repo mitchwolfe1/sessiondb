@@ -113,7 +113,7 @@ cargo build --locked --workspace --bins
 cargo test --locked -p sessiondb-cli --test end_to_end -- --ignored
 ```
 
-The suite uses isolated loopback PostgreSQL/S3 services and synthetic keys/transcripts, then removes its containers/volumes. It covers binary/SDK authentication, per-file verified acceptance and whole-file rejection, native export, appends/rewrites, lost responses, watch/outage recovery, rejected-file repair, restart persistence, and backup/restore. Historical tolerant-parser results are not proof that strict rejection works.
+The suite uses isolated loopback PostgreSQL/S3 services and synthetic keys/transcripts, then removes its containers/volumes. It covers binary/SDK authentication, per-file verified acceptance and whole-file rejection, native export, appends/rewrites, lost responses, watch/outage recovery, rejected-file repair, restart persistence, and backup/restore. Search checks cover upgrade backfill, matching across a request and reply, excerpts beyond the preview limit, fork selection, tool filters, retries and rewrite cleanup. Historical tolerant-parser results are not proof that strict rejection works.
 
 On a Linux login with a systemd user manager and Docker, run the background service integration separately. It installs a uniquely named watcher for a temporary state directory and loopback server, exercises its lifecycle, and removes the test unit.
 

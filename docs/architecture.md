@@ -15,7 +15,7 @@ flowchart LR
     A --> S[(Immutable S3 originals and artifacts)]
 ```
 
-Clients send one bounded native file through the API, not directly to S3. PostgreSQL holds explicit session/message/event metadata and typed content; immutable original/artifact bytes live in an existing S3-compatible store. Search and embedding providers remain planned extensions, not prerequisites for collection.
+Clients send one bounded native file through the API, not directly to S3. PostgreSQL holds explicit session/message/event metadata and typed content; immutable original/artifact bytes live in an existing S3-compatible store. PostgreSQL also holds the derived keyword index. Embedding providers are a planned extension.
 
 ## Rust workspace
 
@@ -36,7 +36,7 @@ The locked baseline uses Rust 2024/Rust 1.94.1, Tokio/axum, serde, SQLx, reqwest
 1. Authenticate with the required instance key and validate exactly one metadata/file pair.
 2. Verify actual length and digest; detect already accepted identical content.
 3. Fully parse every supplied record before registering fresh object keys or uploading immutable original/artifact bytes.
-4. Recheck optimistic file version and publish file, generation, sessions, messages, events, and artifacts in one PostgreSQL transaction.
+4. Recheck optimistic file version and publish file, generation, sessions, messages, keyword passages, exchange vectors, events and artifacts in one PostgreSQL transaction.
 5. Return HTTP 200 with the accepted file, related session IDs, and unchanged flag.
 
 S3 I/O is outside catalog transactions. Concurrent conflicting publication returns `409`; a disconnect can be retried from the saved snapshot. Unsupported or malformed files reject with HTTP 400 before any storage/catalog mutation. There is no persisted upload state, batch reservation, verification queue, worker lease, or parse polling.
@@ -55,4 +55,4 @@ The eleven domain tables originate in immutable `0001_catalog.sql`. Athena is de
 
 The HTTP API is the interoperability boundary for SessionDB clients and other applications. SessionDB will provide the agent-facing history workflows described in [ADR 0022](decisions/0022-replace-hype-history.md). The calling agent can interpret evidence retrieved through those interfaces.
 
-Keyword search, embedding profiles/providers, hybrid retrieval, projects administration, and changes are planned as marked in OpenAPI. Their execution/backfill mechanism is not an active index-job API. Storage, sync, and reads must remain useful without a model endpoint.
+Keyword retrieval uses a GIN index over branch-specific exchange segments and returns source passages. Embedding profiles, hybrid retrieval, project administration and changes are planned as marked in OpenAPI. Their execution/backfill mechanism is not an active index-job API. Storage, sync, and reads must remain useful without a model endpoint.

@@ -61,6 +61,12 @@ async fn ingest(
         .await
         .unwrap()
 }
+fn keywords(query: &str) -> SearchRequest {
+    SearchRequest {
+        query: query.into(),
+        ..Default::default()
+    }
+}
 fn status(error: Error, expected: u16) {
     match error {
         Error::Problem(p) => assert_eq!(p.status, expected, "{}", p.detail),
@@ -262,6 +268,56 @@ async fn authenticated_sync_storage_and_recovery() {
         }
     }
 
+    // Untouched accepted messages become searchable through the forward migration.
+    let mut query = keywords("verify saved output");
+    query.limit = Some(1);
+    query.filters.tags = vec!["legacy".into()];
+    let first_page = owner.search(&query).await.unwrap();
+    assert_eq!(first_page.data.len(), 1);
+    assert!(first_page.coverage.keyword_ready_messages >= legacy_cases.len() as u64);
+    let hit = &first_page.data[0];
+    assert!(
+        hit.url
+            .ends_with(&format!("/v1/messages/{}", hit.message_id))
+    );
+    assert!(legacy_cases.iter().any(|case| case.id == hit.session_id));
+    let context = owner
+        .read_around(hit.message_id, &AroundOptions::default())
+        .await
+        .unwrap();
+    assert!(context.data.iter().any(|m| m.id == hit.message_id));
+    query.cursor = Some(first_page.next_cursor.unwrap());
+    let next = owner.search(&query).await.unwrap();
+    assert_ne!(next.data[0].message_id, hit.message_id);
+    query.query = "different".into();
+    status(owner.search(&query).await.unwrap_err(), 400);
+    let output = cli(
+        &server,
+        root.path(),
+        &["search", "verify saved output", "--role", "user", "--json"],
+    )
+    .await;
+    assert!(output.status.success());
+    let result: SearchResponse = serde_json::from_slice(&output.stdout).unwrap();
+    let id = result.data[0].message_id.to_string();
+    assert_eq!(
+        result.data[0].show_command,
+        format!("sessiondb messages show {id} -C 2")
+    );
+    let output = cli(&server, root.path(), &["messages", "show", &id, "--json"]).await;
+    assert!(output.status.success());
+    let message: Message = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(message.id.to_string(), id);
+    let output = cli(
+        &server,
+        root.path(),
+        &["messages", "show", &id, "-C", "2", "--json"],
+    )
+    .await;
+    assert!(output.status.success());
+    let context: MessageContext = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(context.anchor_id.to_string(), id);
+
     // The same instance key works for every client; there is no login or identity.
     for key in [None, Some("wrong-key"), Some("")] {
         let mut request = reqwest::Client::new().get(format!("{}/v1/info", server.url));
@@ -279,6 +335,24 @@ async fn authenticated_sync_storage_and_recovery() {
             .await
             .unwrap_err(),
         401,
+    );
+    status(invalid.search(&keywords("test")).await.unwrap_err(), 401);
+    status(
+        invalid
+            .read_around(Uuid::nil(), &AroundOptions::default())
+            .await
+            .unwrap_err(),
+        401,
+    );
+    status(
+        owner
+            .search(&SearchRequest {
+                mode: SearchMode::Hybrid,
+                ..keywords("test")
+            })
+            .await
+            .unwrap_err(),
+        409,
     );
     for key in [None, Some("")] {
         let mut command = server.command(&services, "postgres");
@@ -524,6 +598,30 @@ async fn authenticated_sync_storage_and_recovery() {
             .unwrap_err(),
         409,
     );
+    // Terms in the request and the appended reply match one exchange across tools.
+    let mut combined = keywords("payments AND appended");
+    combined.filters.project_ids = vec![project];
+    let hit = peer.search(&combined).await.unwrap();
+    assert_eq!(hit.data.len(), 1);
+    assert_eq!(hit.data[0].leaf_id, continued.data.last().unwrap().id);
+    assert_eq!(hit.data[0].project_ids, [project]);
+    combined.filters.roles = vec![Role::Assistant];
+    assert!(peer.search(&combined).await.unwrap().data.is_empty());
+    // Retrying the accepted append with the previous version returns the same hit.
+    let retry = ingest(
+        &peer,
+        codex.id,
+        "home.jsonl",
+        appended.clone(),
+        Some(file.version.clone()),
+    )
+    .await;
+    assert!(retry.unchanged);
+    let appended_query = keywords("appended");
+    let hits = owner.search(&appended_query).await.unwrap();
+    assert_eq!(hits.data.len(), 1);
+    let appended_id = hits.data[0].message_id;
+    assert_eq!(appended_id, continued.data.last().unwrap().id);
     // A rewrite of the same conversation keeps its identity and manual labels.
     let rewind = ingest(
         &owner,
@@ -540,6 +638,13 @@ async fn authenticated_sync_storage_and_recovery() {
     assert_eq!(rewound_session.title, "Manual title");
     assert_eq!(rewound_session.tags, vec!["manual"]);
     assert_eq!(rewound_session.project_ids, vec![project]);
+    assert!(peer.search(&appended_query).await.unwrap().data.is_empty());
+    status(
+        peer.read_around(appended_id, &AroundOptions::default())
+            .await
+            .unwrap_err(),
+        404,
+    );
     let after = rewind.file;
 
     // Rewrites retain the preceding generation while making the new original readable.
@@ -689,6 +794,40 @@ async fn authenticated_sync_storage_and_recovery() {
         .await
         .unwrap()
         .data;
+    let fork = owner
+        .read_around(messages[0].id, &AroundOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(fork.data.len(), 1);
+    assert_eq!(fork.branch_choices, [messages[1].id, messages[2].id]);
+    let path = owner
+        .read_around(
+            messages[0].id,
+            &AroundOptions {
+                leaf_id: Some(messages[3].id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        path.data.iter().map(|m| m.id).collect::<Vec<_>>(),
+        [messages[0].id, messages[2].id, messages[3].id]
+    );
+    assert!(path.branch_choices.is_empty());
+    status(
+        owner
+            .read_around(
+                messages[1].id,
+                &AroundOptions {
+                    leaf_id: Some(messages[2].id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err(),
+        400,
+    );
     assert_eq!(
         messages[1].conversation_parent_id,
         messages[2].conversation_parent_id
@@ -1473,7 +1612,7 @@ async fn native_json_control_characters_round_trip() {
     let mut server = Server::start(root.path(), &services).await;
     let client = client(&server);
     let source = source(&client, Harness::Pi, "json-controls").await;
-    let text = "before\u{0}after";
+    let text = "before\u{0}after obsidian marker with literal \\u0000 retained";
     let request = "Preserve\u{0}the native tool output.";
     let records = [
         json!({"type":"session","version":3,"id":"pi-json-controls","cwd":"/fixture","timestamp":"2026-10-24T00:00:00Z"}),
@@ -1537,6 +1676,16 @@ async fn native_json_control_characters_round_trip() {
             .await
             .unwrap();
     assert_eq!(event.0["data"]["text"], text);
+    let mut tool_query = keywords("obsidian");
+    assert!(client.search(&tool_query).await.unwrap().data.is_empty());
+    tool_query.filters.tool_name = Some("fixture_tool".into());
+    let tool_hits = client.search(&tool_query).await.unwrap();
+    assert_eq!(tool_hits.data.len(), 1);
+    assert_eq!(tool_hits.data[0].message_id, messages.data[2].id);
+    assert_eq!(tool_hits.data[0].block_type, "tool_result");
+    assert_eq!(tool_hits.data[0].tool_name.as_deref(), Some("fixture_tool"));
+    assert!(tool_hits.data[0].excerpt.contains("obsidian"));
+    assert!(tool_hits.data[0].excerpt.contains("\\u0000"));
     let mut rejected_bytes = bytes.clone();
     rejected_bytes.extend_from_slice(b"{\"type\":\"future_record\",\"id\":\"unsupported\"}\n");
     status(
@@ -1570,4 +1719,174 @@ async fn native_json_control_characters_round_trip() {
     assert_eq!(original, bytes);
     server.stop();
     pool.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires Docker and built workspace binaries; uses isolated synthetic services"]
+async fn search_indexes_full_exchange_text_and_only_the_selected_branch() {
+    let root = tempfile::tempdir().unwrap();
+    let services = Services::start().await;
+    let server = Server::start(root.path(), &services).await;
+    let client = client(&server);
+    let source = source(&client, Harness::Pi, "keyword-search").await;
+    let long = format!(
+        "{} A turquoise bridge was verified.",
+        "Long appendix. ".repeat(6000)
+    );
+    let mut records = vec![
+        json!({"type":"session","version":3,"id":"keyword-branches","timestamp":"2026-01-01T00:00:00Z"}),
+    ];
+    for (id, parent, role, text) in [
+        ("root", None, "user", "Investigate the amber index."),
+        (
+            "left",
+            Some("root"),
+            "assistant",
+            "The orchid continuation succeeded.",
+        ),
+        (
+            "right",
+            Some("root"),
+            "assistant",
+            "The lilac continuation succeeded.",
+        ),
+        ("appendix", Some("right"), "user", long.as_str()),
+    ] {
+        records.push(
+            json!({"type":"message","id":id,"parentId":parent,"message":{
+            "role":role,"content":[{"type":"text","text":text}]}}),
+        );
+    }
+    for i in 0..5 {
+        records.push(
+            json!({"type":"message", "id":format!("root-{i}"), "parentId":null, "message":{
+            "role":"user", "content":[{"type":"text","text":"An independent marigold."}]}}),
+        );
+    }
+    let bytes = records
+        .into_iter()
+        .map(|r| format!("{r}\n"))
+        .collect::<String>()
+        .into_bytes();
+    let file = ingest(&client, source.id, "branches.jsonl", bytes, None).await;
+    let page = client
+        .messages(file.session_ids[0], &MessageFilter::default())
+        .await
+        .unwrap();
+    assert!(page.data[3].truncated);
+
+    let shared = client.search(&keywords("amber")).await.unwrap();
+    assert_eq!(shared.data.len(), 1);
+    assert_eq!(shared.data[0].message_id, page.data[0].id);
+    let hit = &shared.data[0];
+    assert_eq!(
+        hit.show_command,
+        format!(
+            "sessiondb messages show {} -C 2 --leaf {}",
+            hit.message_id, hit.leaf_id
+        )
+    );
+    let human = cli(&server, root.path(), &["search", "amber"]).await;
+    assert!(human.status.success());
+    assert!(
+        String::from_utf8(human.stdout)
+            .unwrap()
+            .lines()
+            .any(|line| line == hit.show_command)
+    );
+    let mut command: Vec<_> = hit
+        .show_command
+        .strip_prefix("sessiondb ")
+        .unwrap()
+        .split_whitespace()
+        .collect();
+    command.push("--json");
+    let opened = cli(&server, root.path(), &command).await;
+    assert!(opened.status.success());
+    let context: MessageContext = serde_json::from_slice(&opened.stdout).unwrap();
+    assert_eq!(context.anchor_id, hit.message_id);
+    assert_eq!(context.data[1].id, hit.leaf_id);
+    assert!(context.branch_choices.is_empty());
+
+    let id = page.data[2].id.to_string();
+    let descendant = page.data[3].id.to_string();
+    for (flags, sequences) in [
+        (vec!["-C", "2"], vec![0, 2, 3]),
+        (vec!["--leaf", descendant.as_str()], vec![0, 2, 3]),
+        (vec!["-B", "1"], vec![0, 2]),
+        (vec!["-A", "1"], vec![2, 3]),
+        (vec!["-C", "1", "-B", "0"], vec![2, 3]),
+        (vec!["--after", "0", "--context", "1"], vec![0, 2]),
+        (vec!["-C", "0"], vec![2]),
+    ] {
+        let mut args = vec!["messages", "show", &id, "--json"];
+        args.extend(flags);
+        let output = cli(&server, root.path(), &args).await;
+        assert!(output.status.success(), "{args:?}");
+        let window: MessageContext = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(window.anchor_id, page.data[2].id);
+        assert_eq!(
+            window.data.iter().map(|m| m.sequence).collect::<Vec<_>>(),
+            sequences,
+            "{args:?}"
+        );
+    }
+    // Plain queries rank complete coverage first and retain relevant partials.
+    let ranked = client
+        .search(&keywords("amber and lilac absentword"))
+        .await
+        .unwrap();
+    assert_eq!(ranked.data.len(), 2);
+    assert_eq!(ranked.data[0].leaf_id, page.data[2].id);
+    let branch = client.search(&keywords("amber AND lilac")).await.unwrap();
+    assert_eq!(branch.data.len(), 1);
+    assert_eq!(branch.data[0].leaf_id, page.data[2].id);
+    assert!(
+        client
+            .search(&keywords("orchid AND lilac"))
+            .await
+            .unwrap()
+            .data
+            .is_empty()
+    );
+    let mut assistant_only = keywords("lilac -amber");
+    assert!(
+        client
+            .search(&assistant_only)
+            .await
+            .unwrap()
+            .data
+            .is_empty()
+    );
+    assistant_only.filters.roles = vec![Role::Assistant];
+    assert_eq!(
+        client.search(&assistant_only).await.unwrap().data[0].message_id,
+        page.data[2].id
+    );
+    let deep = client.search(&keywords("turquoise")).await.unwrap();
+    assert_eq!(deep.data.len(), 1);
+    assert_eq!(deep.data[0].message_id, page.data[3].id);
+    assert!(deep.data[0].excerpt.contains("turquoise"));
+    assert!(deep.data[0].excerpt.chars().count() <= 480);
+    assert!(deep.data[0].timestamp.is_none());
+    let mut narrow = keywords("turquoise");
+    narrow.filters.before = Some("2026-01-01T00:00:00Z".parse().unwrap());
+    assert!(client.search(&narrow).await.unwrap().data.is_empty());
+    narrow.filters.after = narrow.filters.before.take();
+    assert_eq!(client.search(&narrow).await.unwrap().data.len(), 1);
+
+    let mut pages = keywords("marigold");
+    let first = client.search(&pages).await.unwrap();
+    assert_eq!(first.data.len(), 3);
+    pages.cursor = first.next_cursor;
+    let more = client.search(&pages).await.unwrap();
+    assert_eq!(more.data.len(), 2);
+    assert!(more.next_cursor.is_none());
+    let ids: std::collections::HashSet<_> = first
+        .data
+        .iter()
+        .chain(&more.data)
+        .map(|m| m.message_id)
+        .collect();
+    assert_eq!(ids.len(), 5);
 }

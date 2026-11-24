@@ -28,10 +28,10 @@ Add Codex, Claude Code, and Pi adapters, initial backfill, continuous sync, loca
 
 ## Session search
 
-The proposed first release gives agents two operations they can call at the point of need.
+The first search milestone implements two operations agents can call at the point of need. See the [keyword retrieval contract](search-and-embeddings.md#keyword-search).
 
 1. **Search history.** Implement `POST /v1/search` through the Rust SDK and `sessiondb search`. Rank exchanges across the eligible collection. Index the full eligible text of a user request and its same-branch assistant response, retaining anchors into the original messages. Index standalone messages independently and split oversized content at message or block boundaries. Start with PostgreSQL full-text search and the project, harness, role and date filters in the draft contract. Keep tools identifiable and explicitly selectable.
-2. **Read around a hit.** Start the agent view with up to three short excerpts and a cursor for more. Each excerpt identifies the matching message, speaker, time when available and source link. Extend the read contract so the agent can open the exchange and neighboring turns by message ID, selecting a branch when the continuation forks. Preserve existing single-message reads and full-content expansion.
+2. **Open a hit with context.** Start the agent view with up to three short excerpts and a cursor for more. Each excerpt identifies the matching message, speaker, time when available and source link. Use `sessiondb messages show MESSAGE_ID -C 2` to open the exchange and neighboring turns, selecting a branch when the continuation forks. Preserve existing single-message reads and full-content expansion.
 
 The first implementation PR should cover the contract, a forward migration, backfill of accepted messages and one working CLI-to-API search and expansion. Verify that a newly accepted append becomes searchable and that retries and rewrites keep the derived index consistent with canonical reads. The agent chooses when to look up history.
 

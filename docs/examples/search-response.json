@@ -10,7 +10,12 @@
       "timestamp": "2026-11-15T12:04:00Z",
       "excerpt": "The retry test covers a temporary payment failure.",
       "retrieved_by": ["keyword"],
-      "url": "https://sessions.example.com/v1/messages/77777777-7777-4777-8777-777777777777"
+      "url": "https://sessions.example.com/v1/messages/77777777-7777-4777-8777-777777777777",
+      "show_command": "sessiondb messages show 77777777-7777-4777-8777-777777777777 -C 2",
+      "leaf_id": "77777777-7777-4777-8777-777777777777",
+      "block_index": 0,
+      "block_type": "text",
+      "origin": "model"
     }
   ],
   "next_cursor": null,

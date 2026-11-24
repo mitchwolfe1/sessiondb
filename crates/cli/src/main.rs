@@ -63,6 +63,8 @@ enum Command {
         #[command(subcommand)]
         command: SessionCommand,
     },
+    /// Find exchanges across accepted history.
+    Search(SearchArgs),
     Messages {
         #[command(subcommand)]
         command: MessageCommand,
@@ -144,9 +146,58 @@ enum SessionCommand {
 }
 #[derive(Subcommand)]
 enum MessageCommand {
-    Show { id: Uuid },
-    Content { id: Uuid },
+    /// Show a message, optionally with context on its recorded branch.
+    Show {
+        id: Uuid,
+        /// Show up to N messages on each side of the selected message.
+        #[arg(short = 'C', long, value_name = "N", value_parser = clap::value_parser!(u32).range(0..=50))]
+        context: Option<u32>,
+        /// Show up to N earlier messages. Overrides -C on this side.
+        #[arg(short = 'B', long, alias = "before-context", value_name = "N", value_parser = clap::value_parser!(u32).range(0..=50))]
+        before: Option<u32>,
+        /// Show up to N later messages. Overrides -C on this side.
+        #[arg(short = 'A', long, alias = "after-context", value_name = "N", value_parser = clap::value_parser!(u32).range(0..=50))]
+        after: Option<u32>,
+        /// Select a continuation with a child or descendant message ID.
+        #[arg(long)]
+        leaf: Option<Uuid>,
+    },
+    Content {
+        id: Uuid,
+    },
 }
+#[derive(clap::Args)]
+struct SearchArgs {
+    /// Ranked keywords. Use AND, OR, quotes or -word for boolean matching.
+    query: String,
+    #[arg(long, default_value = "keyword")]
+    mode: SearchMode,
+    #[arg(long, default_value = "relevance")]
+    sort: SearchSort,
+    #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u32).range(1..=50))]
+    limit: u32,
+    #[arg(long)]
+    cursor: Option<String>,
+    #[arg(long, conflicts_with = "unassigned")]
+    project: Vec<Uuid>,
+    #[arg(long)]
+    unassigned: bool,
+    #[arg(long)]
+    harness: Vec<Harness>,
+    #[arg(long)]
+    role: Vec<Role>,
+    #[arg(long)]
+    tag: Vec<String>,
+    #[arg(long)]
+    after: Option<chrono::DateTime<chrono::Utc>>,
+    #[arg(long)]
+    before: Option<chrono::DateTime<chrono::Utc>>,
+    #[arg(long)]
+    include_tools: bool,
+    #[arg(long)]
+    tool_name: Option<String>,
+}
+
 #[derive(Subcommand)]
 enum SyncCommand {
     /// Show the background service, last watch pass, and local sync counts.
@@ -791,12 +842,92 @@ async fn run(args: &Cli) -> Result<()> {
                 }
             }
         }
+        Command::Search(search) => {
+            let client = client_for(args, &load_config(args).await?)?;
+            let result = client
+                .search(&SearchRequest {
+                    query: search.query.clone(),
+                    mode: search.mode,
+                    sort: search.sort,
+                    limit: Some(search.limit),
+                    cursor: search.cursor.clone(),
+                    filters: SearchFilters {
+                        project_ids: search.project.clone(),
+                        unassigned: search.unassigned,
+                        harnesses: search.harness.clone(),
+                        roles: search.role.clone(),
+                        tags: search.tag.clone(),
+                        after: search.after,
+                        before: search.before,
+                        include_tools: search.include_tools,
+                        tool_name: search.tool_name.clone(),
+                    },
+                })
+                .await?;
+            emit(args, &result, |out| {
+                for hit in &result.data {
+                    writeln!(
+                        out,
+                        "{}  [{}]  {}",
+                        clean(&hit.title),
+                        hit.session_id,
+                        hit.harness
+                    )?;
+                    write!(out, "{}", hit.role)?;
+                    if let Some(name) = &hit.tool_name {
+                        write!(out, "  {}", clean(name))?;
+                    }
+                    if let Some(at) = hit.timestamp {
+                        write!(out, "  {}", at.to_rfc3339())?;
+                    }
+                    writeln!(out, "  {}\n{}", hit.url, clean(&hit.excerpt))?;
+                    writeln!(out, "{}", hit.show_command)?;
+                    writeln!(out)?;
+                }
+                if let Some(cursor) = &result.next_cursor {
+                    writeln!(out, "More results: --cursor {cursor}")?;
+                }
+                Ok(())
+            })?;
+        }
         Command::Messages { command } => {
             let client = client_for(args, &load_config(args).await?)?;
             match command {
-                MessageCommand::Show { id } => {
-                    let value = client.message(*id).await?;
-                    emit(args, &value, |out| show_message(out, &value))?;
+                MessageCommand::Show {
+                    id,
+                    context,
+                    before,
+                    after,
+                    leaf,
+                } => {
+                    // With only -A or -B, the opposite side has zero context.
+                    let width = context.or((before.is_some() || after.is_some()).then_some(0));
+                    if width.is_none() && leaf.is_none() {
+                        let message = client.message(*id).await?;
+                        return emit(args, &message, |out| show_message(out, &message));
+                    }
+                    let context = client
+                        .read_around(
+                            *id,
+                            &AroundOptions {
+                                before: before.or(width),
+                                after: after.or(width),
+                                leaf_id: *leaf,
+                            },
+                        )
+                        .await?;
+                    emit(args, &context, |out| {
+                        for message in &context.data {
+                            if message.id == context.anchor_id {
+                                write!(out, "> ")?;
+                            }
+                            show_message(out, message)?;
+                        }
+                        for child in &context.branch_choices {
+                            writeln!(out, "Continue with --leaf {child}")?;
+                        }
+                        Ok(())
+                    })?;
                 }
                 MessageCommand::Content { id } => {
                     let value = client.content(*id).await?;

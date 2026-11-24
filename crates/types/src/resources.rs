@@ -19,6 +19,13 @@ string_enum!(Harness { Codex => "codex", Claude => "claude", Pi => "pi" });
 string_enum!(Role { User => "user", Assistant => "assistant", System => "system", Tool => "tool", Unknown => "unknown" });
 string_enum!(Origin { NativeUser => "native_user", Model => "model", Tool => "tool", Harness => "harness", Unknown => "unknown" });
 
+string_enum!(#[derive(Default)] SearchMode {
+    #[default] Keyword => "keyword", Semantic => "semantic", Hybrid => "hybrid"
+});
+string_enum!(#[derive(Default)] SearchSort {
+    #[default] Relevance => "relevance", Newest => "newest"
+});
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Page<T> {
     pub data: Vec<T>,

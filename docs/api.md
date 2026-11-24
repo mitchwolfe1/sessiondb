@@ -1,6 +1,6 @@
 # HTTP API contract
 
-The SessionDB API provides sessions, messages, original files, artifacts, and planned search resources for the CLI, SDK, and applications.
+The SessionDB API provides sessions, messages, original files, artifacts, and keyword search for the CLI, SDK, and applications.
 
 Status: target-v1 resource and behavior contract. The [OpenAPI draft](openapi.yaml) defines wire schemas and operations; `x-implemented` identifies the current server subset. The instance-key revision is `0.3.0-draft`, with [typed content](normalized-content.md) and the [first-build subset](first-build.md). See [implementation status](implementation.md) before using later target-v1 routes.
 
@@ -30,6 +30,7 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 | GET | `/sessions/{session_id}/events` | Read recorded structural events and native event metadata. |
 | GET | `/sessions/{session_id}/export` | Stream a native bundle or normalized JSONL/STS projection. |
 | GET | `/messages/{message_id}` | Read a bounded normalized message. |
+| GET | `/messages/{message_id}/around` | Read the anchor and its neighbors on one branch. |
 | GET | `/messages/{message_id}/content` | Read full typed content, without conditional-read metadata. |
 | GET | `/artifacts/{artifact_id}` | Read authorized artifact metadata. |
 | GET | `/artifacts/{artifact_id}/content` | Download artifact bytes with the instance API key. |
@@ -96,11 +97,13 @@ There are no import/job/index-job endpoints, signed upload targets, completion p
 
 ## Search
 
-Search requests contain `query`, `mode`, `filters`, `limit`, and optional `cursor`. Filters include optional project associations, `unassigned`, harness, role, tool name, tags, and date. Default mode is `keyword`. Semantic/hybrid use one enabled instance profile and work with no project filter, several projects, or unassigned sessions. Project labels never authorize a result.
+Post `query` to `/v1/search`. The default mode is `keyword`. Plain keywords rank partial matches by the number of distinct query terms and then cover density. `AND`, `OR`, quoted phrases and excluded words select PostgreSQL web-search syntax. Each alternative must require a positive searchable term. Relevance is the default ordering. `sort=newest` orders by the matching message time, falling back to session activity. Semantic and hybrid requests return `409 embedding_not_configured`. Those modes require relevance ordering.
 
-Search defaults to 20 matching messages, with a maximum of 50. Return at most three matching messages from one session; the wire result is a flat list of message matches that clients can group for display. `sort=newest` is supported with keyword mode in v1; reject semantic/hybrid plus newest ordering as an incompatible request.
+Search accepts `filters.project_ids`, `unassigned`, `harnesses`, `roles`, `tags`, `include_tools`, `tool_name`, `after` and `before`. Within a project, harness or role list, any selected value qualifies. All selected tags must be present. A tool name or tool role enables matching tool content. The search scope applies to coverage, matching text and excerpt selection.
 
-Return matching message/session summaries, bounded excerpts, retrieval methods, profile ID if used, and index coverage. Require the instance API key before retrieval and result counts. No mode silently calls an unconfigured model provider or substitutes another embedding space. See [search behavior](search-and-embeddings.md).
+Each hit identifies the matching original message and block, its session, speaker, timestamp when available, and a branch endpoint (`leaf_id`). Its `show_command` opens the source using `sessiondb messages show` with two messages of context on each side. The command selects the returned branch when its endpoint differs from the anchor. The default page size is 3 and the maximum is 50. Follow `next_cursor` with the same query, filters and ordering. Additional pages can return more hits from any session. See [keyword search](search-and-embeddings.md#keyword-search).
+
+`GET /messages/{message_id}/around` returns `anchor_id`, `data` in conversation order and `branch_choices`. The `before` and `after` parameters count messages on each side, default to 2 and accept 0–50. The read follows parent links and unique children. At an unresolved fork it stops and returns immediate child IDs. An optional `leaf_id` selects the path to that descendant and traversal can continue beyond it along unique children. A missing anchor returns 404. A leaf outside the anchor's descendants returns 400. Each message uses a 2 KiB content preview with references to the full content.
 
 ## Exports and objects
 

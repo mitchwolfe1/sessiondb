@@ -24,6 +24,8 @@ Ordinary metadata uses explicit columns, foreign keys, and uniqueness constraint
 
 Opaque message content, provider usage, and native event data use PostgreSQL `json`, not `jsonb`: valid native strings can contain escaped NUL characters that JSONB cannot represent. Migration `0003_native_json_payloads.sql` converts existing payloads without scrubbing data. Typed relation/source-reference metadata remains JSONB; native payloads are decoded in the application rather than cast back to JSONB.
 
+Forward migration 0004 adds two derived tables. `search_passages` holds the searchable text and original block location. `search_exchanges` groups passage IDs on one branch and stores the GIN-indexed full-text vector. File acceptance updates both alongside the canonical messages. See [keyword search](search-and-embeddings.md#keyword-search).
+
 ## Conversations and native history
 
 A source file can contribute to several sessions; one session can require several native files. Claude subagents can repeat their parent's native session ID, so source/native bindings matter. Proven copies remain explicit and divergent copies are not silently merged. Native roles describe recorded data, not proof of human authorship.

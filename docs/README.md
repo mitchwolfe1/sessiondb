@@ -1,6 +1,6 @@
 # SessionDB documentation
 
-SessionDB stores and syncs coding-agent sessions. These documents cover the CLI, API, data model, architecture, server configuration, and planned search features.
+SessionDB stores and syncs coding-agent sessions. These documents cover the CLI, API, data model, architecture, server configuration, and search features.
 
 Start with the [main objects and eleven catalog tables](data-model.md): sessions, messages, events, artifacts, optional projects, source provenance, original generations, and immutable objects. [ADR 0014](decisions/0014-sessions-and-synchronous-files.md) defines synchronous per-file upload and independent file receipts, replacing the historical import/job protocol.
 
@@ -22,7 +22,7 @@ Start with the [main objects and eleven catalog tables](data-model.md): sessions
 
 ## Design status
 
-The initial implementation supports authenticated sync, original storage, session reads, and native export across Codex/Claude/Pi. [Implementation status](implementation.md) identifies the working subset; the remaining target-v1 specification describes later milestones. CLI help and `/v1/info` report available commands/capabilities.
+The initial implementation supports authenticated sync, original storage, session reads, keyword search, branch-aware context and native export across Codex/Claude/Pi. [Implementation status](implementation.md) identifies the working subset; the remaining target-v1 specification describes later milestones. CLI help and `/v1/info` report available commands/capabilities.
 
 The [decision register](decisions/README.md) distinguishes accepted direction from proposed technical choices. [Open questions](open-questions.md) identify choices needed for upcoming milestones.
 

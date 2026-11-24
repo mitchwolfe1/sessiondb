@@ -2,8 +2,8 @@ use super::*;
 use axum::{body::Body, http::HeaderMap};
 use serde_json::json;
 use sessiondb_types::{
-    Artifact, ContentBlock, ContentReference, FullContent, FullContentBlock, Message,
-    MessageFilter, PREVIEW_BYTES, ReferenceType, Session, SessionFilter,
+    AroundOptions, Artifact, ContentBlock, ContentReference, FullContent, FullContentBlock,
+    Message, MessageContext, MessageFilter, PREVIEW_BYTES, ReferenceType, Session, SessionFilter,
 };
 use sqlx::{Postgres, QueryBuilder, postgres::PgRow};
 use tokio_util::io::ReaderStream;
@@ -223,7 +223,46 @@ pub(super) async fn message(
     let m = message_preview(&row, state.config.public_url.as_str())?;
     Ok(Json(m).into_response())
 }
+pub(super) async fn around(
+    State(state): State<Arc<AppState>>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiQuery(options): ApiQuery<AroundOptions>,
+) -> ApiResult<Json<MessageContext>> {
+    let before = options.before.unwrap_or(2);
+    let after = options.after.unwrap_or(2);
+    if before > 50 || after > 50 {
+        return Err(ApiError::bad(
+            "invalid_window",
+            "before and after must be between 0 and 50.",
+        ));
+    }
+    let rows = sqlx::query(include_str!("around.sql"))
+        .bind(id)
+        .bind(options.leaf_id)
+        .bind(before as i32)
+        .bind(after as i32)
+        .fetch_all(&state.pool)
+        .await?;
+    let first = rows.first().ok_or_else(ApiError::not_found)?;
+    if !first.try_get::<bool, _>("valid_branch")? {
+        return Err(ApiError::bad(
+            "invalid_branch",
+            "leaf_id must be the anchor or a descendant in its session.",
+        ));
+    }
+    Ok(Json(MessageContext {
+        anchor_id: id,
+        branch_choices: first.try_get("choices")?,
+        data: rows
+            .iter()
+            .map(|row| bounded_preview(row, state.config.public_url.as_str(), 2048))
+            .collect::<ApiResult<_>>()?,
+    }))
+}
 fn message_preview(row: &PgRow, base: &str) -> ApiResult<Message> {
+    bounded_preview(row, base, PREVIEW_BYTES)
+}
+fn bounded_preview(row: &PgRow, base: &str, budget: usize) -> ApiResult<Message> {
     let mut message = Message {
         id: row.try_get("id")?,
         session_id: row.try_get("session_id")?,
@@ -254,7 +293,7 @@ fn message_preview(row: &PgRow, base: &str) -> ApiResult<Message> {
     for (index, block) in blocks.into_iter().enumerate() {
         let separator = usize::from(!message.content.is_empty());
         let len = encoded_len(&block)?;
-        if used + separator + len <= PREVIEW_BYTES {
+        if used + separator + len <= budget {
             message.content.push(ContentBlock::Full(block));
             used += separator + len;
         } else {
@@ -273,7 +312,7 @@ fn message_preview(row: &PgRow, base: &str) -> ApiResult<Message> {
                 original_type: block.kind().into(),
             };
             let len = encoded_len(&reference)?;
-            if used + separator + len > PREVIEW_BYTES {
+            if used + separator + len > budget {
                 break;
             }
             message.content.push(ContentBlock::Reference(reference));

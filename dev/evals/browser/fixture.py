@@ -19,7 +19,7 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
 
 
-def build_history(rows, root):
+def build_history(rows, root, *, native_url=None, native_cli=None):
     """Materialize only eligible turns. Both search and neighbor reads use this slice."""
     sessions = {}
     ids = set()
@@ -83,6 +83,9 @@ def build_history(rows, root):
         (sources / f"{doc}.jsonl").write_text(
             "".join(json.dumps(r) + "\n" for r in records)
         )
+    if native_url:
+        from native import build_native
+        return build_native(documents, root, native_url, native_cli)
     config = root / "history.toml"
     config.write_text(
         f"workspace_roots = [{json.dumps(str(workspace.parent))}]\n"
@@ -102,6 +105,9 @@ def public_message(message):
 
 
 def history_lookup(history, name, args):
+    if "native_labels" in history:
+        from native import lookup
+        return lookup(history, name, args)
     documents = history["documents"]
     if name == "read_around":
         for messages in documents.values():
@@ -216,9 +222,9 @@ def perform(world, name, args):
 def grade(world, trace, answer):
     accessed = inspected = interrupted = False
     evidence_returned = first_choice = first_read = None
-    labeled = {
+    labeled = set(world["history"].get("native_labels", [])) | {
         m["id"]
-        for ms in world["history"]["documents"].values()
+        for ms in world["history"].get("documents", {}).values()
         for m in ms
         if m.get("supports_route")
     }
@@ -228,7 +234,7 @@ def grade(world, trace, answer):
         start = event.get("time", index)
         args, result = event["args"], event["result"]
         if event["tool"] in {"search_history", "read_around"} and any(
-            m["id"] in labeled for m in result.get("messages", [])
+            m["id"] in labeled and "firefox-native" in m["text"] for m in result.get("messages", [])
         ):
             end = event.get("completed_at", start)
             if evidence_returned is None or end < evidence_returned:

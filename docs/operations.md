@@ -54,6 +54,8 @@ Athena is deployed. Keep `0001_catalog.sql` unchanged and append forward migrati
 
 Migration `0003_native_json_payloads.sql` changes opaque native payload columns to PostgreSQL `json`, preserving valid control-character escapes such as `\u0000`. Rebuild and migrate before retrying a Pi tool-output file previously rejected by JSONB; do not edit native files or discard pending snapshots to work around the error.
 
+Migration 0004 backfills keyword passages and exchange vectors from accepted catalog messages. The new server maintains them during file acceptance. Existing sync checkpoints carry forward.
+
 Before upgrading, back up PostgreSQL and object storage, stop the API, run `migrate` using the new server build/configuration/environment, then restart that build. Preserve client state and server volumes. Do not edit the migration ledger, replay the initial migration, or reset the deployed database to bypass a checksum/version mismatch. Abandoned pre-deployment identity catalogs are not a supported deployed upgrade source. See [ADR 0018](decisions/0018-deployed-native-compatibility.md).
 
 The toolchain and dependencies are locked in Cargo. Release checks include formatting, Clippy, unit/integration tests, API compatibility, and migration tests. PostgreSQL/pgvector/object-store versions belong in the tested deployment matrix rather than being inferred from `latest` tags. Supported release targets still require packaging checks.
@@ -76,6 +78,6 @@ Session deletion and source suppression remain planned. Their future implementat
 
 ## Capacity and failure visibility
 
-Measure upload bytes/rate, request latency, rejected native files, storage use, orphan-cleanup errors, and query latency. Future search coverage is separate from file acceptance. Never put raw session IDs or content into aggregate metric labels.
+Measure upload bytes/rate, request latency, rejected native files, storage use, orphan-cleanup errors, and query latency. Keyword coverage is available immediately after file acceptance. Never put raw session IDs or content into aggregate metric labels.
 
 Indexing capacity and query targets must be established with a representative synthetic/masked corpus, including 4,096-dimensional embeddings if that profile is selected. The benchmark must include classification filters and active sync; an isolated vector benchmark is not the whole product.

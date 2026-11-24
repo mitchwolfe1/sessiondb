@@ -2,9 +2,11 @@
 
 mod content;
 mod resources;
+mod search;
 
 pub use content::*;
 pub use resources::*;
+pub use search::*;
 
 /// Maximum encoded content returned in a message preview.
 pub const PREVIEW_BYTES: usize = 64 * 1024;

@@ -1,18 +1,20 @@
 # Search and embeddings
 
-Search session content with keywords or configure an embedding provider for semantic and hybrid retrieval. The CLI and API support filters for project, harness, date, and message content.
-
-Status: proposed v1 retrieval contract. Benchmarking and library integration precede performance commitments.
-
-The [delivery plan](roadmap.md#session-search) describes the proposed sequence for exchange search, reading around a hit, hybrid retrieval and cross-session research. An exchange is a ranking unit. Each returned excerpt points to the specific original message that contains it.
+Agents can search past work when a decision calls for it and open the original messages on their recorded branch. PostgreSQL keyword retrieval is available through the CLI, HTTP API and Rust SDK. Optional semantic and hybrid retrieval are the [next milestone](roadmap.md#optional-semantic-search).
 
 ## Keyword search
 
-Use PostgreSQL full-text search over normalized message passages and selected metadata. Titles, tags, project, harness, and activity times support filtering and navigation. Tool calls/results remain distinguishable from conversation text and can be filtered by tool name or included explicitly.
+`sessiondb search "browser connector"` ranks exchanges across the selected archive and returns three excerpts by default. Each hit includes its session and message IDs, role, origin, available timestamp, content block index, branch endpoint and original message URL. Excerpts contain at most 480 characters. A cursor opens more results, including additional exchanges in the same session.
 
-Planned indexing follows accepted per-file content. Search responses will report actual retrieval mode, freshness, matches, and excerpts. Relevance is default; newest uses matching-message time with session-time fallback.
+Plain keywords match English full-text lexemes. Exchanges covering more distinct query terms rank first, followed by PostgreSQL cover-density rank with document-length normalization. Use `AND`, `OR`, quoted phrases or `-word` to request web-search matching. Each alternative must require a positive searchable term. The winning passage supplies the excerpt. Shared branch prefixes and multiple matching segments of an original message yield one source citation.
 
-Search returns a flat list of matching messages, with at most three per session so one long conversation does not fill the result set. Clients can group them by session for display. The caller can retrieve more through message endpoints. Do not treat repeated copies or generated summaries as independent corroboration; label native origin and relationship information when known.
+An exchange follows a recorded user request through its same-branch assistant responses, including responses separated by tool activity. Standalone messages have their own entries. The index uses full text blocks, JSON values and artifact descriptions. Reasoning and binary data are outside the keyword corpus. Tool calls and results form separate entries, selectable with `--include-tools`, `--role tool` or `--tool-name NAME`. Tool hits include the recorded name when available. A result inherits its name from its unambiguous recorded call ID.
+
+Large exchanges split at block boundaries. Large individual blocks split into word groups, with a hard bound for unbroken strings. Each segment retains its original message and block index. Role and date filters apply to contributing passages before scoring. Projects, tags and harness filters use current session metadata.
+
+Migration 0004 indexes accepted messages one session at a time. File acceptance publishes updated passages and exchange vectors in the same transaction as the messages. Identical retries reuse the accepted projection. Search coverage counts distinct messages with an eligible passage in the selected scope, independently of the query and page.
+
+Run the hit’s `show_command` to open the source with `sessiondb messages show MESSAGE_ID -C 2`. It follows up to two parents and two children and supplies `--leaf` when the continuation is known. At an unresolved fork, choose a returned child ID with `--leaf`. Use `-B` and `-A` for different amounts of earlier and later context.
 
 ## Embedding extension
 
@@ -28,7 +30,7 @@ An embedding profile belongs to the instance and defines one vector space: provi
 
 Indexing execution/backfill is future work, not a retained `/index-jobs` or `/jobs` API. The milestone must define progress, bounded batching, transient-provider recovery, deletion handling, and coverage independently of synchronous file acceptance.
 
-Enabling a profile will cover eligible future accepted content, including unassigned sessions. Historical backfill may filter sources, sessions, or optional project labels; labels select content rather than define a vector space or permission boundary. Profile/search wire contracts remain planned as marked in OpenAPI.
+Enabling a profile will cover eligible future accepted content, including unassigned sessions. Historical backfill may filter sources, sessions, or optional project labels; labels select content rather than define a vector space or permission boundary. Embedding profile operations remain planned as marked in OpenAPI.
 
 ## Vector storage
 
@@ -46,7 +48,7 @@ The selected model's dimensions must be supported by the chosen storage and inde
 
 Keyword, semantic, and hybrid requests can include no project filter, one project, several projects, or only unassigned sessions. Semantic modes use the single enabled instance profile. A session matching several selected labels appears once. Classification changes update query filters and preserve vectors unless the configured embedding text itself changes.
 
-The proposed fusion policy is reciprocal rank fusion with rank constant 60 and up to 200 candidates from each retriever before deduplication and the per-session result cap. Treat its scores as ranking values, not confidence or factual correctness. Benchmark these proposed settings during the search milestone. Newest sorting uses keyword mode only in v1; semantic/hybrid requests with that sort are rejected rather than silently switching modes.
+The proposed fusion policy is reciprocal rank fusion with rank constant 60 and up to 200 candidates from each retriever before deduplicating the original message citations. Treat its scores as ranking values, not confidence or factual correctness. Benchmark these proposed settings during the search milestone. Newest sorting uses keyword mode only in v1; semantic/hybrid requests with that sort are rejected rather than silently switching modes.
 
 If semantic/hybrid is requested without an enabled instance profile, return `409 embedding_not_configured`. If the required provider is temporarily unavailable, return a specific retryable `503`; clients can explicitly retry in keyword mode. Never relabel a keyword fallback as semantic success.
 

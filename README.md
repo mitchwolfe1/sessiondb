@@ -2,7 +2,7 @@
 
 SessionDB is a database for coding-agent sessions. It automatically syncs sessions from Codex, Claude Code, and Pi, stores their original files, and makes their contents accessible through a common interface.
 
-Use SessionDB to browse conversations and tool calls, export native history, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK. Keyword search and configurable embedding providers are planned.
+Use SessionDB to browse conversations and tool calls, export native history, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK. Search by keyword and open the matching exchange on its recorded branch.
 
 Sessions contain messages, structural events, and artifacts. Sources record native-store provenance; projects are optional labels. Originals and rewrite generations remain preserved. Sync uploads one file through the API and checkpoints its receipt independently—there is no all-or-nothing multi-file batch or background acceptance job.
 
@@ -23,6 +23,8 @@ sessiondb sync install
 sessiondb sync status
 
 sessiondb sessions list --harness claude
+sessiondb search "payment retries"
+sessiondb messages show MESSAGE_ID -C 2
 sessiondb sessions show SESSION_ID
 sessiondb sessions messages SESSION_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
@@ -34,7 +36,7 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 
 - **Automatic sync:** collect new and updated sessions from multiple harnesses and machines.
 - **Session access:** list conversations, read messages and tool activity, inspect relationships, and export sessions.
-- **Filtering:** browse sessions by harness, date, or optional project associations. Keyword and semantic search are planned.
+- **Filtering:** browse sessions by harness, date, or optional project associations. Search exchange text with the same filters and expand the matching original.
 - **Native storage:** keep original files alongside a consistent, queryable session model.
 - **Optional grouping:** sessions can have zero or more project associations, independently of starting directory and collection source. Project administration is planned.
 - **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a client SDK, PostgreSQL, and S3-compatible object storage.

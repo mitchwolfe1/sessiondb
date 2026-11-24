@@ -23,7 +23,8 @@ sessiondb sync --watch
 | Group | Commands |
 | --- | --- |
 | `sessions` | `list`, `show`, `messages`, `export`; events/update/delete are planned |
-| `search` | Planned keyword, semantic, and hybrid queries |
+| `search` | Ranked keyword excerpts with filters and pagination |
+| `messages` | `show` with optional context, `content` |
 | `sources` | `list`, `add`, `show`; collection starts/stops on the client |
 | `sync` | One pass, `--watch`, `install`, `start`, `stop`, `uninstall`, `status`, `logs [--follow]`, `rejected`, `retry` |
 | `embeddings` | Planned profile management; backfill execution contract is not yet defined |
@@ -40,15 +41,26 @@ Implemented examples:
 ```sh
 sessiondb sessions list --harness codex --limit 20
 sessiondb sessions list --unassigned
+sessiondb search "payment retries" --harness claude
+sessiondb search "temporary AND failure" --tool-name test_runner --json
+sessiondb messages show MESSAGE_ID
+sessiondb messages show MESSAGE_ID -C 2
+sessiondb messages show MESSAGE_ID -B 3 -A 5 --leaf BRANCH_MESSAGE_ID
 sessiondb sessions show SESSION_ID
 sessiondb sessions messages SESSION_ID --leaf MESSAGE_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 sessiondb sync status --json
 ```
 
-Search, title/tag/project updates, session deletion, and embedding profile commands are planned, not available examples. See `sessiondb --help` and [implementation status](implementation.md).
+Search returns three excerpts by default. Use `--limit` and `--cursor` to read more. Use `--include-tools` to include tool input and output. Title, tag and project updates, session deletion and embedding profiles are planned. See `sessiondb --help` and [implementation status](implementation.md).
 
-Session reads present bounded content; full-content and native export endpoints retrieve more data. Planned metadata updates replace supplied label/tag sets while preserving omitted fields. Ordinary append sync preserves existing catalog metadata.
+Every search hit includes a `show_command` that opens the matching message with `-C 2` on the same connection. The command includes `--leaf` when a descendant identifies the continuation.
+
+`messages show ID` returns the single message. `-C N` (`--context N`) adds up to N messages on each side. `-B N` (`--before N`) and `-A N` (`--after N`) set the two sides independently. A single directional flag defaults the other side to zero. When combined with `-C`, a directional flag overrides its side. Each count accepts 0–50. Passing `--leaf` alone opens two messages of context on each side.
+
+In context output, `>` marks the selected message. With `--json`, a context request returns `anchor_id`, ordered `data`, and `branch_choices`. Use `messages content ID` for full content.
+
+Planned metadata updates replace supplied label/tag sets while preserving omitted fields. Ordinary append sync preserves existing catalog metadata.
 
 ## Familiar behavior
 
@@ -89,7 +101,9 @@ pub async fn upload_file<R: AsyncRead + Send + Sync + 'static>(
 ) -> Result<FileUploadResult>
 ```
 
-It sends the metadata JSON and raw JSONL as an authenticated multipart API request. The caller provides a fresh reader when retrying; the SDK does not automatically replay a non-replayable stream. Every successful response represents one accepted file, only after every supplied native record is supported and valid. No import, upload-target, completion, or wait-job methods remain.
+For retrieval, use `Client::search(&SearchRequest)` and `Client::read_around(message_id, &AroundOptions)`. Both methods return typed responses with the same filters, branch choices and source IDs as the CLI.
+
+The upload method sends the metadata JSON and raw JSONL as an authenticated multipart API request. The caller provides a fresh reader when retrying; the SDK does not automatically replay a non-replayable stream. Every successful response represents one accepted file, only after every supplied native record is supported and valid. No import, upload-target, completion, or wait-job methods remain.
 
 Reuse HTTP connections and bounded transfer. Errors distinguish transport, HTTP problem details, and decoding failures. Never send the API key to an object-store host: clients only need the API URL. The CLI owns local capture/recovery and presentation; the SDK owns the network contract.
 

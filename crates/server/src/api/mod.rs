@@ -1,3 +1,4 @@
+mod search;
 pub(crate) mod sessions;
 pub(crate) mod sources;
 
@@ -12,7 +13,7 @@ use axum::{
     http::{StatusCode, header, request::Parts},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{any, get},
+    routing::{any, get, post},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
@@ -45,6 +46,8 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(sessions::messages),
         )
         .route("/v1/sessions/{session_id}/export", get(sessions::export))
+        .route("/v1/search", post(search::search))
+        .route("/v1/messages/{message_id}/around", get(sessions::around))
         .route("/v1/messages/{message_id}", get(sessions::message))
         .route(
             "/v1/messages/{message_id}/content",
@@ -59,7 +62,6 @@ pub fn router(state: Arc<AppState>) -> Router {
     for path in [
         "/v1/projects",
         "/v1/projects/{project_id}",
-        "/v1/search",
         "/v1/changes",
         "/v1/embedding-profiles",
         "/v1/embedding-profiles/{profile_id}",
@@ -108,8 +110,18 @@ async fn unsupported() -> ApiError {
 async fn info(State(state): State<Arc<AppState>>) -> Json<ServerInfo> {
     let mut capabilities: Vec<String> =
         FIRST_BUILD_OPERATIONS.iter().map(|v| (*v).into()).collect();
-    capabilities
-        .extend(["codex", "claude", "pi", "getArtifact", "getArtifactContent"].map(str::to_owned));
+    capabilities.extend(
+        [
+            "codex",
+            "claude",
+            "pi",
+            "getArtifact",
+            "getArtifactContent",
+            "searchMessages",
+            "readAroundMessage",
+        ]
+        .map(str::to_owned),
+    );
     Json(ServerInfo {
         api_version: "v1".into(),
         server_version: env!("CARGO_PKG_VERSION").into(),
@@ -218,14 +230,7 @@ pub(crate) fn decode_cursor(
     let Some(value) = value else {
         return Ok(None);
     };
-    if value.len() > 4096 {
-        return Err(ApiError::bad("invalid_cursor", "The cursor is invalid."));
-    }
-    let cursor: Cursor = URL_SAFE_NO_PAD
-        .decode(value)
-        .ok()
-        .and_then(|v| serde_json::from_slice(&v).ok())
-        .ok_or_else(|| ApiError::bad("invalid_cursor", "The cursor is invalid."))?;
+    let cursor: Cursor = decode_position(value)?;
     if cursor.scope != expected_scope {
         return Err(ApiError::bad(
             "invalid_cursor",
@@ -234,7 +239,17 @@ pub(crate) fn decode_cursor(
     }
     Ok(Some(cursor))
 }
-pub(crate) fn encode_cursor(cursor: Cursor) -> ApiResult<String> {
+fn decode_position<T: DeserializeOwned>(value: &str) -> ApiResult<T> {
+    if value.len() > 4096 {
+        return Err(ApiError::bad("invalid_cursor", "The cursor is invalid."));
+    }
+    URL_SAFE_NO_PAD
+        .decode(value)
+        .ok()
+        .and_then(|v| serde_json::from_slice(&v).ok())
+        .ok_or_else(|| ApiError::bad("invalid_cursor", "The cursor is invalid."))
+}
+pub(crate) fn encode_cursor(cursor: impl Serialize) -> ApiResult<String> {
     Ok(URL_SAFE_NO_PAD.encode(serde_json::to_vec(&cursor)?))
 }
 pub(crate) fn limit(value: Option<u32>) -> ApiResult<usize> {

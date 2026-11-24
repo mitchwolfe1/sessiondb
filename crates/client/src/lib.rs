@@ -170,6 +170,16 @@ impl Client {
         self.get_query(&format!("v1/sessions/{id}/messages"), filter)
             .await
     }
+    /// Rank matching exchanges and return bounded excerpts anchored to original messages.
+    pub async fn search(&self, request: &SearchRequest) -> Result<SearchResponse> {
+        self.request(Method::POST, "v1/search", None::<&()>, Some(request))
+            .await
+    }
+    /// Read the anchor, its ancestors and one continuation. Forks expose child IDs.
+    pub async fn read_around(&self, id: Uuid, options: &AroundOptions) -> Result<MessageContext> {
+        self.get_query(&format!("v1/messages/{id}/around"), options)
+            .await
+    }
     pub async fn message(&self, id: Uuid) -> Result<Message> {
         self.get(&format!("v1/messages/{id}")).await
     }

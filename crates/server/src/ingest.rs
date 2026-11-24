@@ -537,6 +537,10 @@ async fn publish(
             .bind(sqlx::types::Json(anchors))
             .execute(&mut **tx).await?;
     }
+    sqlx::query("SELECT sessiondb_index_session($1)")
+        .bind(id)
+        .execute(&mut **tx)
+        .await?;
     for (sequence, event) in native.events.into_iter().enumerate() {
         let event_id = Uuid::new_v5(
             &id,
