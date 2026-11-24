@@ -38,6 +38,17 @@ class BrowserCase(unittest.TestCase):
         self.assertEqual(self.call("search_history", query="future")["messages"], [])
         self.assertIn("error", self.call("search_history", query="?!"))
 
+    def test_full_index_text_is_separate_from_the_display_excerpt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            full = "The appendix records an emerald compass."
+            history = build_history([{"session":"deep", "id":"deep-source", "role":"user",
+                                      "at":"2026-06-01T00:00:00Z", "text":"The appendix.",
+                                      "index_text":full}], Path(tmp))
+            source = (Path(tmp) / "sources" / "session-0.jsonl").read_text().splitlines()
+            self.assertEqual(json.loads(source[-1])["payload"]["content"][0]["text"], full)
+            hit = perform({**self.world, "history":history}, "search_history", {"query":"emerald"})
+            self.assertEqual([m["id"] for m in hit["messages"]], ["deep-source"])
+
     def test_history_can_help_before_browser_choice(self):
         self.call("search_history", query="existing browser tabs")
         self.call("browser", connection=NATIVE, operation="read", tab_id="237")

@@ -34,6 +34,8 @@ def build_history(rows, root, *, native_url=None, native_cli=None):
             row["id"] in ids
             or row["role"] not in {"user", "assistant"}
             or not row["text"].strip()
+            or not isinstance(row.get("index_text", row["text"]), str)
+            or not row.get("index_text", row["text"]).strip()
         ):
             raise ValueError(f"Invalid or repeated history message {row['id']}")
         ids.add(row["id"])
@@ -76,7 +78,7 @@ def build_history(rows, root, *, native_url=None, native_cli=None):
                         "id": message["id"],
                         "type": "message",
                         "role": message["role"],
-                        "content": [{"type": text_type, "text": message["text"]}],
+                        "content": [{"type": text_type, "text": message.get("index_text", message["text"])}],
                     },
                 }
             )
