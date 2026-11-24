@@ -39,6 +39,8 @@ STS and ATIF are projections over selected conversation history. Define which br
 
 The [SessionDB history skill](../skills/sessiondb-history/SKILL.md) gives shell-capable agents the search and source-reading workflow. Install the skill directory in a harness's discovered skill location. Codex and Pi can share `~/.agents/skills/sessiondb-history`. Claude Code can load the same directory through `~/.claude/skills/sessiondb-history`. A lookup uses the CLI connection already configured for that user. Skill discovery itself issues no history request.
 
+Preference and cross-session follow-ups use the same CLI. Search for competing decisions, open independent original exchanges and cite the message URLs. Keep preserved migration utilities outside the active harness tool list. If a source or scope cannot be resolved in SessionDB, report the gap.
+
 ## hype-history migration
 
 [ADR 0022](decisions/0022-replace-hype-history.md) makes SessionDB the successor to the entire history tool. The proposed cutover has three steps.
