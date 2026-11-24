@@ -9,7 +9,7 @@ Status: agreed integration direction with proposed export and migration contract
 | Consumer | Uses SessionDB for | Owns itself |
 | --- | --- | --- |
 | CLI and SDK | Collection, browsing, import/export, query access | Local presentation and collection service installation |
-| hype-history | Accessible sessions/messages and search | Research packets, briefings, preference analysis, reviewed memory |
+| SessionDB agent integrations (planned) | Search, original exchanges and reviewed memory | On-demand briefings, timelines and cross-session evidence gathering |
 | Session browser | Projects, session lists, messages, tools, artifacts | Navigation and UI |
 | Analytics application | Recorded usage and session activity | Reports and interpretation of estimated cost |
 | Evaluation pipeline | Selected trajectories and exports | Tasks, graders, environment outcomes, experiment results |
@@ -37,19 +37,15 @@ STS and ATIF are projections over selected conversation history. Define which br
 
 ## hype-history migration
 
-Reuse the prototype's requirements and test cases for incremental capture, tool links, branch endings, search diversity, and source-backed reads. Port appropriate behavior into the native adapters.
+[ADR 0022](decisions/0022-replace-hype-history.md) makes SessionDB the successor to the entire history tool. The proposed cutover has three steps.
 
-Keep hype-history-specific memory review and authorship judgments outside the server. Recorded source/device/harness metadata and native roles describe provenance, not proof that every user-role entry is a personal statement.
-
-The existing prototype's message IDs incorporate absolute source paths. Its client integration needs a migration map from existing session/message references to server resources before local data is retired. Verify content and relationships and preserve existing reviewed-memory state; moving to remote storage is not a reason to reapprove evidence automatically.
-
-Map existing repository labels to optional project associations. Do not carry over an initial-cwd containment filter as the definition of what SessionDB can store. Home-launched and unassigned sessions are valid source data.
-
-Use public HTTP/SDK methods, not direct PostgreSQL access. Start by migrating read/search access in parallel with the local implementation, compare selected results and branch endings, and then switch collection. Keep a documented fallback while the pilot is being evaluated.
+1. Deliver native SessionDB search, branch-aware reads, timelines, on-demand briefings, cross-session research and reviewed-memory access. Exercise the workflows used by Codex, Claude Code and Pi, including requests for tool evidence and later corrections.
+2. Map legacy session and message references to SessionDB resources and check the original content and branch. Legacy message IDs incorporate absolute source paths. Migrate memory records with their scope, review status, relationships and source citations. Report unresolved references for reconciliation. Map repository labels to optional project associations.
+3. Compare results against the legacy baseline, switch agent tool registrations and workspace instructions to SessionDB, and run the acceptance suite with the legacy tools and index offline. After verification, retire the legacy indexing and embedding schedules. SessionDB becomes the sole running history system.
 
 ## SDK and API consumers
 
-The first native SDK is `sessiondb-client` for Rust. OpenAPI provides the contract for other languages; add a generated Python binding or a small HTTP integration when hype-history needs it. Language bindings use the same HTTP contract.
+The first native SDK is `sessiondb-client` for Rust. OpenAPI provides the contract for other languages. SessionDB’s agent integrations and external language bindings use the same HTTP contract.
 
 Consumers use server-issued IDs and optional project filters. A headless application gets the same full-access key, not read-only/source-limited access. Use a separate instance for isolation. Raw uploads/downloads use the API; saved citations use durable SessionDB resource URLs.
 

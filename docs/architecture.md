@@ -53,6 +53,6 @@ The eleven domain tables originate in immutable `0001_catalog.sql`. Athena is de
 
 ## Applications and future retrieval
 
-The HTTP API is the interoperability boundary. hype-history and other applications own their own briefing, research, and reviewed-memory behavior.
+The HTTP API is the interoperability boundary for SessionDB clients and other applications. SessionDB will provide the agent-facing history workflows described in [ADR 0022](decisions/0022-replace-hype-history.md). The calling agent can interpret evidence retrieved through those interfaces.
 
 Keyword search, embedding profiles/providers, hybrid retrieval, projects administration, and changes are planned as marked in OpenAPI. Their execution/backfill mechanism is not an active index-job API. Storage, sync, and reads must remain useful without a model endpoint.

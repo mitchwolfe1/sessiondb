@@ -93,4 +93,4 @@ It sends the metadata JSON and raw JSONL as an authenticated multipart API reque
 
 Reuse HTTP connections and bounded transfer. Errors distinguish transport, HTTP problem details, and decoding failures. Never send the API key to an object-store host: clients only need the API URL. The CLI owns local capture/recovery and presentation; the SDK owns the network contract.
 
-Follow Rust API naming and documentation conventions. Public types live in `sessiondb-types`; server database structs are private. Additional language SDKs are derived from the same OpenAPI contract after the Rust client is proven. hype-history may use such a client or ordinary HTTP before a packaged Python SDK exists.
+Follow Rust API naming and documentation conventions. Public types live in `sessiondb-types`; server database structs are private. Additional language SDKs are derived from the same OpenAPI contract after the Rust client is proven.

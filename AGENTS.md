@@ -42,6 +42,6 @@ Do not treat a list of open questions as permission to stop documentation work. 
 
 ## Boundaries
 
-SessionDB owns collection, storage, session access, and retrieval. Applications such as hype-history own their additional briefing, research, and reviewed-memory workflows. Existing application policy must not silently become SessionDB policy.
+SessionDB is the planned replacement for hype-history under [ADR 0022](docs/decisions/0022-replace-hype-history.md). SessionDB owns collection, retrieval, on-demand briefings, cross-session research and reviewed-memory workflows. Use the legacy implementation as a migration source and evaluation baseline. Keep evidence provenance and review decisions explicit.
 
 Require the nonempty `SESSIONDB_API_KEY` at server startup and bearer-key authentication for all `/v1` operations, including `/v1/info`. Only health, readiness, and the static contract are public. Source/device/harness identifiers describe provenance; project filters classify content, never restrict credential access. Follow ADR 0013 for the clean cutover; do not restore identity routes or compatibility modes.

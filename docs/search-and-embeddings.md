@@ -4,6 +4,8 @@ Search session content with keywords or configure an embedding provider for sema
 
 Status: proposed v1 retrieval contract. Benchmarking and library integration precede performance commitments.
 
+The [delivery plan](roadmap.md#session-search) describes the proposed sequence for exchange search, reading around a hit, hybrid retrieval and cross-session research. An exchange is a ranking unit. Each returned excerpt points to the specific original message that contains it.
+
 ## Keyword search
 
 Use PostgreSQL full-text search over normalized message passages and selected metadata. Titles, tags, project, harness, and activity times support filtering and navigation. Tool calls/results remain distinguishable from conversation text and can be filtered by tool name or included explicitly.
@@ -55,5 +57,7 @@ Require the instance API key before candidates, vector distances, counts, snippe
 Only normalized configured content is sent to the embedding endpoint. Available model reasoning, large tools, and attachments need explicit eligibility rules; the proposed v1 default indexes user/assistant text and keeps tool payload embedding opt-in. Wire role does not establish authorship or quality.
 
 ## Required checks
+
+The [browser retrieval pilot](../dev/evals/browser/README.md) compares agent task completion with history off and on-demand keyword lookup in a frozen corpus.
 
 Verify unassigned and multi-project sessions in every mode; verify keyword search while embedding is disabled/down; profile changes without mixed spaces; deletion and missing/invalid-key rejection across all modes; interrupted backfill recovery; partial coverage reporting; and retrieval of recent unembedded messages in hybrid mode. Use deterministic local embedding fixtures for tests, then an explicitly authorized runtime integration test for the configured provider.

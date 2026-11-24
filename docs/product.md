@@ -14,6 +14,8 @@ Status: product direction with proposed v1 behavior. See the [delivery plan](roa
 
 **Search history.** Search message content by keyword and filter by project, harness, or date. Configure an embedding provider to enable semantic or hybrid retrieval.
 
+**Reuse past work on demand.** SessionDB will replace hype-history as the agent’s history tool, including cross-session research, timelines, task briefings and access to reviewed memories with original evidence. See [ADR 0022](decisions/0022-replace-hype-history.md).
+
 **Build on a common interface.** The CLI and SDK use a versioned HTTP API. Harness adapters normalize native differences while retaining the original data for export and future parsing improvements.
 
 **Run the service where it is needed.** The initial deployment uses a server, PostgreSQL, and an S3-compatible object store. One required instance-wide API key gives every correct-key client identical full access to the shared collection.
@@ -42,7 +44,7 @@ The first end-to-end demonstration is a session moving from a native file into S
 | P07 | Conventional interfaces | Versioned REST/OpenAPI, predictable pagination/errors, CLI scripting, and a client SDK. |
 | P08 | Native files | Retrieve collected originals even when normalization is incomplete. |
 | P10 | Harness adapters | Add another harness through the same discovery/normalization boundary. |
-| P12 | Application integration | Applications such as hype-history consume sessions and search through the public API. |
+| P12 | Application integration | SessionDB’s agent tools and other applications consume sessions and search through the public API. |
 | P09 | Server deployment | Document installation, configuration, migrations, health, backup, and restore. |
 | P01 | Shared access | One shared API key protects all data; all key holders have identical full access, independently of project associations. |
 | P11 | Administration | Rotate the instance key, configure storage/processing, and delete sessions; there is no account or per-source credential administration. |

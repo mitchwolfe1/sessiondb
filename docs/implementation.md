@@ -18,6 +18,8 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 ## Planned
 
+Full [replacement of hype-history](decisions/0022-replace-hype-history.md) is a product goal. Native retrieval, the remaining agent workflows and migration of saved evidence are planned.
+
 Keyword search, embedding profiles/providers, hybrid retrieval, project administration/matching, metadata mutation, change feeds, normalized/STS exports and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
 
 An unavailable planned route returns `501 not_implemented`; unsupported parameters return input errors. CLI help lists available commands. Source pause, project archive, transcript MIME, upload TTLs, and generic workers are not part of the current design.

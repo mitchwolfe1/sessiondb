@@ -1,0 +1,10 @@
+[
+  {"session":"alpha","id":"a1","at":"2026-07-04T10:00:00Z","role":"user","text":"For live testing in the Rails repo, use a clean Playwright browser so the smoke test starts with an empty profile."},
+  {"session":"bravo","id":"b1","at":"2026-08-09T11:00:00Z","role":"user","text":"Could an agent attach to the tabs already open in my browser?"},
+  {"session":"bravo","id":"b2","at":"2026-08-09T11:01:00Z","role":"assistant","text":"A possible design is a WebDriver BiDi broker talking to the browser's debugging port. We have not tried it on this workstation yet."},
+  {"session":"charlie","id":"c1","at":"2026-10-24T15:00:00Z","role":"user","text":"Check my existing browser, please. There is a worksheet open in the signed-in profile."},
+  {"session":"charlie","id":"c2","at":"2026-10-24T15:01:00Z","role":"assistant","text":"The browser broker is running. I checked its connection status and it has no connection to Firefox."},
+  {"session":"charlie","id":"c3","at":"2026-10-24T15:02:00Z","role":"assistant","text":"I used ~/plugins/firefox-native to list the tabs in your existing Firefox browser. The worksheet was already open there and the profile stayed signed in.","supports_route":true},
+  {"session":"charlie","id":"c4","at":"2026-10-27T00:00:00Z","role":"user","text":"Future turn for checking the exclusive replay boundary."},
+  {"session":"delta","id":"d1","at":"2026-09-22T16:04:00Z","role":"user","text":"The weekly customer report needs a publisher table and a geography table. Reconcile the totals and leave off the cover sheet."}
+]

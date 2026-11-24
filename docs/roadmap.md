@@ -28,11 +28,28 @@ Add Codex, Claude Code, and Pi adapters, initial backfill, continuous sync, loca
 
 ## Session search
 
-Add PostgreSQL keyword indexing, classification filtering, session-diverse results, pagination, source expansion, and changes consumption. Connect hype-history through the public API. Validate that a browser-style consumer can use the same contract without direct database access.
+The proposed first release gives agents two operations they can call at the point of need.
+
+1. **Search history.** Implement `POST /v1/search` through the Rust SDK and `sessiondb search`. Rank exchanges across the eligible collection. Index the full eligible text of a user request and its same-branch assistant response, retaining anchors into the original messages. Index standalone messages independently and split oversized content at message or block boundaries. Start with PostgreSQL full-text search and the project, harness, role and date filters in the draft contract. Keep tools identifiable and explicitly selectable.
+2. **Read around a hit.** Start the agent view with up to three short excerpts and a cursor for more. Each excerpt identifies the matching message, speaker, time when available and source link. Extend the read contract so the agent can open the exchange and neighboring turns by message ID, selecting a branch when the continuation forks. Preserve existing single-message reads and full-content expansion.
+
+The first implementation PR should cover the contract, a forward migration, backfill of accepted messages and one working CLI-to-API search and expansion. Verify that a newly accepted append becomes searchable and that retries and rewrites keep the derived index consistent with canonical reads. The agent chooses when to look up history.
 
 ## Optional semantic search
 
-Add the provider/profile interface and one configured endpoint implementation, background backfill, pgvector exact retrieval, hybrid ranking, and coverage/status reporting. Prove disabled/unavailable-provider behavior, compatible dimensions, and classification filtering before optimizing ANN indexes.
+Add an explicitly configured embedding endpoint, restartable background backfill and pgvector exact similarity search. Reuse vectors for unchanged exchange text within the same embedding profile. Hybrid search combines keyword and vector ranks, then selects a short source passage inside each hit. Newly accepted text participates through keyword search while embedding catches up. Expose actual retrieval mode and coverage through the existing search proposal.
+
+Run the unrelated-session browser task through the native API with history off, keyword search and hybrid search. Record task success, whether the verified instruction was retrieved before browser access, returned tokens and latency. Use a fixed corpus and matched browser state across conditions.
+
+## Broad questions about past work
+
+Deliver cross-session research through SessionDB’s own agent tools. For questions about recurring preferences or practices, gather examples and exceptions from independent sessions, projects and dates. Open the original decisions and later corrections so the calling agent can give a compact synthesis with citations and identify which conclusions are inferred.
+
+For requests about frequency or the whole archive, add a client-side batched scan of a declared project and time range using paginated session and message reads. Track the unit being counted, duplicates and how much of the selected corpus was examined. Use a frozen corpus when a reproducible count is required. This is a later delivery slice.
+
+## Replace hype-history
+
+Move the remaining history workflows, saved references and reviewed memories to SessionDB. Switch harness registrations and workspace instructions after validating the native workflows. The [migration plan](integrations.md#hype-history-migration) defines when the legacy tool and index can be retired.
 
 ## V1 release
 
@@ -57,7 +74,7 @@ Complete CLI packaging, client SDK documentation, installation and upgrade proce
 | A13 | Instance key rotated | Subsequent old-key API requests fail; updated clients regain full access; no signed object URLs are issued. |
 | A14 | A key holder deletes a session and client syncs again | Session stays removed through source suppression; local harness file is not deleted. |
 | A15 | Backup restored into a clean deployment | Catalog, original reads/exports, and collection recovery work; derived indexes can be rebuilt. |
-| A16 | API result is consumed by CLI, SDK, and hype-history | Same key boundary, filters, error semantics, and session meanings apply. |
+| A16 | API result is consumed by the CLI, SDK and SessionDB agent tools | Same key boundary, filters, error semantics, and session meanings apply. |
 | A17 | Request has no key or a wrong key | Every data API and `/v1/info` rejects it; public health/readiness/static contract stay available. |
 | A18 | A session starts in a home directory and has no matching rule | It syncs unassigned, remains readable, and participates in keyword and configured semantic/hybrid search. |
 | A19 | Assign two projects, replace them, then clear them | Only catalog associations and filter results change; native files and readers stay the same. |
@@ -65,6 +82,10 @@ Complete CLI packaging, client SDK documentation, installation and upgrade proce
 | A21 | A session moves between project labels during change-feed consumption | Authorized consumers receive the reclassification, including previous/current associations, without duplicate session records. |
 | A22 | Second file fails after first succeeds | First remains accepted/checkpointed; failed file remains pending, with no atomic batch guarantee. |
 | A23 | Unsupported original or metadata/hash mismatch | Unsupported native records and invalid upload bytes reject the whole file before storage and leave prior accepted state unchanged. |
+| A24 | The only verified workflow is a side exchange in a session on another topic | Archive-wide search surfaces the original exchange and the agent uses it to complete a fresh task. |
+| A25 | A broad code-review question has examples favoring simplification and an accepted exception | The agent cites independent original decisions, identifies their scope, and applies both to a held-out review containing a redundant wrapper and a necessary retry. |
+| A26 | A survey asks how often a decision occurred in a fixed corpus containing duplicate records | The reported count and denominator match the fixture, and the client reports coverage. |
+| A27 | A fresh agent runs with only SessionDB available after migration | Search, anchored reads, timelines, on-demand briefings and cross-session research work. Migrated memories retain their review status and resolve to the original evidence. |
 
 ## Later work
 
