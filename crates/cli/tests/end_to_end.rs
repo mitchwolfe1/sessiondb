@@ -1774,6 +1774,26 @@ async fn search_indexes_full_exchange_text_and_only_the_selected_branch() {
         .await
         .unwrap();
     assert!(page.data[3].truncated);
+    let pool = sqlx::PgPool::connect(&services.database_url("postgres"))
+        .await
+        .unwrap();
+    let (count, smallest): (i64, i32) = sqlx::query_as(
+        "SELECT count(*), min(length(body)) FROM search_passages WHERE message_id=$1",
+    )
+    .bind(page.data[3].id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        (10..=15).contains(&count),
+        "Expected packed word groups, got {count}"
+    );
+    assert!(smallest > 100, "Large text should retain readable passages");
+    let phrase = client
+        .search(&keywords("\"turquoise bridge\""))
+        .await
+        .unwrap();
+    assert!(phrase.data[0].excerpt.contains("turquoise bridge"));
 
     let shared = client.search(&keywords("amber")).await.unwrap();
     assert_eq!(shared.data.len(), 1);
@@ -1889,4 +1909,51 @@ async fn search_indexes_full_exchange_text_and_only_the_selected_branch() {
         .map(|m| m.message_id)
         .collect();
     assert_eq!(ids.len(), 5);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Docker; validates upgrade of an existing 0004 catalog"]
+async fn upgrade_repacks_existing_large_blocks_without_changing_the_source() {
+    let services = Services::start().await;
+    let pool = sqlx::PgPool::connect(&services.database_url("postgres"))
+        .await
+        .unwrap();
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/migrations");
+    let migrations = sqlx::migrate::Migrator::new(directory.as_path())
+        .await
+        .unwrap();
+    migrations.run_to(4, &pool).await.unwrap();
+    let session = seed_legacy_titles(&pool).await.remove(0).id;
+    let id = Uuid::new_v4();
+    let text = "A long searchable appendix. ".repeat(2000);
+    sqlx::query("INSERT INTO messages(id,session_id,sequence,role,origin,content) VALUES($1,$2,100,'assistant','model',$3)")
+        .bind(id).bind(session).bind(sqlx::types::Json(vec![FullContentBlock::text(text.clone())]))
+        .execute(&pool).await.unwrap();
+    sqlx::query("SELECT sessiondb_index_session($1)")
+        .bind(session)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let count = "SELECT count(*) FROM search_passages WHERE message_id=$1";
+    let before: i64 = sqlx::query_scalar(count)
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(before > 1000);
+    migrations.run(&pool).await.unwrap();
+    let after: i64 = sqlx::query_scalar(count)
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!((6..=8).contains(&after));
+    let original: sqlx::types::Json<Vec<FullContentBlock>> =
+        sqlx::query_scalar("SELECT content FROM messages WHERE id=$1 AND session_id=$2")
+            .bind(id)
+            .bind(session)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(original.0, [FullContentBlock::text(text)]);
 }

@@ -54,7 +54,7 @@ Athena is deployed. Keep `0001_catalog.sql` unchanged and append forward migrati
 
 Migration `0003_native_json_payloads.sql` changes opaque native payload columns to PostgreSQL `json`, preserving valid control-character escapes such as `\u0000`. Rebuild and migrate before retrying a Pi tool-output file previously rejected by JSONB; do not edit native files or discard pending snapshots to work around the error.
 
-Migration 0004 backfills keyword passages and exchange vectors from accepted catalog messages. The new server maintains them during file acceptance. Existing sync checkpoints carry forward.
+Migrations 0004 and 0005 backfill keyword passages and exchange vectors from accepted catalog messages. Migration 0005 corrects integer grouping in oversized blocks and rebuilds the two derived tables. Existing catalog messages and originals retain their identifiers. For large upgrades from 0003, the per-session 0004 backfill benefits from running the migration process with `PGOPTIONS="-c jit=off -c enable_seqscan=off"`. Start the serving process with its normal planner settings. Existing sync checkpoints carry forward.
 
 Before upgrading, back up PostgreSQL and object storage, stop the API, run `migrate` using the new server build/configuration/environment, then restart that build. Preserve client state and server volumes. Do not edit the migration ledger, replay the initial migration, or reset the deployed database to bypass a checksum/version mismatch. Abandoned pre-deployment identity catalogs are not a supported deployed upgrade source. See [ADR 0018](decisions/0018-deployed-native-compatibility.md).
 
