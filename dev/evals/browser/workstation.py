@@ -54,7 +54,7 @@ def main():
             {"operation": operation, "connection": connection, "tab_id": tab_id},
         )
 
-    if world["arm"] == "keyword":
+    if world["arm"] in {"keyword", "hybrid"}:
 
         @server.tool(annotations=readonly)
         def search_history(query: str, cursor: str | None = None) -> str:

@@ -106,10 +106,10 @@ def public_message(message):
     return {key: message[key] for key in ("session", "id", "at", "role", "text")}
 
 
-def history_lookup(history, name, args):
+def history_lookup(history, name, args, mode="keyword"):
     if "native_labels" in history:
         from native import lookup
-        return lookup(history, name, args)
+        return lookup(history, name, args, mode=mode)
     documents = history["documents"]
     if name == "read_around":
         for messages in documents.values():
@@ -177,9 +177,9 @@ def workstation_path(path):
 
 def perform(world, name, args):
     if name in {"search_history", "read_around"}:
-        if world["arm"] != "keyword":
+        if world["arm"] != "keyword" and not (world["arm"] == "hybrid" and "native_labels" in world["history"]):
             return {"error": "History unavailable"}
-        return history_lookup(world["history"], name, args)
+        return history_lookup(world["history"], name, args, world["arm"])
     if name == "list_directory":
         entries = {
             "~": world.get("home_entries", DEFAULT_HOME_ENTRIES),

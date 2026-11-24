@@ -80,7 +80,7 @@ def model_environment():
     return {k: os.environ[k] for k in names if k in os.environ}
 
 
-def model_turn(model, system_prompt, prompt, options, cwd, env):
+def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180):
     instructions = cwd.parent / "instructions.txt"
     instructions.write_text(system_prompt)
     cmd = [
@@ -106,7 +106,7 @@ def model_turn(model, system_prompt, prompt, options, cwd, env):
         input=prompt,
         text=True,
         capture_output=True,
-        timeout=180,
+        timeout=timeout,
         check=False,
     )
     events = [json.loads(line) for line in proc.stdout.split("\n") if line.strip()]
@@ -128,7 +128,7 @@ def model_turn(model, system_prompt, prompt, options, cwd, env):
     return answers[-1].strip(), completed[-1]["usage"]
 
 
-def judge_trial(model, world, trace, answer, cwd, env):
+def judge_trial(model, world, trace, answer, cwd, env, *, timeout=180):
     # Show only browser evidence for the outcome verdict. Model IDs, retrieval
     # calls, arm, elapsed time and the deterministic grade are runner-private.
     actions = [
@@ -150,7 +150,7 @@ def judge_trial(model, world, trace, answer, cwd, env):
         "A guess or connectivity check alone fails. Return only a JSON object with pass "
         "(boolean), read_event (event number or null), and reason (one sentence)."
     )
-    raw, _ = model_turn(model, system, json.dumps(packet), [], cwd, env)
+    raw, _ = model_turn(model, system, json.dumps(packet), [], cwd, env, timeout=timeout)
     verdict = json.loads(raw.removeprefix("```json").removesuffix("```").strip())
     if (
         not isinstance(verdict, dict)
@@ -206,6 +206,7 @@ def run_trial(
             options,
             root / "actor",
             env,
+            timeout=getattr(args, "turn_timeout", 180),
         )
         result.update(
             answer=answer, usage=usage, elapsed_s=round(time.monotonic() - start, 2)
@@ -215,7 +216,7 @@ def run_trial(
             raise RuntimeError("A fixture tool failed; see trace.jsonl")
         result["score"] = grade(world, trace, answer)
         lookups = [e for e in trace if e["tool"] in {"search_history", "read_around"}]
-        if args.sessiondb_url:
+        if getattr(args, "sessiondb_url", None):
             from native import retrieval_metrics
             result.update(retrieval_metrics(lookups))
         result.update(
@@ -228,7 +229,7 @@ def run_trial(
     if args.judge and "score" in result:
         try:
             result["judge"] = judge_trial(
-                args.model, world, trace, answer, root / "actor", env
+                args.model, world, trace, answer, root / "actor", env, timeout=getattr(args, "turn_timeout", 180)
             )
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             result["judge_error"] = str(error)
@@ -260,7 +261,13 @@ def main():
     )
     parser.add_argument("--sessiondb-url", help="Seed and query this empty disposable SessionDB")
     parser.add_argument("--sessiondb-bin", default="sessiondb", help="Native CLI used with --sessiondb-url")
+    parser.add_argument("--embedding-profile", type=Path, help="Enabled native profile JSON for a third, hybrid arm")
+    parser.add_argument("--turn-timeout",type=int,default=180,help="Maximum seconds per actor or judge turn")
     args = parser.parse_args()
+    if args.turn_timeout <= 0:
+        parser.error("--turn-timeout must be positive")
+    if args.embedding_profile and not args.sessiondb_url:
+        parser.error("--embedding-profile requires --sessiondb-url")
     if args.sessiondb_url:
         try:
             from native import retrieval_metrics
@@ -312,6 +319,7 @@ def main():
         "history_before_utc": CUTOFF,
         "seed": args.seed,
         "model": args.model,
+        "turn_timeout": args.turn_timeout,
         "codex_version": subprocess.check_output(
             ["codex", "--version"], text=True
         ).strip(),
@@ -330,9 +338,15 @@ def main():
         root = Path(tmp)
         (root / "actor").mkdir()
         history = build_history(json.loads(corpus), root, native_url=args.sessiondb_url, native_cli=args.sessiondb_bin)
+        conditions = ("off", "keyword")
+        if args.embedding_profile:
+            from native import enable_embeddings
+            summary["embedding_profile"] = enable_embeddings(history, args.embedding_profile)
+            conditions = ("off", "keyword", "hybrid")
         for pair, status in enumerate(statuses, start=1):
             tab_id = str(rng.randrange(1000, 1000000))
-            arms = ("off", "keyword") if pair % 2 else ("keyword", "off")
+            start = (pair - 1) % len(conditions)
+            arms = conditions[start:] + conditions[:start]
             for arm in arms:
                 result = run_trial(
                     args,
@@ -347,7 +361,7 @@ def main():
                 )
                 summary["trials"].append(result)
                 write_json(args.output / "summary.json", summary)
-    for arm in ("off", "keyword"):
+    for arm in conditions:
         graded = [r for r in summary["trials"] if r["arm"] == arm and "score" in r]
         passed = sum(r["score"]["pass"] for r in graded)
         searched = sum(r["history_calls"] > 0 for r in graded)

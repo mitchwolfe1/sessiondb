@@ -89,11 +89,11 @@ def build_native(documents, root, url, binary):
     return history
 
 
-def lookup(history, name, args):
+def lookup(history, name, args, *, mode="keyword"):
     if name == "search_history":
         flags = ["--cursor", args["cursor"]] if args.get("cursor") else []
         try:
-            result = load_page(history, "search", *flags, "--", args["query"])
+            result = load_page(history, "search", "--mode", mode, *flags, "--", args["query"])
         except subprocess.CalledProcessError as error:
             if "invalid_query" in error.stderr or "invalid_cursor" in error.stderr:
                 return {
@@ -165,3 +165,20 @@ def retrieval_metrics(lookups):
             for e in lookups
         ],
     }
+
+def enable_embeddings(history, profile_file):
+    """Wait for the same complete frozen corpus before starting any actor."""
+    import time
+
+    if not json.loads(profile_file.read_text()).get("enabled"):
+        raise ValueError("Supply an enabled immutable profile for the hybrid trial")
+    profile = load_page(history, "embeddings", "create", str(profile_file))
+    deadline = time.monotonic() + 600
+    while time.monotonic() < deadline:
+        detail = load_page(history, "embeddings", "show", profile["id"])
+        progress = detail["progress"]
+        if progress["ready_inputs"] and not progress["pending_inputs"]:
+            return {"model": profile["model"], "revision": profile["model_revision"],
+                    "dimensions": profile["dimensions"], "ready_inputs": progress["ready_inputs"]}
+        time.sleep(1)
+    raise RuntimeError("The frozen corpus did not finish embedding within ten minutes")
