@@ -26,6 +26,8 @@ Opaque message content, provider usage, and native event data use PostgreSQL `js
 
 Forward migration 0004 adds two derived tables. `search_passages` holds the searchable text and original block location. `search_exchanges` groups passage IDs on one branch and stores the GIN-indexed full-text vector. File acceptance updates both alongside the canonical messages. See [keyword search](search-and-embeddings.md#keyword-search).
 
+Migration 0005 rebuilds oversized keyword passages with integer word-group boundaries. Migration 0006 adds embedding profiles and content digests for exchange segments and their eligible member passages. In a pgvector-enabled catalog, the optional embedding cache stores one vector per profile and digest. A pending input has a retry time and an expiring claim. A ready input has a vector.
+
 ## Conversations and native history
 
 A source file can contribute to several sessions; one session can require several native files. Claude subagents can repeat their parent's native session ID, so source/native bindings matter. Proven copies remain explicit and divergent copies are not silently merged. Native roles describe recorded data, not proof of human authorship.

@@ -2512,6 +2512,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aws-sdk-s3",
+ "axum",
  "chrono",
  "clap",
  "directories",
@@ -2565,6 +2566,7 @@ dependencies = [
  "clap",
  "hex",
  "http 1.5.0",
+ "reqwest",
  "serde",
  "serde_json",
  "sessiondb-adapters",

@@ -36,6 +36,7 @@ walkdir.workspace = true
 libc = "0.2"
 
 [dev-dependencies]
+axum.workspace = true
 aws-sdk-s3.workspace = true
 sqlx = { workspace = true, features = ["postgres", "migrate"] }
 reqwest.workspace = true

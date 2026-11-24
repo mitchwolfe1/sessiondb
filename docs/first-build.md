@@ -19,7 +19,7 @@ PostgreSQL catalog, S3-compatible immutable originals/artifacts through the offi
 | File upload | `uploadSourceFile` |
 | Sessions | `listSessions`, `getSession`, `listSessionMessages`, `getMessage`, `getMessageContent`, `exportSession` |
 
-The two artifact reads, keyword search and anchored message context bring the implemented total to 19. Native ZIP is the implemented export. Embeddings, project administration, changes, metadata mutations, and normalized exports remain planned. Unsupported planned routes return `501`; unsupported options return `400 unsupported_option` before mutation.
+Artifact reads, search, anchored message context and four embedding profile operations bring the implemented total to 23. Native ZIP is the implemented export. Project administration, changes, metadata mutations, and normalized exports remain planned. Unsupported planned routes return `501`; unsupported options return `400 unsupported_option` before mutation.
 
 ## Acceptance
 

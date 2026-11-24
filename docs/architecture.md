@@ -15,7 +15,7 @@ flowchart LR
     A --> S[(Immutable S3 originals and artifacts)]
 ```
 
-Clients send one bounded native file through the API, not directly to S3. PostgreSQL holds explicit session/message/event metadata and typed content; immutable original/artifact bytes live in an existing S3-compatible store. PostgreSQL also holds the derived keyword index. Embedding providers are a planned extension.
+Clients send one bounded native file through the API, not directly to S3. PostgreSQL holds explicit session/message/event metadata and typed content; immutable original/artifact bytes live in an existing S3-compatible store. PostgreSQL also holds the derived keyword index. Optional pgvector storage holds immutable-profile embeddings from the configured provider.
 
 ## Rust workspace
 
@@ -55,4 +55,4 @@ The eleven domain tables originate in immutable `0001_catalog.sql`. Athena is de
 
 The HTTP API is the interoperability boundary for SessionDB clients and other applications. SessionDB will provide the agent-facing history workflows described in [ADR 0022](decisions/0022-replace-hype-history.md). The calling agent can interpret evidence retrieved through those interfaces.
 
-Keyword retrieval uses a GIN index over branch-specific exchange segments and returns source passages. Embedding profiles, hybrid retrieval, project administration and changes are planned as marked in OpenAPI. Their execution/backfill mechanism is not an active index-job API. Storage, sync, and reads must remain useful without a model endpoint.
+Keyword retrieval uses a GIN index over branch-specific exchange segments and returns source passages. A background indexer embeds changed exchange text through an enabled profile. Hybrid retrieval combines exact cosine and keyword rankings. Project administration and change feeds are planned. Storage, sync, and reads must remain useful without a model endpoint.

@@ -1,6 +1,6 @@
 # Search and embeddings
 
-Agents can search past work when a decision calls for it and open the original messages on their recorded branch. PostgreSQL keyword retrieval is available through the CLI, HTTP API and Rust SDK. Optional semantic and hybrid retrieval are the [next milestone](roadmap.md#optional-semantic-search).
+Agents can search past work when a decision calls for it and open the original messages on their recorded branch. PostgreSQL keyword retrieval is available through the CLI, HTTP API and Rust SDK. An enabled embedding profile adds exact semantic and hybrid retrieval to the same endpoint and CLI.
 
 ## Keyword search
 
@@ -16,50 +16,41 @@ Migrations 0004 and 0005 index accepted messages one session at a time. Migratio
 
 Run the hit’s `show_command` to open the source with `sessiondb messages show MESSAGE_ID -C 2`. It follows up to two parents and two children and supplies `--leaf` when the continuation is known. At an unresolved fork, choose a returned child ID with `--leaf`. Use `-B` and `-A` for different amounts of earlier and later context.
 
-## Embedding extension
+## Configure semantic and hybrid search
 
-The server supports a small provider interface with separate document and query embedding operations. Its first implementation is proposed to use an OpenAI-compatible embedding endpoint through reqwest; the exact compatible request/response contract must be documented and tested before implementation. No generation/judging API is needed for ordinary indexing.
+Install pgvector for the PostgreSQL server version, run `CREATE EXTENSION vector` in the SessionDB database, then run `sessiondb-server migrate`. Migration 0006 adds immutable profile metadata and source text hashes. The migrate command provisions vector storage when the extension is present, including on an already migrated catalog. Ordinary PostgreSQL supports keyword retrieval and sync.
 
-Provider configuration includes endpoint, model, expected dimensions, authentication secret reference, batch limit, timeout, and explicit query/document transforms when the model requires them. A configurable provider is not permission to silently use a fallback vendor or billing method.
+Use an OpenAI-compatible embeddings service with an immutable served model deployment. The [profile example](examples/embedding-profile.json) specifies the provider base URL, model name, revision, expected dimensions, optional credential reference, document and query prefixes, batch size, timeout and enabled state. For an unauthenticated local endpoint omit `credential_ref`. For a bearer credential set `SESSIONDB_EMBEDDING_API_KEY` and its matching `SESSIONDB_EMBEDDING_BASE_URL` in the server environment, then select `env:SESSIONDB_EMBEDDING_API_KEY` in the profile. The key is restricted to that exact base URL. Provider requests disable redirects.
 
-See the [embedding profile example](examples/embedding-profile.json). Runtime provider calls occur only after a key holder explicitly configures and enables the profile.
+```sh
+sessiondb embeddings create profile.json
+sessiondb embeddings enable PROFILE_ID
+sessiondb embeddings show PROFILE_ID --json
+sessiondb search "reuse an authenticated browser session" --mode hybrid
+```
 
-## Profiles and planned indexing
+Profiles record chunking version 1 and L2 normalization. Profiles are immutable apart from `enabled`. Disable the current profile before enabling another. Changing the model, its revision, dimensions, transforms or tool policy creates a new profile and a separate cache. Use a distinct versioned deployment when replacing model weights under the same served name. The provider response identifies the served model and dimensions. The separate revision label records the operator's deployed version.
 
-An embedding profile belongs to the instance and defines one vector space: provider/model revision, dimensions, normalization, chunking version, and query/document transforms. These values are immutable after vectors are produced. Changing them creates another profile and a backfill; vectors from different spaces never share a similarity comparison. At most one profile is enabled per instance in v1. It covers eligible sessions independently of project assignment.
+The server posts `model`, an array of `input` strings and `encoding_format: "float"` to `BASE_URL/embeddings`. It checks the response model, batch size, indexes, dimensions and finite, nonzero norms. Responses may arrive in any index order. The server applies the selected prefix to each input. It splits large texts at whitespace or UTF-8 boundaries into inputs of at most 7,900 bytes including the prefix, combines normalized chunk vectors weighted by text bytes, then normalizes the result. This bounds inputs for the reference endpoint's 8,192-token window and includes the entire eligible text.
 
-Indexing execution/backfill is future work, not a retained `/index-jobs` or `/jobs` API. The milestone must define progress, bounded batching, transient-provider recovery, deletion handling, and coverage independently of synchronous file acceptance.
+## Indexing and coverage
 
-Enabling a profile will cover eligible future accepted content, including unassigned sessions. Historical backfill may filter sources, sessions, or optional project labels; labels select content rather than define a vector space or permission boundary. Embedding profile operations remain planned as marked in OpenAPI.
+The background indexer embeds each exchange segment and its member passages. The default corpus includes recorded user and assistant text. A profile with `include_tools: true` also embeds tool entries. Tool results still require the caller's tool filters. Profile activation seeds previously accepted content. Sync adds distinct text hashes in the same transaction as the accepted original and keyword index. Provider calls run outside that transaction. Identical text reuses a vector within its profile across appends, retries and sessions.
 
-## Vector storage
-
-PostgreSQL with pgvector is the proposed first vector backend. Begin with exact cosine search over filtered session passages. Approximate nearest-neighbor indexing is an optimization to benchmark, not a prerequisite for the provider interface.
-
-The selected model's dimensions must be supported by the chosen storage and index type. Current pgvector documentation distinguishes storage limits from ANN index limits: `vector` storage supports up to 16,000 dimensions, while common HNSW/IVFFlat vector indexes support 2,000 and half-vector indexes 4,000. A 4,096-dimensional model therefore cannot simply use those default ANN layouts. Keep exact search available; any reduction/quantization must be explicit in a separate profile and evaluated. See [pgvector](https://github.com/pgvector/pgvector).
+PostgreSQL persists pending inputs, expiring claims and retry times. An orderly shutdown releases outstanding claims. Failed batches back off and retry individual inputs. Search follows the current accepted message and branch references on every request. A background pass reclaims cached vectors with no eligible reference in that profile. Profile detail reports counts of distinct ready, pending and retrying inputs.
 
 ## Retrieval modes
 
 | Mode | Behavior |
 | --- | --- |
-| `keyword` | Search all keyword-ready eligible content without a provider call. Default. |
-| `semantic` | Embed the query and search compatible vectors from one enabled profile. Report eligible and embedded counts. |
-| `hybrid` | Combine keyword and semantic candidates, deduplicate messages, and use a documented rank-fusion policy. Fresh unembedded messages remain eligible through keyword retrieval. |
+| `keyword` | Default. Rank matching exchange terms in PostgreSQL. |
+| `semantic` | Embed the query and rank eligible exchange segments by exact pgvector cosine distance. |
+| `hybrid` | Fuse up to 200 keyword and 200 semantic exchange ranks with reciprocal rank fusion, using `1 / (60 + rank)` per contributing list. Newly accepted text participates through keywords while vectors catch up. |
 
-Keyword, semantic, and hybrid requests can include no project filter, one project, several projects, or only unassigned sessions. Semantic modes use the single enabled instance profile. A session matching several selected labels appears once. Classification changes update query filters and preserve vectors unless the configured embedding text itself changes.
+Apply project, harness, tag, tool, role and time filters before scoring. For an intact exchange, use its whole-text vector. When role, date or tool-name filters select a subset, score only the eligible members using the closest available member vector. Select a cited member by query similarity, with lexical evidence available while individual members are pending. Each result identifies its contributing retrieval methods. The same original message appears once.
 
-The proposed fusion policy is reciprocal rank fusion with rank constant 60 and up to 200 candidates from each retriever before deduplicating the original message citations. Treat its scores as ranking values, not confidence or factual correctness. Benchmark these proposed settings during the search milestone. Newest sorting uses keyword mode only in v1; semantic/hybrid requests with that sort are rejected rather than silently switching modes.
+Vector-mode responses identify the profile, the number of eligible exchange segments and the number with a usable vector for the selected filters. Keyword-only responses identify keyword-ready messages. Cursors bind the profile, mode, query, filters and ordering. Newest ordering applies to keyword search.
 
-If semantic/hybrid is requested without an enabled instance profile, return `409 embedding_not_configured`. If the required provider is temporarily unavailable, return a specific retryable `503`; clients can explicitly retry in keyword mode. Never relabel a keyword fallback as semantic success.
+A missing enabled profile returns `409 embedding_not_configured`. An unavailable or incompatible required provider returns `503 embedding_provider_unavailable`. Keyword retrieval, sync and original reads operate independently. [pgvector](https://github.com/pgvector/pgvector) provides the vector type and exact cosine operator used here.
 
-## Access and privacy
-
-Require the instance API key before candidates, vector distances, counts, snippets, and artifact links. All key holders search the same collection. Project labels only narrow classification. Retrieval caches identify instance/profile and query filters, never account/grant scope.
-
-Only normalized configured content is sent to the embedding endpoint. Available model reasoning, large tools, and attachments need explicit eligibility rules; the proposed v1 default indexes user/assistant text and keeps tool payload embedding opt-in. Wire role does not establish authorship or quality.
-
-## Required checks
-
-The [browser retrieval pilot](../dev/evals/browser/README.md) compares agent task completion with history off and on-demand keyword lookup in a frozen corpus.
-
-Verify unassigned and multi-project sessions in every mode; verify keyword search while embedding is disabled/down; profile changes without mixed spaces; deletion and missing/invalid-key rejection across all modes; interrupted backfill recovery; partial coverage reporting; and retrieval of recent unembedded messages in hybrid mode. Use deterministic local embedding fixtures for tests, then an explicitly authorized runtime integration test for the configured provider.
+The [browser pilot](../dev/evals/browser/README.md#native-sessiondb-pilot) records source retrieval and task completion separately.

@@ -46,6 +46,9 @@ async fn main() -> Result<()> {
             .connect(&config.database_url()?)
             .await?;
         MIGRATOR.run(&pool).await?;
+        sqlx::query("SELECT sessiondb_prepare_vector_storage()")
+            .execute(&pool)
+            .await?;
         tracing::info!("catalog migrations applied");
         return Ok(());
     }

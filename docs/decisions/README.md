@@ -26,5 +26,6 @@ Decision records explain choices that affect several SessionDB components. Requi
 | [0020 Connect by URL](0020-connect-by-url.md) | Accepted | Verify and save one default server URL, with source roots and watchers bound to their destination |
 | [0021 Save the API key when connecting](0021-connect-stores-client-keys.md) | Accepted | One client setup command with private origin-bound key storage |
 | [0022 Replace hype-history](0022-replace-hype-history.md) | Accepted direction | SessionDB owns the history workflows and their evidence through cutover |
+| [0023 Native hybrid search](0023-native-hybrid-search.md) | Implemented | Profile-scoped exchange and member vectors, exact cosine ranking and keyword rank fusion |
 
 An accepted direction does not mean every example field or default has been approved. Accept a proposed record after its assumptions and relevant open questions are reviewed. Supersede records with a new linked decision rather than erasing the rationale.

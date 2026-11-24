@@ -78,6 +78,18 @@ docker compose --env-file .env -f dev/compose.yaml down
 
 Volumes persist across stops. Removing these volumes resets the development database and object store.
 
+## Local hybrid search
+
+For a disposable development deployment with pgvector, use the matching PostgreSQL major version and initialize the optional extension. Supply the instance environment as in the local services section.
+
+```sh
+SESSIONDB_DEV_POSTGRES_IMAGE=pgvector/pgvector:0.8.2-pg18-trixie ./dev/up
+docker compose --env-file .env -f dev/compose.yaml exec postgres psql -U sessiondb -d sessiondb -c 'CREATE EXTENSION IF NOT EXISTS vector'
+sessiondb-server --config dev/server.toml migrate
+```
+
+Start the server, create and enable an [embedding profile](search-and-embeddings.md#configure-semantic-and-hybrid-search), then run `sessiondb search --mode hybrid "a past decision"`. The Docker integration suite tests both stock PostgreSQL and the pgvector-enabled path with a deterministic local provider.
+
 ## Existing infrastructure
 
 Use [the server configuration example](examples/server.toml) with PostgreSQL and an existing S3 bucket. Provision the instance key securely. With AWS, omit the custom endpoint and leave both `SESSIONDB_S3_ACCESS_KEY_ID` and `SESSIONDB_S3_SECRET_ACCESS_KEY` unset to use the SDK credential chain, including instance/task roles. Custom endpoints can use path-style addressing. Only the server accesses S3; clients need only the API URL.

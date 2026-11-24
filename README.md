@@ -40,7 +40,7 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 - **Native storage:** keep original files alongside a consistent, queryable session model.
 - **Optional grouping:** sessions can have zero or more project associations, independently of starting directory and collection source. Project administration is planned.
 - **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a client SDK, PostgreSQL, and S3-compatible object storage.
-- **Extensibility:** native adapters and the shared API support additional integrations; embedding-provider support is a later milestone.
+- **Extensibility:** enable an embedding profile for exact semantic and hybrid search alongside keywords.
 
 Each instance is one shared collection protected by the required `SESSIONDB_API_KEY`. All clients with the key have identical full access; use separate instances for isolated collections. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
 

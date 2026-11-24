@@ -1,6 +1,6 @@
 # Implementation status
 
-SessionDB has a server, CLI, and async SDK for authenticated per-file sync, original storage, session reads, keyword search, artifacts, and native export across Codex, Claude Code, and Pi.
+SessionDB has a server, CLI, and async SDK for authenticated per-file sync, original storage, session reads, keyword and optional hybrid search, artifacts, and native export across Codex, Claude Code, and Pi.
 
 ## Available
 
@@ -13,15 +13,16 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
 - Codex inline message and tool-result images, reasoning configuration updates, and web page actions. Claude session and request metadata and tool-reference results.
 - Archive-wide PostgreSQL keyword search through the API, SDK and CLI, with compact source excerpts, filters, pagination and branch-aware reads around the matching message. Forward migrations 0004 and 0005 backfill accepted history and pack oversized blocks into whole-word passages.
+- Optional pgvector semantic and hybrid retrieval, immutable instance embedding profiles, restartable background indexing and scoped coverage.
 - Readiness, request IDs, and optional aggregate request metrics.
 
-[OpenAPI](openapi.yaml) marks **15 baseline operations** with `x-first-build` and **19 implemented operations**, including artifact reads, keyword search and anchored context, with `x-implemented`. `/v1/info` advertises actual operation capabilities.
+[OpenAPI](openapi.yaml) marks **15 baseline operations** with `x-first-build` and **23 implemented operations**, including artifact reads, search, anchored context and embedding profiles, with `x-implemented`. `/v1/info` advertises actual operation capabilities.
 
 ## Planned
 
-Full [replacement of hype-history](decisions/0022-replace-hype-history.md) is a product goal. Keyword search and anchored reads are available. Timelines, on-demand briefings, cross-session research and migration of saved evidence remain planned.
+Full [replacement of hype-history](decisions/0022-replace-hype-history.md) is a product goal. Keyword, semantic and hybrid retrieval and anchored reads are available. Timelines, on-demand briefings, cross-session research and migration of saved evidence remain planned.
 
-Embedding profiles/providers, hybrid retrieval, project administration/matching, metadata mutation, change feeds, normalized/STS exports and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
+Project administration/matching, metadata mutation, change feeds, normalized/STS exports and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
 
 An unavailable planned route returns `501 not_implemented`; unsupported parameters return input errors. CLI help lists available commands. Source pause, project archive, transcript MIME, upload TTLs, and generic workers are not part of the current design.
 

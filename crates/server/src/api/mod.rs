@@ -1,3 +1,4 @@
+mod profiles;
 mod search;
 pub(crate) mod sessions;
 pub(crate) mod sources;
@@ -46,6 +47,14 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(sessions::messages),
         )
         .route("/v1/sessions/{session_id}/export", get(sessions::export))
+        .route(
+            "/v1/embedding-profiles",
+            get(profiles::list).post(profiles::create),
+        )
+        .route(
+            "/v1/embedding-profiles/{profile_id}",
+            get(profiles::get).patch(profiles::update),
+        )
         .route("/v1/search", post(search::search))
         .route("/v1/messages/{message_id}/around", get(sessions::around))
         .route("/v1/messages/{message_id}", get(sessions::message))
@@ -63,8 +72,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         "/v1/projects",
         "/v1/projects/{project_id}",
         "/v1/changes",
-        "/v1/embedding-profiles",
-        "/v1/embedding-profiles/{profile_id}",
         "/v1/sources/{source_id}/files/{file_id}/generations",
         "/v1/sessions/{session_id}/events",
     ] {
@@ -119,6 +126,10 @@ async fn info(State(state): State<Arc<AppState>>) -> Json<ServerInfo> {
             "getArtifactContent",
             "searchMessages",
             "readAroundMessage",
+            "listEmbeddingProfiles",
+            "createEmbeddingProfile",
+            "getEmbeddingProfile",
+            "updateEmbeddingProfile",
         ]
         .map(str::to_owned),
     );

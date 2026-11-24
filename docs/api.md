@@ -46,7 +46,7 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 | GET | `/sources/{source_id}/files/{file_id}/generations` | List preserved original generations. |
 | GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
 
-### Planned embeddings and changes
+### Embedding profiles and planned changes
 
 | Method | Path | Meaning |
 | --- | --- | --- |
@@ -97,7 +97,7 @@ There are no import/job/index-job endpoints, signed upload targets, completion p
 
 ## Search
 
-Post `query` to `/v1/search`. The default mode is `keyword`. Plain keywords rank partial matches by the number of distinct query terms and then cover density. `AND`, `OR`, quoted phrases and excluded words select PostgreSQL web-search syntax. Each alternative must require a positive searchable term. Relevance is the default ordering. `sort=newest` orders by the matching message time, falling back to session activity. Semantic and hybrid requests return `409 embedding_not_configured`. Those modes require relevance ordering.
+Post `query` to `/v1/search`. The default mode is `keyword`. Plain keywords rank partial matches by the number of distinct query terms and then cover density. `AND`, `OR`, quoted phrases and excluded words select PostgreSQL web-search syntax. Each alternative must require a positive searchable term. Relevance is the default ordering. `sort=newest` orders by the matching message time, falling back to session activity. Semantic and hybrid search require an enabled embedding profile and relevance ordering. Coverage counts the eligible exchange segments and those with usable vectors.
 
 Search accepts `filters.project_ids`, `unassigned`, `harnesses`, `roles`, `tags`, `include_tools`, `tool_name`, `after` and `before`. Within a project, harness or role list, any selected value qualifies. All selected tags must be present. A tool name or tool role enables matching tool content. The search scope applies to coverage, matching text and excerpt selection.
 

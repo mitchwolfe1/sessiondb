@@ -37,7 +37,7 @@ The first implementation PR should cover the contract, a forward migration, back
 
 ## Optional semantic search
 
-Add an explicitly configured embedding endpoint, restartable background backfill and pgvector exact similarity search. Reuse vectors for unchanged exchange text within the same embedding profile. Hybrid search combines keyword and vector ranks, then selects a short source passage inside each hit. Newly accepted text participates through keyword search while embedding catches up. Expose actual retrieval mode and coverage through the existing search proposal.
+The native hybrid slice adds an explicitly configured embedding endpoint, restartable background backfill and pgvector exact similarity search. Reuse vectors for unchanged exchange text within the same embedding profile. Hybrid search combines keyword and vector ranks, then selects a short source passage inside each hit. Newly accepted text participates through keyword search while embedding catches up. Expose actual retrieval mode and coverage through the existing search proposal.
 
 Run the unrelated-session browser task through the native API with history off, keyword search and hybrid search. Record task success, whether the verified instruction was retrieved before browser access, returned tokens and latency. Use a fixed corpus and matched browser state across conditions.
 

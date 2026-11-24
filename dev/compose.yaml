@@ -1,7 +1,7 @@
 name: sessiondb-dev
 services:
   postgres:
-    image: postgres:18.4
+    image: ${SESSIONDB_DEV_POSTGRES_IMAGE:-postgres:18.4}
     environment:
       POSTGRES_USER: sessiondb
       POSTGRES_DB: sessiondb

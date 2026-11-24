@@ -44,19 +44,31 @@ pub(super) async fn search(
             "The selected filters are invalid or incompatible.",
         ));
     }
-    if request.mode != SearchMode::Keyword {
+    let profile = if request.mode == SearchMode::Keyword {
+        None
+    } else {
         if request.sort == SearchSort::Newest {
             return Err(ApiError::bad(
                 "invalid_sort",
                 "Newest ordering requires keyword mode.",
             ));
         }
-        return Err(ApiError::conflict(
-            "embedding_not_configured",
-            "This instance has no enabled embedding profile.",
-        ));
-    }
-    let scope = scope(("search", query, filters, request.mode, request.sort))?;
+        Some(
+            crate::embeddings::enabled(&state.pool)
+                .await?
+                .ok_or_else(|| {
+                    ApiError::conflict(
+                        "embedding_not_configured",
+                        "This instance has no enabled embedding profile.",
+                    )
+                })?,
+        )
+    };
+    let request_scope = ("search", query, filters, request.mode, request.sort);
+    let scope = match &profile {
+        Some(profile) => scope((request_scope, profile.id))?,
+        None => scope(request_scope)?,
+    };
     let offset = match request.cursor.as_deref() {
         Some(value) => {
             let cursor: SearchCursor = decode_position(value)?;
@@ -76,7 +88,17 @@ pub(super) async fn search(
         || query
             .split_whitespace()
             .any(|word| matches!(word, "AND" | "OR") || (word.starts_with('-') && word.len() > 1));
-    let rows = sqlx::query(include_str!("search.sql"))
+    const KEYWORD: &str = concat!(
+        include_str!("search_candidates.sql"),
+        include_str!("keyword_ranks.sql"),
+        include_str!("search.sql")
+    );
+    const VECTOR: &str = concat!(
+        include_str!("search_candidates.sql"),
+        include_str!("vector_ranks.sql"),
+        include_str!("search.sql")
+    );
+    let mut statement = sqlx::query(if profile.is_some() { VECTOR } else { KEYWORD })
         .bind(query)
         .bind(&filters.project_ids)
         .bind(filters.unassigned)
@@ -96,12 +118,35 @@ pub(super) async fn search(
         .bind(request.sort == SearchSort::Newest)
         .bind(i64::from(size) + 1)
         .bind(offset)
-        .bind(operators)
-        .fetch_all(&state.pool)
-        .await?;
+        .bind(operators);
+    if let Some(profile) = &profile {
+        let vector = state
+            .embedding_client
+            .query(profile, query)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "query embedding unavailable");
+                ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "embedding_provider_unavailable",
+                    "The configured provider could not embed this query.",
+                )
+            })?;
+        statement = statement
+            .bind(profile.id)
+            .bind(vector)
+            .bind(request.mode == SearchMode::Hybrid);
+    }
+    let rows = statement.fetch_all(&state.pool).await?;
     // Coverage is returned even for an empty page, in the same statement snapshot.
     let first = &rows[0];
-    if matches!(first.try_get::<&str, _>("positive")?, "" | "T") {
+    if !first.try_get::<bool, _>("profile_current")? {
+        return Err(ApiError::conflict(
+            "embedding_profile_changed",
+            "The active embedding profile changed during this search.",
+        ));
+    }
+    if profile.is_none() && matches!(first.try_get::<&str, _>("positive")?, "" | "T") {
         return Err(ApiError::bad(
             "invalid_query",
             "Each alternative must require a positive searchable term.",
@@ -116,6 +161,13 @@ pub(super) async fn search(
         let mut show_command = format!("sessiondb messages show {id} -C 2");
         if leaf_id != id {
             show_command.push_str(&format!(" --leaf {leaf_id}"));
+        }
+        let mut retrieved_by = Vec::new();
+        if row.try_get("by_keyword")? {
+            retrieved_by.push(SearchMode::Keyword);
+        }
+        if row.try_get("by_vector")? {
+            retrieved_by.push(SearchMode::Semantic);
         }
         data.push(SearchMatch {
             message_id: id,
@@ -140,7 +192,7 @@ pub(super) async fn search(
             timestamp: row.try_get("recorded_at")?,
             title: row.try_get("title")?,
             project_ids: row.try_get("project_ids")?,
-            retrieved_by: vec![SearchMode::Keyword],
+            retrieved_by,
             excerpt: excerpt(row.try_get("headline")?),
             url: format!(
                 "{}/v1/messages/{id}",
@@ -159,12 +211,12 @@ pub(super) async fn search(
     Ok(Json(SearchResponse {
         data,
         next_cursor,
-        mode: SearchMode::Keyword,
+        mode: request.mode,
         coverage: SearchCoverage {
             keyword_ready_messages: first.try_get::<i64, _>("ready")? as u64,
-            embedding_eligible_passages: 0,
-            embedded_passages: 0,
-            embedding_profile_id: None,
+            embedding_eligible_passages: first.try_get::<i64, _>("eligible_count")? as u64,
+            embedded_passages: first.try_get::<i64, _>("embedded_count")? as u64,
+            embedding_profile_id: profile.map(|p| p.id),
         },
     }))
 }

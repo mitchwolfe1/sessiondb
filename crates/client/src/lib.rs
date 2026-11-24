@@ -170,6 +170,40 @@ impl Client {
         self.get_query(&format!("v1/sessions/{id}/messages"), filter)
             .await
     }
+    pub async fn embedding_profiles(
+        &self,
+        options: &ProfileListOptions,
+    ) -> Result<Page<EmbeddingProfile>> {
+        self.get_query("v1/embedding-profiles", options).await
+    }
+    pub async fn embedding_profile(&self, id: Uuid) -> Result<EmbeddingProfile> {
+        self.get(&format!("v1/embedding-profiles/{id}")).await
+    }
+    pub async fn create_embedding_profile(
+        &self,
+        input: &EmbeddingProfileCreate,
+    ) -> Result<EmbeddingProfile> {
+        self.request(
+            Method::POST,
+            "v1/embedding-profiles",
+            None::<&()>,
+            Some(input),
+        )
+        .await
+    }
+    pub async fn update_embedding_profile(
+        &self,
+        id: Uuid,
+        patch: &EmbeddingProfilePatch,
+    ) -> Result<EmbeddingProfile> {
+        self.request(
+            Method::PATCH,
+            &format!("v1/embedding-profiles/{id}"),
+            None::<&()>,
+            Some(patch),
+        )
+        .await
+    }
     /// Rank matching exchanges and return bounded excerpts anchored to original messages.
     pub async fn search(&self, request: &SearchRequest) -> Result<SearchResponse> {
         self.request(Method::POST, "v1/search", None::<&()>, Some(request))

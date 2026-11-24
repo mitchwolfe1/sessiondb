@@ -824,7 +824,7 @@ paths:
       summary: Search accessible sessions with optional project filters
       description: Rank plain keywords by distinct term coverage and cover density across
         eligible exchanges. AND, OR, quotes or -word select web-search matching.
-        Return bounded excerpts anchored in the matching original messages. Semantic and hybrid modes currently return 409 embedding_not_configured.
+        Return bounded excerpts anchored in the matching original messages. Semantic and hybrid modes use the enabled embedding profile and report scoped coverage.
       responses:
         default:
           $ref: '#/components/responses/Problem'
@@ -874,7 +874,7 @@ paths:
           type: string
         description: Opaque cursor bound to filters and ordering; no snapshot guarantee.
       x-first-build: false
-      x-implemented: false
+      x-implemented: true
     post:
       operationId: createEmbeddingProfile
       tags:
@@ -903,7 +903,7 @@ paths:
             schema:
               $ref: '#/components/schemas/EmbeddingProfileCreate'
       x-first-build: false
-      x-implemented: false
+      x-implemented: true
   /v1/embedding-profiles/{profile_id}:
     parameters:
     - name: profile_id
@@ -928,7 +928,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmbeddingProfile'
       x-first-build: false
-      x-implemented: false
+      x-implemented: true
     patch:
       operationId: updateEmbeddingProfile
       tags:
@@ -952,7 +952,7 @@ paths:
             schema:
               $ref: '#/components/schemas/EmbeddingProfilePatch'
       x-first-build: false
-      x-implemented: false
+      x-implemented: true
   /v1/changes:
     parameters: []
     get:
@@ -1891,6 +1891,7 @@ components:
           type: string
         model_revision:
           type: string
+          description: Immutable operator-pinned version of this served model deployment.
         dimensions:
           type: integer
           minimum: 1
@@ -1898,6 +1899,7 @@ components:
         credential_ref:
           anyOf:
           - type: string
+            const: env:SESSIONDB_EMBEDDING_API_KEY
           - type: 'null'
         document_prefix:
           type: string
@@ -1911,6 +1913,9 @@ components:
           type: integer
           minimum: 1
           maximum: 300
+        include_tools:
+          type: boolean
+          default: false
         enabled:
           type: boolean
           default: false
@@ -1955,6 +1960,12 @@ components:
           type: integer
           minimum: 1
           maximum: 16000
+        chunking_version:
+          type: integer
+          const: 1
+        normalization:
+          type: string
+          const: l2
         document_prefix:
           type: string
         query_prefix:
@@ -1967,12 +1978,17 @@ components:
           type: integer
           minimum: 1
           maximum: 300
+        include_tools:
+          type: boolean
+          default: false
         enabled:
           type: boolean
           default: false
         id:
           type: string
           format: uuid
+        progress:
+          $ref: '#/components/schemas/EmbeddingProgress'
         credential_configured:
           type: boolean
       additionalProperties: true
@@ -1984,8 +2000,17 @@ components:
       - model
       - model_revision
       - dimensions
+      - chunking_version
+      - normalization
       - enabled
       - credential_configured
+    EmbeddingProgress:
+      type: object
+      required: [ready_inputs, pending_inputs, retrying_inputs]
+      properties:
+        ready_inputs: {type: integer, minimum: 0}
+        pending_inputs: {type: integer, minimum: 0}
+        retrying_inputs: {type: integer, minimum: 0}
     EmbeddingProfilePatch:
       type: object
       properties:

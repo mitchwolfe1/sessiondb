@@ -228,6 +228,10 @@ pub async fn upload(
         .fetch_one(&mut *tx)
         .await?;
     let result = receipt(&mut tx, &row, false).await?;
+    sqlx::query("SELECT sessiondb_enqueue_embeddings($1)")
+        .bind(&result.session_ids)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(Json(result))
 }

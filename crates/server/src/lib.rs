@@ -2,6 +2,7 @@
 pub mod api;
 pub mod auth;
 pub mod config;
+mod embeddings;
 pub mod error;
 pub mod ingest;
 mod native_json;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub objects: Arc<dyn BlobStore>,
     pub auth: Authenticator,
+    pub(crate) embedding_client: embeddings::EmbeddingClient,
     pub requests: std::sync::atomic::AtomicU64,
 }
 
@@ -43,6 +45,7 @@ impl AppState {
             pool,
             objects,
             auth,
+            embedding_client: embeddings::EmbeddingClient::new()?,
             requests: std::sync::atomic::AtomicU64::new(0),
         }))
     }
@@ -83,6 +86,7 @@ pub async fn serve(
 ) -> Result<()> {
     let cleanup_state = state.clone();
     let (stop_cleanup, mut cleanup_stop) = watch::channel(false);
+    let indexing = tokio::spawn(embeddings::run(state.clone(), cleanup_stop.clone()));
     let cleanup = tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -105,6 +109,7 @@ pub async fn serve(
         })
         .await;
     let stopped = stop_cleanup.send(true);
+    indexing.await.context("embedding task failed")?;
     cleanup.await.context("object cleanup task failed")?;
     stopped.context("object cleanup task stopped unexpectedly")?;
     result.context("serve SessionDB API")

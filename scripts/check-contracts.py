@@ -118,6 +118,10 @@ for name in ["Source", "SourceCreate", "SourceFile", "FileUpload", "FileUploadRe
     assert set(SPEC["components"]["schemas"][name]["properties"]) == rust_fields(
         "crates/types/src/resources.rs", name,
     ), name
+for name in ["EmbeddingProfileCreate", "EmbeddingProfile", "EmbeddingProfilePatch", "EmbeddingProgress"]:
+    assert set(SPEC["components"]["schemas"][name]["properties"]) == rust_fields(
+        "crates/types/src/embeddings.rs", name,
+    ), name
 for name in ["SearchRequest", "SearchFilters", "SearchMatch", "SearchResponse", "SearchCoverage", "MessageContext"]:
     assert set(SPEC["components"]["schemas"][name]["properties"]) == rust_fields(
         "crates/types/src/search.rs", name,
@@ -243,8 +247,8 @@ assert first == {
     "listSessions", "getSession", "listSessionMessages", "getMessage",
     "getMessageContent", "exportSession",
 }
-assert implementation == first | {"getArtifact", "getArtifactContent", "searchMessages", "readAroundMessage"}
-assert len(implementation) == 19
+assert implementation == first | {"getArtifact", "getArtifactContent", "searchMessages", "readAroundMessage", "listEmbeddingProfiles", "createEmbeddingProfile", "getEmbeddingProfile", "updateEmbeddingProfile"}
+assert len(implementation) == 23
 assert not any(re.search(r"/(?:imports|jobs|index-jobs)(?:/|$)", path) for path in SPEC["paths"])
 assert set(SPEC["paths"]["/v1/sources/{source_id}"]) == {"parameters", "get"}
 upload = SPEC["paths"]["/v1/sources/{source_id}/files"]["post"]

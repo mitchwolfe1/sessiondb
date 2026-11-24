@@ -1,10 +1,12 @@
 //! Public, transport-independent types for the SessionDB v1 API.
 
 mod content;
+mod embeddings;
 mod resources;
 mod search;
 
 pub use content::*;
+pub use embeddings::*;
 pub use resources::*;
 pub use search::*;
 

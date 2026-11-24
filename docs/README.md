@@ -22,7 +22,7 @@ Start with the [main objects and eleven catalog tables](data-model.md): sessions
 
 ## Design status
 
-The initial implementation supports authenticated sync, original storage, session reads, keyword search, branch-aware context and native export across Codex/Claude/Pi. [Implementation status](implementation.md) identifies the working subset; the remaining target-v1 specification describes later milestones. CLI help and `/v1/info` report available commands/capabilities.
+The initial implementation supports authenticated sync, original storage, session reads, keyword and optional hybrid search, branch-aware context and native export across Codex/Claude/Pi. [Implementation status](implementation.md) identifies the working subset; the remaining target-v1 specification describes later milestones. CLI help and `/v1/info` report available commands/capabilities.
 
 The [decision register](decisions/README.md) distinguishes accepted direction from proposed technical choices. [Open questions](open-questions.md) identify choices needed for upcoming milestones.
 

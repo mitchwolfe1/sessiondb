@@ -23,11 +23,11 @@ sessiondb sync --watch
 | Group | Commands |
 | --- | --- |
 | `sessions` | `list`, `show`, `messages`, `export`; events/update/delete are planned |
-| `search` | Ranked keyword excerpts with filters and pagination |
+| `search` | Keyword, semantic and hybrid excerpts with filters and pagination |
 | `messages` | `show` with optional context, `content` |
 | `sources` | `list`, `add`, `show`; collection starts/stops on the client |
 | `sync` | One pass, `--watch`, `install`, `start`, `stop`, `uninstall`, `status`, `logs [--follow]`, `rejected`, `retry` |
-| `embeddings` | Planned profile management; backfill execution contract is not yet defined |
+| `embeddings` | `create FILE`, `list`, `show ID`, `enable ID`, `disable ID` |
 | `connect SERVER_URL` | Verify and save the server URL and API key |
 | `projects` | Planned `list`, `create`, `show`, `update`; no archive lifecycle |
 | Top level | `status`, `config show`, `version` |
@@ -52,7 +52,7 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 sessiondb sync status --json
 ```
 
-Search returns three excerpts by default. Use `--limit` and `--cursor` to read more. Use `--include-tools` to include tool input and output. Title, tag and project updates, session deletion and embedding profiles are planned. See `sessiondb --help` and [implementation status](implementation.md).
+Search returns three excerpts by default. Use `--limit` and `--cursor` to read more. Use `--include-tools` to include tool input and output. Use `--mode hybrid` with an enabled profile to combine term and vector evidence. Title, tag and project updates and session deletion are planned. See `sessiondb --help` and [implementation status](implementation.md).
 
 Every search hit includes a `show_command` that opens the matching message with `-C 2` on the same connection. The command includes `--leaf` when a descendant identifies the continuation.
 

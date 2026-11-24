@@ -1957,3 +1957,6 @@ async fn upgrade_repacks_existing_large_blocks_without_changing_the_source() {
             .unwrap();
     assert_eq!(original.0, [FullContentBlock::text(text)]);
 }
+
+#[path = "end_to_end/hybrid.rs"]
+mod hybrid;

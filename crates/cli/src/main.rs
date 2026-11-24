@@ -65,6 +65,11 @@ enum Command {
     },
     /// Find exchanges across accepted history.
     Search(SearchArgs),
+    /// Configure an embedding profile for semantic and hybrid search.
+    Embeddings {
+        #[command(subcommand)]
+        command: EmbeddingCommand,
+    },
     Messages {
         #[command(subcommand)]
         command: MessageCommand,
@@ -166,6 +171,27 @@ enum MessageCommand {
         id: Uuid,
     },
 }
+#[derive(Subcommand)]
+enum EmbeddingCommand {
+    List {
+        #[command(flatten)]
+        page: PageArgs,
+    },
+    Show {
+        id: Uuid,
+    },
+    /// Create an immutable profile from its JSON description.
+    Create {
+        file: PathBuf,
+    },
+    Enable {
+        id: Uuid,
+    },
+    Disable {
+        id: Uuid,
+    },
+}
+
 #[derive(clap::Args)]
 struct SearchArgs {
     /// Ranked keywords. Use AND, OR, quotes or -word for boolean matching.
@@ -841,6 +867,68 @@ async fn run(args: &Cli) -> Result<()> {
                     }
                 }
             }
+        }
+        Command::Embeddings { command } => {
+            let client = client_for(args, &load_config(args).await?)?;
+            let profile = match command {
+                EmbeddingCommand::List { page } => {
+                    let list = client
+                        .embedding_profiles(&ProfileListOptions {
+                            limit: Some(page.limit),
+                            cursor: page.cursor.clone(),
+                        })
+                        .await?;
+                    return emit(args, &list, |out| {
+                        for p in &list.data {
+                            writeln!(
+                                out,
+                                "{}  {}  {}",
+                                p.id,
+                                if p.enabled { "enabled" } else { "disabled" },
+                                clean(&p.name)
+                            )?;
+                        }
+                        Ok(())
+                    });
+                }
+                EmbeddingCommand::Create { file } => {
+                    let input = serde_json::from_slice(&tokio::fs::read(file).await?)?;
+                    client.create_embedding_profile(&input).await?
+                }
+                EmbeddingCommand::Show { id } => client.embedding_profile(*id).await?,
+                EmbeddingCommand::Enable { id } | EmbeddingCommand::Disable { id } => {
+                    client
+                        .update_embedding_profile(
+                            *id,
+                            &EmbeddingProfilePatch {
+                                enabled: matches!(command, EmbeddingCommand::Enable { .. }),
+                            },
+                        )
+                        .await?
+                }
+            };
+            emit(args, &profile, |out| {
+                writeln!(
+                    out,
+                    "{}  {}  {}  {} dimensions",
+                    profile.id,
+                    if profile.enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                    clean(&profile.model),
+                    profile.dimensions
+                )?;
+                if let Some(progress) = &profile.progress {
+                    writeln!(
+                        out,
+                        "{} ready, {} pending, {} retrying",
+                        progress.ready_inputs, progress.pending_inputs, progress.retrying_inputs
+                    )?;
+                }
+                Ok(())
+            })?;
         }
         Command::Search(search) => {
             let client = client_for(args, &load_config(args).await?)?;

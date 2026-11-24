@@ -39,6 +39,9 @@ pub fn port(container: &str, internal: &str) -> u16 {
 }
 impl Services {
     pub async fn start() -> Self {
+        Self::with_postgres("postgres:18.4").await
+    }
+    pub async fn with_postgres(image: &str) -> Self {
         let id = Uuid::new_v4().to_string();
         let mut value = Self {
             postgres: format!("sessiondb-it-pg-{id}"),
@@ -67,7 +70,7 @@ impl Services {
             "127.0.0.1::5432",
             "--mount",
             &format!("type=volume,source={pg_volume},target=/var/lib/postgresql"),
-            "postgres:18.4",
+            image,
         ]);
         docker(&[
             "run",
