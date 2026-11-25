@@ -16,22 +16,30 @@ fi
 
 cd "$2"
 archives=()
-: > SHA256SUMS
+checksums=()
 for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
   archive="sessiondb-${tag//+/_}-$target.tar.gz"
-  checksum=$(sha256sum "$archive")
+  if [[ ! -e "$archive" && ! -e "$archive.sha256" ]]; then
+    continue
+  fi
+  checksum=$(shasum -a 256 "$archive")
   if [[ "$checksum" != "$(cat "$archive.sha256")" ]]; then
     echo "Checksum mismatch for $archive" >&2
     exit 1
   fi
-  printf '%s\n' "$checksum" >> SHA256SUMS
+  checksums+=("$checksum")
   archives+=("$archive")
 done
+if [[ ${#archives[@]} -eq 0 ]]; then
+  echo "No packaged client archives for $tag in $PWD" >&2
+  exit 1
+fi
+printf '%s\n' "${checksums[@]}" > SHA256SUMS
 
 prerelease=false
 if [[ "${tag%%+*}" == *-* ]]; then prerelease=true; fi
 # Looking up a pending tag through GraphQL finds drafts too. A failed request
-# stops the job before any release is created or modified.
+# stops publication before any release is created or modified.
 release=$(gh api graphql -f owner="${GH_REPO%/*}" -f name="${GH_REPO#*/}" -f tag="$tag" \
   -f query='query($owner:String!, $name:String!, $tag:String!) {
     repository(owner:$owner, name:$name) {
@@ -48,6 +56,14 @@ case $(jq -r '.isDraft' <<< "$release") in
     done
     echo "Release $tag is already published"
     exit 0
+    ;;
+  true)
+    # A resumed draft must keep a checksum for every archive already uploaded.
+    if ! jq -e --args '([.releaseAssets.nodes[].name | select(endswith(".tar.gz"))] - $ARGS.positional) == []' \
+        "${archives[@]}" <<< "$release" > /dev/null; then
+      echo "Include the draft's existing client archives when resuming $tag" >&2
+      exit 1
+    fi
     ;;
   null)
     gh release create "$tag" --verify-tag --draft --prerelease="$prerelease" \

@@ -2,7 +2,7 @@
 
 SessionDB runs with PostgreSQL and an S3-compatible store. This guide covers server configuration, synchronous acceptance, cleanup, health, migrations, and backup/restore. See [access control](access-control.md) for the shared instance key.
 
-Status: initial operating model with later target-v1 features called out in [implementation status](implementation.md). The repository contains migrations, a server Dockerfile, and a local Compose profile. The [client release workflow](development.md#release-the-client) packages workstation binaries. Published server images remain later work.
+Status: initial operating model with later target-v1 features called out in [implementation status](implementation.md). The repository contains migrations, a server Dockerfile, and a local Compose profile. Maintainers [build and publish workstation binaries locally](development.md#release-the-client). Published server images remain later work.
 
 ## Deployment topology
 

@@ -69,4 +69,4 @@ The [first-build plan](docs/first-build.md) selects the initial working path. [R
 
 Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add file upload`, or `fix: retry interrupted uploads`.
 
-The [release workflow](docs/development.md#release-the-client) packages the client. Licensing remains undecided.
+Maintainers [package and publish client releases manually](docs/development.md#release-the-client). Licensing remains undecided.

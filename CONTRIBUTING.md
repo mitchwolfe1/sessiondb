@@ -51,4 +51,4 @@ Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) fo
 
 Implementation pull requests identify the requirement and acceptance scenario they satisfy. Keep the checked-in API contract and Rust client synchronized, and generate a contract diff for public API changes. Use Semantic Versioning for released crates and binaries; the `/v1` HTTP namespace has its own compatibility policy.
 
-A release should include documentation, migrations, binary checksums, supported-platform artifacts, and upgrade/rollback instructions. The [client release workflow](docs/development.md#release-the-client) packages the CLI and harness setup files on matching Linux and macOS runners.
+A release should include documentation, migrations, binary checksums, supported-platform artifacts, and upgrade/rollback instructions. Follow the [manual client release procedure](docs/development.md#release-the-client) to package the CLI and harness setup files on native Linux or macOS machines.

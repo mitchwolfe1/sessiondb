@@ -4,7 +4,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 ## Available
 
-- Tag-triggered [GitHub client release workflow](development.md#release-the-client) with Linux and macOS archives, harness setup files, and SHA-256 checksums.
+- [Local packaging and manual GitHub Releases](development.md#release-the-client) for workstation archives with harness setup files and SHA-256 checksums.
 - Eleven sessions-first domain tables originating in the immutable initial PostgreSQL migration, with forward deployed-data repairs.
 - API-mediated synchronous multipart upload: verify and fully normalize one file before HTTP 200, reject unsupported/malformed input as a whole, and safely recover lost responses.
 - S3 immutable originals/artifacts and age-based unreferenced-object cleanup.

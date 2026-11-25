@@ -11,31 +11,31 @@ cargo build --locked --workspace --bins
 export PATH="$PWD/target/debug:$PATH"
 ```
 
-The two executables are `sessiondb-server` and `sessiondb`. Both support `--help` and `--version`. The [client release workflow](#release-the-client) packages the workstation CLI.
+The two executables are `sessiondb-server` and `sessiondb`. Both support `--help` and `--version`. The [local packaging script](#release-the-client) builds a distributable workstation CLI.
 
 ## Release the client
 
-The [Client release workflow](../.github/workflows/release-client.yml) builds the `sessiondb` executable from the pinned Rust toolchain and locked dependencies. Each archive contains the CLI, `scripts/install-harnesses`, and `skills/sessiondb/SKILL.md`. The native runner unpacks its archive, checks the CLI version, and installs the bundled skill into a temporary home.
+Client releases are built locally and uploaded manually to [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). GitHub Actions is disabled for this repository. Run the [local checks](#checks) on the release commit and use a tag matching the workspace Cargo version.
 
-| Platform | Architecture | Archive target |
-| --- | --- | --- |
-| Linux (Ubuntu 22.04 build) | Intel/AMD x86-64 | `x86_64-unknown-linux-gnu` |
-| Linux (Ubuntu 22.04 build) | ARM64 | `aarch64-unknown-linux-gnu` |
-| macOS | Intel | `x86_64-apple-darwin` |
-| macOS | Apple silicon | `aarch64-apple-darwin` |
-
-To rehearse all four builds, select **Client release → Run workflow** in GitHub Actions, or run `gh workflow run release-client.yml --ref main`. Each successful build produces a downloadable Actions artifact containing the archive and its SHA-256 checksum.
-
-To publish, update the workspace version and `Cargo.lock` together, run the [development checks](#checks), and push the release commit. Tag that commit with `v` followed by the exact Cargo version. For example, for version `0.1.0`:
+On each Linux or macOS machine you want to support, check out the same release commit and run:
 
 ```sh
-git tag -a v0.1.0 -m "SessionDB client v0.1.0"
-git push origin refs/tags/v0.1.0
+tag="v$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "sessiondb-cli") | .version')"
+target="$(rustc -vV | sed -n 's/^host: //p')"
+scripts/package-client "$target" "target/dist/$tag" "$tag"
 ```
 
-Once all four builds succeed, the workflow verifies their checksums, uploads the archives and `SHA256SUMS` to a draft, and publishes it with generated release notes. SemVer prerelease versions generate GitHub prereleases. Re-running a failed tag workflow can finish its draft. Published releases keep their original assets.
+The [packager](../scripts/package-client) builds the CLI with the pinned toolchain and locked dependencies, unpacks the archive, checks the executable version and installs the bundled skill into a temporary home. Each build produces a `.tar.gz` archive and a matching `.sha256` file. The archive includes `sessiondb`, `scripts/install-harnesses`, and `skills/sessiondb/SKILL.md`.
 
-To exercise packaging locally on the current host, run `scripts/package-client "$(rustc -vV | sed -n 's/^host: //p')" /tmp/sessiondb-dist`.
+For a new release, collect the intended archives and their checksum files in one directory on the publishing machine. A single platform is sufficient. From the release commit, push its tag and run the [publisher](../scripts/publish-client-release) with an authenticated GitHub CLI:
+
+```sh
+git tag -a "$tag" -m "SessionDB client $tag"
+git push origin "refs/tags/$tag"
+GH_REPO=mitchwolfe1/sessiondb scripts/publish-client-release "$tag" "target/dist/$tag"
+```
+
+The publisher checks the remote tag and each archive digest, uploads the archives and `SHA256SUMS` to a draft, then publishes it. Use the same set of archives when resuming an interrupted draft. SemVer prerelease versions are marked as GitHub prereleases.
 
 ## Local services
 
@@ -157,9 +157,11 @@ On a Linux login with a systemd user manager and Docker, run the background serv
 cargo test --locked -p sessiondb-cli --test background_service -- --ignored
 ```
 
-Validate documentation contracts separately:
+Run the installer, browser fixture, and documentation checks locally:
 
 ```sh
+python3 scripts/test_install_harnesses.py
+python3 -m unittest discover -s dev/evals/browser
 uv run --with pyyaml --with openapi-spec-validator --with jsonschema python scripts/check-contracts.py
 npx markdownlint-cli2
 ```
