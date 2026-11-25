@@ -1,38 +1,37 @@
 """Run paired, ephemeral agent trials against the browser task."""
 
 import argparse
+from datetime import datetime
+from contextlib import nullcontext
 import hashlib
 import json
 import os
 import random
+import re
 import secrets
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from threading import Thread
 
 from fixture import (
     CUTOFF,
     DEFAULT_HOME_ENTRIES,
     PROMPT,
+    STATUSES,
     grade,
     write_corpus,
     write_json,
 )
-from native import build_native, enable_embeddings, retrieval_metrics
+from installed import ROOT, actor_setup, fixture_proxy, log_event, now
+from native import build_native
 
 HERE = Path(__file__).resolve().parent
-STATUSES = [
-    "Needs owner review",
-    "Pending legal sign-off",
-    "Approved for circulation",
-    "Awaiting revisions",
-    "Ready for publication",
-    "On hold",
-]
-ISOLATION = [
+JUDGE_ISOLATION = [
     "--ignore-user-config",
     "--ephemeral",
     "--skip-git-repo-check",
@@ -63,6 +62,12 @@ ISOLATION = [
 ]
 
 
+ACTOR_FEATURES = [
+    "--disable", "hooks", "--disable", "plugins", "--disable", "apps", "--disable", "memories",
+    "--disable", "shell_snapshot", "--enable", "shell_tool", "--enable", "unified_exec",
+]
+
+
 def model_environment():
     names = (
         "HOME",
@@ -81,46 +86,80 @@ def model_environment():
     return {k: os.environ[k] for k in names if k in os.environ}
 
 
-def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180):
-    instructions = cwd.parent / "instructions.txt"
-    instructions.write_text(system_prompt)
-    cmd = [
-        "codex",
-        "exec",
-        *ISOLATION,
-        "--model",
-        model,
-        "-c",
-        'model_provider="openai"',
-        "-c",
-        'model_reasoning_effort="low"',
-        "-c",
-        f"model_instructions_file={json.dumps(str(instructions))}",
-        *options,
-        "--json",
-        "-",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=cwd,
-        env=env,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
-    events = [json.loads(line) for line in proc.stdout.split("\n") if line.strip()]
-    if proc.returncode:
+def codex_events(cmd, cwd, env, prompt, timeout, trace_path):
+    """Timestamp shell results when Codex emits them so browser and CLI traces can be compared."""
+    events = []
+    errors = []
+    with tempfile.TemporaryFile(mode="w+") as input_file, tempfile.TemporaryFile(mode="w+") as stderr:
+        input_file.write(prompt)
+        input_file.seek(0)
+        with subprocess.Popen(cmd, cwd=cwd, env=env, stdin=input_file, stdout=subprocess.PIPE,
+                              stderr=stderr, text=True, start_new_session=True) as proc:
+            def collect():
+                started = {}
+                try:
+                    for line in proc.stdout:
+                        event = json.loads(line)
+                        events.append(event)
+                        item = event.get("item", {})
+                        if trace_path is None or item.get("type") != "command_execution":
+                            continue
+                        at = now()
+                        if event["type"] == "item.started":
+                            started[item["id"]] = at
+                        elif event["type"] == "item.completed":
+                            log_event(trace_path, {"tool": "command_execution", "time": started.get(item["id"], at),
+                                "completed_at": at, "command": item["command"], "exit_code": item.get("exit_code"),
+                                "output": item.get("aggregated_output", "")})
+                except (OSError, ValueError, KeyError) as error:
+                    errors.append(error)
+            reader = Thread(target=collect)
+            reader.start()
+            try:
+                proc.wait(timeout=timeout)
+            finally:
+                if proc.poll() is None:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                reader.join()
+        stderr.seek(0)
+        diagnostic = stderr.read()[-800:]
+    if errors:
+        raise RuntimeError(f"Could not audit Codex events: {errors[0]}")
+    if proc.returncode or any(e["type"] == "turn.failed" for e in events):
         errors = [e for e in events if e["type"] in {"error", "turn.failed"}]
-        raise RuntimeError(str(errors)[-800:] if errors else proc.stderr[-800:])
+        raise RuntimeError(str(errors)[-800:] if errors else diagnostic)
+    return events
+
+
+def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180, trace_path=None):
+    if trace_path is None:  # Blind judge: an independent, tool-free turn.
+        instructions = cwd.parent / "judge-instructions.txt"
+        instructions.write_text(system_prompt)
+        policy = [*JUDGE_ISOLATION, "-c", f"model_instructions_file={json.dumps(str(instructions))}"]
+    else:
+        # Keep the normal Codex instructions, skill discovery and shell tools.
+        policy = ["--ephemeral", "--skip-git-repo-check", "--ignore-rules", *ACTOR_FEATURES]
+    cmd = ["codex", "exec", *policy, "--model", model, "-c", 'model_provider="openai"',
+           "-c", 'model_reasoning_effort="low"', *options, "--json", "-"]
+    events = codex_events(cmd, cwd, env, prompt, timeout, trace_path)
     items = [e["item"] for e in events if e["type"] == "item.completed"]
     for item in items:
         if item["type"] == "error":
-            raise RuntimeError(item["message"])
+            message = item["message"]
+            if message.startswith("Falling back from WebSockets to HTTPS transport.") and any(
+                e["type"] == "turn.completed" for e in events
+            ):
+                if trace_path:
+                    log_event(trace_path, {"tool": "transport", "time": now(), "message": message})
+                continue
+            raise RuntimeError(message)
         if item["type"] in {"agent_message", "reasoning", "todo_list"}:
             continue
-        if item["type"] != "mcp_tool_call" or item.get("server") != "workstation":
+        if trace_path is not None and item["type"] == "command_execution":
+            continue
+        if (trace_path is None or item["type"] != "mcp_tool_call" or
+                (item.get("server"), item.get("tool")) != ("workstation", "browser")):
             raise RuntimeError(f"Unexpected tool in trial: {item['type']}")
     answers = [i["text"] for i in items if i["type"] == "agent_message"]
     completed = [e for e in events if e["type"] == "turn.completed"]
@@ -168,8 +207,29 @@ def judge_trial(model, world, trace, answer, cwd, env, *, timeout=180):
     return verdict
 
 
+def usage_metrics(trace, encoding):
+    calls = [e for e in trace if e["tool"] == "sessiondb" and e["path"] != "/v1/info"
+             and not e["path"].startswith("/v1/embedding-profiles")]
+    searches = [e["request"] for e in calls if e["path"] == "/v1/search"]
+    # Codex can emit item.started after a fast HTTP request already completed.
+    # Measure shell output by the invoked CLI name, and HTTP latency independently.
+    cli_name = re.compile(r"""(?<![\w.-])sessiondb(?:["'])?\s""")
+    outputs = [e["output"] for e in trace if e["tool"] == "command_execution" and cli_name.search(e["command"])]
+    return dict(tool_calls=sum(e["tool"] in {"command_execution", "browser"} for e in trace),
+                  skill_body_observed=any(e["tool"] == "command_execution" and "# Search past work with SessionDB" in e["output"]
+                                          for e in trace),
+                  history_calls=len(calls), searches=searches,
+                  history_bytes=sum(len(o.encode()) for o in outputs),
+                  history_tokens=sum(len(encoding.encode_ordinary(o)) for o in outputs),
+                  lookup_ms=[round((datetime.fromisoformat(c["completed_at"]) -
+                                    datetime.fromisoformat(c["time"])).total_seconds() * 1000) for c in calls],
+                  transport_fallbacks=sum(e["tool"] == "transport" for e in trace),
+                  source_reads=[e["path"] for e in calls if e["path"].startswith("/v1/messages/")
+                                or e["path"].endswith("/messages")])
+
+
 def run_trial(
-    args, root, env, history, pair, arm, tab_id, status, *, home_entries=None
+    args, root, env, history, pair, arm, tab_id, status, *, home_entries=DEFAULT_HOME_ENTRIES
 ):
     directory = args.output / f"{pair:02d}-{arm}"
     directory.mkdir()
@@ -178,9 +238,7 @@ def run_trial(
     world = {
         "tab_id": tab_id,
         "status": status,
-        "arm": arm,
-        "history": history,
-        "home_entries": DEFAULT_HOME_ENTRIES if home_entries is None else home_entries,
+        "home": str(root / "home"),
         "trace": str(trace_file),
     }
     world_file = root / "world.json"
@@ -199,36 +257,43 @@ def run_trial(
     result = {"pair": pair, "arm": arm, "status": status, "tab_id": tab_id}
     start = time.monotonic()
     try:
-        answer, usage = model_turn(
-            args.model,
-            "Carry out the user's task using the available workstation tools. "
-            "For a single requested field, return only its value.",
-            PROMPT,
-            options,
-            root / "actor",
-            env,
-            timeout=getattr(args, "turn_timeout", 180),
-        )
-        result.update(
-            answer=answer, usage=usage, elapsed_s=round(time.monotonic() - start, 2)
-        )
+        upstream = (fixture_proxy(history["url"], os.environ["SESSIONDB_API_KEY"], history["native_labels"], trace_file)
+                    if arm == "installed" else nullcontext(None))
+        with upstream as connection:
+            cwd, actor_env = actor_setup(root, connection, history, home_entries)
+            # Check the harness's actual discovery output without handing the actor a skill prompt.
+            discovered = subprocess.check_output(["codex", "debug", "prompt-input", *ACTOR_FEATURES], cwd=cwd, env=actor_env,
+                                                 text=True, stderr=subprocess.PIPE, timeout=30)
+            skill_path = root / "home/.agents/skills/sessiondb-history/SKILL.md"
+            description = (ROOT / "skills/sessiondb-history/SKILL.md").read_text().split("description: ", 1)[1].splitlines()[0]
+            advertised = (str(skill_path.parent.parent) in discovered and
+                          f"sessiondb-history: {description}" in discovered)
+            if advertised and skill_path.read_bytes() != (ROOT / "skills/sessiondb-history/SKILL.md").read_bytes():
+                raise RuntimeError("Installed skill differs from the tracked skill")
+            guidance = "<!-- sessiondb-history:start -->" in discovered
+            if (advertised, guidance) != (arm == "installed", arm == "installed"):
+                raise RuntimeError("Harness discovery disagrees with the trial condition")
+            result.update(skill_advertised=advertised, installed_instructions=guidance)
+            # Keep setup probes separate from actions chosen by the model.
+            trace_file.replace(directory / "setup-trace.jsonl")
+            trace_file.touch()
+            answer, usage = model_turn(args.model, None, PROMPT, options, cwd, actor_env,
+                                      timeout=args.turn_timeout, trace_path=trace_file)
+        result.update(answer=answer, usage=usage, elapsed_s=round(time.monotonic() - start, 2))
         trace = [json.loads(line) for line in trace_file.read_text().splitlines()]
         if any("runner_error" in event for event in trace):
             raise RuntimeError("A fixture tool failed; see trace.jsonl")
         result["score"] = grade(world, trace, answer)
-        lookups = [e for e in trace if e["tool"] in {"search_history", "read_around"}]
-        result.update(retrieval_metrics(lookups))
-        result.update(
-            tool_calls=len(trace),
-            history_calls=len(lookups),
-            history_bytes=sum(len(json.dumps(e["result"]).encode()) for e in lookups),
-        )
+        import tiktoken
+        result.update(usage_metrics(trace, tiktoken.get_encoding("o200k_base")))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         result["error"] = str(error)
     if args.judge and "score" in result:
         try:
+            judge_cwd = root / "judge"
+            judge_cwd.mkdir()
             result["judge"] = judge_trial(
-                args.model, world, trace, answer, root / "actor", env, timeout=getattr(args, "turn_timeout", 180)
+                args.model, world, trace, answer, judge_cwd, env, timeout=getattr(args, "turn_timeout", 180)
             )
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             result["judge_error"] = str(error)
@@ -260,18 +325,21 @@ def main():
     )
     parser.add_argument("--sessiondb-url", required=True, help="Seed and query this empty disposable SessionDB")
     parser.add_argument("--sessiondb-bin", default="sessiondb", help="SessionDB CLI executable")
-    parser.add_argument("--embedding-profile", type=Path, help="Enabled native profile JSON for a third, hybrid arm")
+    parser.add_argument("--embedding-profile", type=Path, help="Enabled profile to create on a new disposable instance; otherwise use its active profile")
     parser.add_argument("--turn-timeout",type=int,default=180,help="Maximum seconds per actor or judge turn")
     args = parser.parse_args()
+    if sys.platform != "linux" or not shutil.which("bwrap"):
+        parser.error("The shell-enabled pilot needs Linux with Bubblewrap and Codex named permission profiles")
     if args.turn_timeout <= 0:
         parser.error("--turn-timeout must be positive")
     args.sessiondb_bin = shutil.which(args.sessiondb_bin)
     if not args.sessiondb_bin or not os.environ.get("SESSIONDB_API_KEY"):
         parser.error("Supply a SessionDB CLI and the disposable instance's SESSIONDB_API_KEY")
     try:
-        retrieval_metrics([])
+        import tiktoken
+        tiktoken.get_encoding("o200k_base")
     except ImportError:
-        parser.error("Install tiktoken for retrieval metrics")
+        parser.error("Install tiktoken for history output metrics")
     args.output = args.output.expanduser().resolve()
     env = model_environment()
     auth = subprocess.run(
@@ -301,6 +369,7 @@ def main():
         if not isinstance(home_entries, list) or not all(
             isinstance(entry, str)
             and entry
+            and entry not in {".", ".."}
             and "/" not in entry
             and "\x00" not in entry
             for entry in home_entries
@@ -310,6 +379,9 @@ def main():
     rng = random.Random(args.seed)
     statuses = rng.sample(STATUSES, args.pairs)
     summary = {
+        "protocol": "installed-skill-v1",
+        "installer_sha256": hashlib.sha256((ROOT / "scripts/install-harnesses").read_bytes()).hexdigest(),
+        "skill_sha256": hashlib.sha256((ROOT / "skills/sessiondb-history/SKILL.md").read_bytes()).hexdigest(),
         "prompt": PROMPT,
         "history_before_utc": CUTOFF,
         "seed": args.seed,
@@ -329,23 +401,24 @@ def main():
         ).hexdigest(),
         "trials": [],
     }
-    with tempfile.TemporaryDirectory(prefix="browser-trial-") as tmp:
+    # Codex creates executable aliases in CODEX_HOME and requires a non-/tmp location.
+    scratch = Path.home() / ".local/state/sessiondb/evals/work"
+    scratch.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="browser-", dir=scratch) as tmp:
         root = Path(tmp)
-        (root / "actor").mkdir()
         documents = write_corpus(json.loads(corpus), root)
-        history = build_native(documents, root, args.sessiondb_url, args.sessiondb_bin)
-        conditions = ("off", "keyword")
-        if args.embedding_profile:
-            summary["embedding_profile"] = enable_embeddings(history, args.embedding_profile)
-            conditions = ("off", "keyword", "hybrid")
+        history = build_native(documents, root, args.sessiondb_url, args.sessiondb_bin, args.embedding_profile)
+        summary["embedding_profile"] = history["profile"]
+        conditions = ("off", "installed")
         for pair, status in enumerate(statuses, start=1):
             tab_id = str(rng.randrange(1000, 1000000))
             start = (pair - 1) % len(conditions)
             arms = conditions[start:] + conditions[:start]
             for arm in arms:
+                trial_root = Path(tempfile.mkdtemp(prefix="trial-", dir=root))
                 result = run_trial(
                     args,
-                    root,
+                    trial_root,
                     env,
                     history,
                     pair,

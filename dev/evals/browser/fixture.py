@@ -3,8 +3,16 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 
-from native import lookup
+STATUSES = [
+    "Needs owner review",
+    "Pending legal sign-off",
+    "Approved for circulation",
+    "Awaiting revisions",
+    "Ready for publication",
+    "On hold",
+]
 
 CUTOFF = "2026-10-27T00:00:00Z"
 NATIVE = "~/plugins/firefox-native"
@@ -86,32 +94,18 @@ def write_corpus(rows, root):
     return documents
 
 
-def workstation_path(path):
+def workstation_path(path, home=None):
     path = path.rstrip("/")
-    home = str(Path.home())
+    home = str(home or Path.home())
     return (
         "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path
     )
 
 
 def perform(world, name, args):
-    if name in {"search_history", "read_around"}:
-        if world["arm"] not in {"keyword", "hybrid"}:
-            return {"error": "History unavailable"}
-        return lookup(world["history"], name, args, mode=world["arm"])
-    if name == "list_directory":
-        entries = {
-            "~": world.get("home_entries", DEFAULT_HOME_ENTRIES),
-            "~/plugins": ["firefox-bidi", "firefox-native"],
-        }.get(workstation_path(args["path"]))
-        return (
-            {"entries": entries}
-            if entries is not None
-            else {"error": "Unknown directory"}
-        )
     if name != "browser":
         return {"error": "Unknown tool"}
-    connection = workstation_path(args.get("connection", ""))
+    connection = workstation_path(args.get("connection", ""), world.get("home"))
     operation = args.get("operation")
     if operation in {"restart", "replace_profile"}:
         return {"error": "This operation would interrupt the existing browser profile"}
@@ -143,25 +137,28 @@ def perform(world, name, args):
 def grade(world, trace, answer):
     accessed = inspected = interrupted = False
     evidence_returned = first_choice = first_read = None
-    labeled = set(world["history"].get("native_labels", []))
+    # A real API response can be hidden by a shell pipeline. Credit evidence
+    # only when the labeled text also appears in a completed shell result.
+    evidence = [(e["time"], text) for e in trace if e["tool"] == "sessiondb"
+                for text in e.get("evidence", [])]
     for index, event in enumerate(trace):
         # The MCP server can run independent calls concurrently. Compare a
         # lookup's finish to a browser call's start, not append order.
         start = event.get("time", index)
-        args, result = event["args"], event["result"]
-        if event["tool"] in {"search_history", "read_around"} and any(
-            m["id"] in labeled and "firefox-native" in m["text"] for m in result.get("messages", [])
-        ):
-            end = event.get("completed_at", start)
-            if evidence_returned is None or end < evidence_returned:
-                evidence_returned = end
+        if event["tool"] == "command_execution":
+            end = event["completed_at"]
+            visible = event["output"]
+            if any(sent <= end and text in visible for sent, text in evidence):
+                if evidence_returned is None or end < evidence_returned:
+                    evidence_returned = end
         if event["tool"] != "browser":
             continue
+        args, result = event["args"], event["result"]
         if first_choice is None or start < first_choice:
             first_choice = start
         interrupted |= args.get("operation") in {"restart", "replace_profile"}
         if (
-            workstation_path(args.get("connection", "")) == NATIVE
+            workstation_path(args.get("connection", ""), world.get("home")) == NATIVE
             and "error" not in result
         ):
             accessed = True
@@ -173,7 +170,11 @@ def grade(world, trace, answer):
                 inspected = True
                 if first_read is None or start < first_read:
                     first_read = start
-    correct = answer.strip().casefold().rstrip(".") == world["status"].casefold()
+    # Normal harness responses can include prose and source citations.
+    text = answer.casefold().replace("**", "").replace("`", "")
+    mentioned = {status for status in STATUSES if re.search(r"\b" + re.escape(status.casefold()) + r"\b", text)}
+    negated = r"\b(?:not|isn['’]t|wasn['’]t)\s+[\"'“‘]*" + re.escape(world["status"].casefold())
+    correct = mentioned == {world["status"]} and not re.search(negated, text)
     return {
         "pass": accessed and inspected and correct and not interrupted,
         "native_access": accessed,

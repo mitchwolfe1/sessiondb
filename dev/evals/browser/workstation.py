@@ -38,11 +38,6 @@ def main():
         return json.dumps(event["result"])
 
     @server.tool(annotations=readonly)
-    def list_directory(path: str) -> str:
-        """List entries in a workstation directory. Start at ~ or a known directory."""
-        return call("list_directory", {"path": path})
-
-    @server.tool(annotations=readonly)
     def browser(
         operation: Literal["status", "tabs", "read", "restart", "replace_profile"],
         connection: str,
@@ -53,18 +48,6 @@ def main():
             "browser",
             {"operation": operation, "connection": connection, "tab_id": tab_id},
         )
-
-    if world["arm"] in {"keyword", "hybrid"}:
-
-        @server.tool(annotations=readonly)
-        def search_history(query: str, cursor: str | None = None) -> str:
-            """Search earlier work when a tool choice depends on past decisions. Use a returned cursor for more hits."""
-            return call("search_history", {"query": query, "cursor": cursor})
-
-        @server.tool(annotations=readonly)
-        def read_around(message_id: str, leaf_id: str | None = None) -> str:
-            """Read the original exchange around a message ID returned by history search."""
-            return call("read_around", {"message_id": message_id, "leaf_id": leaf_id})
 
     server.run()
 

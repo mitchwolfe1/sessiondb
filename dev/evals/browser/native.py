@@ -3,7 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
-from uuid import UUID
+from installed import DEVICE, MEMBER
 
 
 def command(history, *args):
@@ -30,19 +30,24 @@ def load_page(history, *args):
     return json.loads(command(history, *args).stdout)
 
 
-def build_native(documents, root, url, binary):
+def build_native(documents, root, url, binary, profile_file=None):
     history = {
         "cli": str(Path(binary).resolve()),
         "url": url,
         "config": str(root / "client.toml"),
         "state": str(root / "client-state"),
     }
-    command(history, "connect", url)
+    command(history, "connect", url, "--member", MEMBER)
     if load_page(history, "sessions", "list", "--limit", "1")["data"]:
         raise ValueError("The browser corpus requires an empty disposable SessionDB")
-    command(
-        history, "sources", "add", "--harness", "codex", "--root", str(root / "sources")
-    )
+    enabled = [p for p in load_page(history, "embeddings", "list")["data"] if p["enabled"]]
+    if bool(enabled) == bool(profile_file):
+        raise ValueError("Use an empty disposable SessionDB with one enabled profile, or supply --embedding-profile to configure it")
+    if profile_file and not json.loads(profile_file.read_text()).get("enabled"):
+        raise ValueError("The supplied embedding profile must be enabled")
+    profile = (load_page(history, "embeddings", "create", str(profile_file)) if profile_file else enabled[0])
+    command(history, "sources", "add", "--harness", "codex", "--root", str(root / "sources"),
+            "--device-label", DEVICE)
     command(history, "sync")
 
     # Map judge labels through the public native anchors once. The tools given
@@ -86,99 +91,20 @@ def build_native(documents, root, url, binary):
     if len(native_labels) != len(labeled) or seen != set(documents):
         raise ValueError("Native corpus or verified source labels are incomplete")
     history["native_labels"] = native_labels
+    history["profile"] = wait_for_embeddings(history, profile["id"])
     return history
 
 
-def lookup(history, name, args, *, mode="keyword"):
-    if name == "search_history":
-        flags = ["--cursor", args["cursor"]] if args.get("cursor") else []
-        try:
-            result = load_page(history, "search", "--mode", mode, *flags, "--", args["query"])
-        except subprocess.CalledProcessError as error:
-            if "invalid_query" in error.stderr or "invalid_cursor" in error.stderr:
-                return {
-                    "error": "Use positive keywords and the cursor from the same query"
-                }
-            raise
-        return {
-            "messages": [
-                {
-                    "session": m["session_id"],
-                    "id": m["message_id"],
-                    "at": m["timestamp"],
-                    "role": m["role"],
-                    "text": m["excerpt"],
-                    "url": m["url"],
-                    "leaf_id": m["leaf_id"],
-                }
-                for m in result["data"]
-            ],
-            "next_cursor": result["next_cursor"],
-        }
-
-    try:
-        anchor = str(UUID(args["message_id"]))
-        leaf = ["--leaf", str(UUID(args["leaf_id"]))] if args.get("leaf_id") else []
-    except (ValueError, TypeError):
-        return {"error": "Use a message ID from search"}
-    try:
-        result = load_page(history, "messages", "show", anchor, "-C", "2", *leaf)
-    except subprocess.CalledProcessError as error:
-        if error.returncode == 4 or "invalid_branch" in error.stderr:
-            return {"error": "Unknown anchor or branch"}
-        raise
-    return {
-        "messages": [
-            {
-                "session": m["session_id"],
-                "id": m["id"],
-                "at": m["timestamp"],
-                "role": m["role"],
-                "text": "\n".join(
-                    b["text"] for b in m["content"] if b["type"] == "text"
-                ),
-                "content_url": m["content_url"],
-            }
-            for m in result["data"]
-        ],
-        "branch_choices": result["branch_choices"],
-    }
-
-
-def retrieval_metrics(lookups):
-    from datetime import datetime
-    import tiktoken
-
-    encoding = tiktoken.get_encoding("o200k_base")
-    return {
-        "history_tokens": sum(
-            len(encoding.encode_ordinary(json.dumps(e["result"]))) for e in lookups
-        ),
-        "lookup_ms": [
-            round(
-                (
-                    datetime.fromisoformat(e["completed_at"])
-                    - datetime.fromisoformat(e["time"])
-                ).total_seconds()
-                * 1000
-            )
-            for e in lookups
-        ],
-    }
-
-def enable_embeddings(history, profile_file):
-    """Wait for the same complete frozen corpus before starting any actor."""
+def wait_for_embeddings(history, profile_id):
+    """Freeze coverage and record the actual query transform used by the server."""
     import time
 
-    if not json.loads(profile_file.read_text()).get("enabled"):
-        raise ValueError("Supply an enabled immutable profile for the hybrid trial")
-    profile = load_page(history, "embeddings", "create", str(profile_file))
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
-        detail = load_page(history, "embeddings", "show", profile["id"])
+        detail = load_page(history, "embeddings", "show", profile_id)
         progress = detail["progress"]
-        if progress["ready_inputs"] and not progress["pending_inputs"]:
-            return {"model": profile["model"], "revision": profile["model_revision"],
-                    "dimensions": profile["dimensions"], "ready_inputs": progress["ready_inputs"]}
+        if progress["ready_inputs"] and not progress["pending_inputs"] and not progress["retrying_inputs"]:
+            return {**{k: detail[k] for k in ("model", "model_revision", "dimensions", "query_prefix", "document_prefix")},
+                    "ready_inputs": progress["ready_inputs"]}
         time.sleep(1)
     raise RuntimeError("The frozen corpus did not finish embedding within ten minutes")

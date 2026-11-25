@@ -29,7 +29,7 @@ An unavailable planned route returns `501 not_implemented`; unsupported paramete
 
 ## Compatibility and validation
 
-Migration 0004 was verified on fresh catalogs and on an isolated upgrade containing previously accepted Codex, Claude and Pi sessions. The CLI opened the original source anchors after backfill. The [browser pilot](../dev/evals/browser/README.md#native-sessiondb-pilot) records the task outcomes and the separate frozen-query replay.
+Migration 0004 was verified on fresh catalogs and on an isolated upgrade containing previously accepted Codex, Claude and Pi sessions. The CLI opened the original source anchors after backfill. The [browser pilot](../dev/evals/browser/README.md#native-sessiondb-pilot) exercises the installed history skill and native CLI, and records the earlier tool-interface trials and frozen-query replay.
 
 The Docker suite covers source attribution on an upgraded catalog, equal-key access, scoped coverage in all three search modes, copies, retries, corrections and rewrites. In three fresh Codex trials on a synthetic archive (three people, four installations, seven sessions), the agent cited two of the named member’s original decisions, found a teammate’s queue procedure before clearing a simulated queue, and read a report via the correct workstation’s browser connector. Each trial used the native CLI and hybrid search.
 
