@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fixture import BIDI, NATIVE, grade, perform, write_corpus
 from installed import fixture_proxy, materialize_home
-from run import usage_metrics
+from run import model_work, usage_metrics
 
 ROUTE_ID = str(UUID(int=3))
 
@@ -132,11 +132,13 @@ class BrowserCase(unittest.TestCase):
             {"tool": "command_execution", "command": "/bin/sh -c 'sessiondb search --local --json tabs'",
              "time": "2026-10-01T10:00:02+00:00", "output": "the matching source"},
             {"tool": "command_execution", "command": "cat ~/.agents/skills/sessiondb/SKILL.md", "output": "skill"},
+            {"tool": "browser", "result": {"connected": True}},
         ]
         metrics = usage_metrics(trace, SimpleNamespace(encode_ordinary=str.split))
         self.assertEqual(metrics["history_tokens"], 3)
         self.assertEqual(metrics["history_bytes"], len("the matching source"))
         self.assertEqual(metrics["lookup_ms"], [1000])
+        self.assertEqual(metrics["tool_output_tokens"], 6)
 
     def test_overlapping_calls_do_not_get_credit_for_prior_evidence(self):
         self.returned_evidence()
@@ -145,19 +147,48 @@ class BrowserCase(unittest.TestCase):
         self.trace[2].update(time=2, completed_at=4)
         self.assertFalse(grade(self.world, self.trace, "Needs owner review")["evidence_before_report_read"])
 
+    def test_model_work_counts_distinct_usage_updates_and_outer_dispatches(self):
+        def usage(total_in, total_out, last_in, last_out):
+            return {"type": "event_msg", "payload": {"type": "token_count", "info": {
+                "total_token_usage": {"input_tokens": total_in, "output_tokens": total_out},
+                "last_token_usage": {"input_tokens": last_in, "output_tokens": last_out},
+            }}}
+        first = usage(20, 5, 20, 5)
+        events = [first, {"type": "response_item", "payload": {"type": "custom_tool_call"}},
+                  first, usage(45, 11, 25, 6)]
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            sessions = home / "sessions" / "fixture"
+            sessions.mkdir(parents=True)
+            (sessions / "actor.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+            self.assertEqual(model_work(home, {"input_tokens": 45, "output_tokens": 11}),
+                             {"model_responses": 2, "model_tool_dispatches": 1})
+            with self.assertRaisesRegex(RuntimeError, "disagree"):
+                model_work(home, {"input_tokens": 44, "output_tokens": 11})
+
 
 class FixtureProxyCase(unittest.TestCase):
     def test_real_query_and_response_are_preserved_and_other_destinations_are_blocked(self):
         forwarded = []
         response = {"data": [{"message_id": ROUTE_ID, "excerpt": f"Use {NATIVE}", "leaf_id": "branch"}]}
+        question_id = str(UUID(int=5))
         class Backend(BaseHTTPRequestHandler):
             def do_POST(self):
                 forwarded.append((self.path, self.headers["Authorization"],
                                   json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
+                self.reply(response)
+
+            def do_GET(self):
+                self.reply({"anchor_id": question_id, "data": [
+                    {"id": question_id, "role": "user", "content": []},
+                    {"id": ROUTE_ID, "role": "assistant", "content": [{"type": "text", "text": f"Use {NATIVE}"}]},
+                ]})
+
+            def reply(self, payload):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps(response).encode())
+                self.wfile.write(json.dumps(payload).encode())
 
             def log_message(self, *args):
                 pass
@@ -169,10 +200,11 @@ class FixtureProxyCase(unittest.TestCase):
             cleanup.callback(backend.shutdown)
             trace = Path(tmp) / "trace.jsonl"
             with fixture_proxy(f"http://127.0.0.1:{backend.server_port}", "fixture-key", [ROUTE_ID], trace) as (url, token):
-                def call(path, request, auth):
+                def call(path, request, auth, method="POST"):
                     con = HTTPConnection("127.0.0.1", int(url.rsplit(":", 1)[1]))
                     try:
-                        con.request("POST", path, json.dumps(request), {"Authorization": "Bearer " + auth})
+                        con.request(method, path, None if request is None else json.dumps(request),
+                                    {"Authorization": "Bearer " + auth})
                         r = con.getresponse()
                         return r.status, r.read()
                     finally:
@@ -184,5 +216,9 @@ class FixtureProxyCase(unittest.TestCase):
                 self.assertEqual(call(good, query, "wrong")[0], 401)
                 self.assertEqual(call("http://localhost/v1/search", query, token)[0], 403)
                 self.assertEqual(call("http://sessiondb.test/v1/sources", query, token)[0], 403)
+                self.assertEqual(call(f"http://sessiondb.test/v1/messages/{question_id}/around", None, token, "GET")[0], 200)
             self.assertEqual(forwarded, [("/v1/search", "Bearer fixture-key", query)])
-            self.assertEqual(json.loads(trace.read_text())["evidence"], [f"Use {NATIVE}"])
+            events = {e["method"]: e for e in map(json.loads, trace.read_text().splitlines())}
+            self.assertEqual(events["POST"]["evidence"], [f"Use {NATIVE}"])
+            self.assertEqual(events["POST"]["original_ids"], [])
+            self.assertEqual(events["GET"]["original_ids"], [question_id, ROUTE_ID])

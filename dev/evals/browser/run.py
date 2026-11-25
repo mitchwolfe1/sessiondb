@@ -132,14 +132,16 @@ def codex_events(cmd, cwd, env, prompt, timeout, trace_path):
     return events
 
 
-def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180, trace_path=None):
+def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180, trace_path=None, audit_work=False):
     if trace_path is None:  # Blind judge: an independent, tool-free turn.
         instructions = cwd.parent / "judge-instructions.txt"
         instructions.write_text(system_prompt)
         policy = [*JUDGE_ISOLATION, "-c", f"model_instructions_file={json.dumps(str(instructions))}"]
     else:
         # Keep the normal Codex instructions, skill discovery and shell tools.
-        policy = ["--ephemeral", "--skip-git-repo-check", "--ignore-rules", *ACTOR_FEATURES]
+        policy = ["--skip-git-repo-check", "--ignore-rules", *ACTOR_FEATURES]
+        if not audit_work:
+            policy.insert(0, "--ephemeral")
     cmd = ["codex", "exec", *policy, "--model", model, "-c", 'model_provider="openai"',
            "-c", 'model_reasoning_effort="low"', *options, "--json", "-"]
     events = codex_events(cmd, cwd, env, prompt, timeout, trace_path)
@@ -215,7 +217,10 @@ def usage_metrics(trace, encoding):
     # Measure shell output by the invoked CLI name, and HTTP latency independently.
     cli_name = re.compile(r"""(?<![\w.-])sessiondb(?:["'])?\s""")
     outputs = [e["output"] for e in trace if e["tool"] == "command_execution" and cli_name.search(e["command"])]
+    tool_outputs = [e["output"] for e in trace if e["tool"] == "command_execution"]
+    tool_outputs.extend(json.dumps(e["result"]) for e in trace if e["tool"] == "browser")
     return dict(tool_calls=sum(e["tool"] in {"command_execution", "browser"} for e in trace),
+                  tool_output_tokens=sum(len(encoding.encode_ordinary(text)) for text in tool_outputs),
                   skill_body_observed=any(e["tool"] == "command_execution" and "# Search past work with SessionDB" in e["output"]
                                           for e in trace),
                   history_calls=len(calls), searches=searches,
@@ -226,6 +231,40 @@ def usage_metrics(trace, encoding):
                   transport_fallbacks=sum(e["tool"] == "transport" for e in trace),
                   source_reads=[e["path"] for e in calls if e["path"].startswith("/v1/messages/")
                                 or e["path"].endswith("/messages")])
+
+
+def model_work(control, usage):
+    """Count provider usage increments and outer tool dispatches in one disposable Codex session."""
+    logs = list((control / "sessions").rglob("*.jsonl"))
+    if len(logs) != 1:
+        raise RuntimeError(f"Expected one actor transcript for work accounting, found {len(logs)}")
+    samples = dispatches = 0
+    previous = {"input_tokens": 0, "output_tokens": 0}
+    with logs[0].open() as lines:
+        for line in lines:
+            event = json.loads(line)
+            payload = event.get("payload") or {}
+            if event["type"] == "response_item" and payload.get("type") in {
+                "function_call", "custom_tool_call", "tool_search_call", "local_shell_call", "web_search_call"
+            }:
+                dispatches += 1
+            if event["type"] != "event_msg" or payload.get("type") != "token_count":
+                continue
+            info = payload.get("info") or {}
+            total = info.get("total_token_usage")
+            if not total:
+                continue
+            counts = {k: total[k] for k in previous}
+            if counts == previous:
+                continue
+            last = info.get("last_token_usage") or {}
+            if any(counts[k] - previous[k] != last.get(k) for k in counts):
+                raise RuntimeError("Actor transcript has a missing or inconsistent model usage increment")
+            samples += 1
+            previous = counts
+    if not samples or any(previous[k] != usage[k] for k in previous):
+        raise RuntimeError("Actor transcript and final model usage disagree")
+    return {"model_responses": samples, "model_tool_dispatches": dispatches}
 
 
 def run_trial(
@@ -282,8 +321,10 @@ def run_trial(
             result["actor_started_at"] = now()
             actor_start = time.monotonic()
             answer, usage = model_turn(args.model, None, PROMPT, options, cwd, actor_env,
-                                      timeout=args.turn_timeout, trace_path=trace_file)
+                                      timeout=args.turn_timeout, trace_path=trace_file, audit_work=args.audit_model_work)
             result["actor_elapsed_s"] = round(time.monotonic() - actor_start, 2)
+            if args.audit_model_work:
+                result["work"] = model_work(root / "codex", usage)
         result.update(answer=answer, usage=usage, elapsed_s=round(time.monotonic() - start, 2))
         trace = [json.loads(line) for line in trace_file.read_text().splitlines()]
         if any("runner_error" in event for event in trace):
@@ -341,6 +382,9 @@ def main():
         "--baseline-install", type=Path,
         help="Compare a previous installer and skill with the current ones, with history enabled for both",
     )
+    parser.add_argument("--baseline-bin", help="Use the released CLI for the baseline installation")
+    parser.add_argument("--audit-model-work", action="store_true",
+                        help="Count actual model responses and outer tool calls from the disposable Codex home")
     parser.add_argument("--embedding-profile", type=Path, help="Enabled profile to create on a new disposable instance; otherwise use its active profile")
     parser.add_argument("--turn-timeout",type=int,default=180,help="Maximum seconds per actor or judge turn")
     args = parser.parse_args()
@@ -349,6 +393,13 @@ def main():
     if args.turn_timeout <= 0:
         parser.error("--turn-timeout must be positive")
     args.sessiondb_bin = shutil.which(args.sessiondb_bin)
+    if args.baseline_bin:
+        if not args.baseline_install:
+            parser.error("--baseline-bin requires --baseline-install")
+        args.baseline_bin = shutil.which(args.baseline_bin)
+        if not args.baseline_bin:
+            parser.error("Cannot find the baseline CLI")
+        args.baseline_bin = str(Path(args.baseline_bin).resolve())
     if not args.sessiondb_bin or not os.environ.get("SESSIONDB_API_KEY"):
         parser.error("Supply a SessionDB CLI and the disposable instance's SESSIONDB_API_KEY")
     try:
@@ -414,6 +465,7 @@ def main():
             ["codex", "--version"], text=True
         ).strip(),
         "history_backend": "sessiondb",
+        "audit_model_work": args.audit_model_work,
         "history_version": subprocess.check_output(
             [args.sessiondb_bin, "--version"], text=True
         ).strip(),
@@ -426,6 +478,10 @@ def main():
     }
     if args.baseline_install:
         summary["baseline_install"] = baseline_hashes
+        baseline_bin = args.baseline_bin or args.sessiondb_bin
+        summary["baseline_install"]["cli_version"] = subprocess.check_output([baseline_bin, "--version"], text=True).strip()
+        summary["baseline_install"]["cli_sha256"] = hashlib.sha256(Path(baseline_bin).read_bytes()).hexdigest()
+    summary["cli_sha256"] = hashlib.sha256(Path(args.sessiondb_bin).read_bytes()).hexdigest()
     # Codex creates executable aliases in CODEX_HOME and requires a non-/tmp location.
     scratch = Path.home() / ".local/state/sessiondb/evals/work"
     scratch.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -445,7 +501,7 @@ def main():
                     args,
                     trial_root,
                     env,
-                    history,
+                    {**history, "cli": args.baseline_bin} if arm == "baseline" and args.baseline_bin else history,
                     pair,
                     arm,
                     tab_id,

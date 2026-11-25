@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 from threading import Thread
 from urllib.parse import parse_qs, urlsplit
 
@@ -89,10 +90,15 @@ def fixture_proxy(url, key, labels, trace):
                 self.wfile.write(data)
                 media_type = response.getheader("Content-Type", "").partition(";")[0].lower()
                 payload = json.loads(data) if media_type == "application/json" or media_type.endswith("+json") else {}
+                original_ids = []
+                if self.command == "GET" and response.status == 200 and isinstance(payload, dict):
+                    if uri.path.startswith("/v1/messages/") or uri.path.endswith("/messages"):
+                        original_ids = [m["id"] for m in payload.get("data", [payload])
+                                        if isinstance(m, dict) and "id" in m and "role" in m]
                 log_event(trace, {"tool": "sessiondb", "time": start, "completed_at": now(),
                                   "method": self.command, "path": uri.path, "params": parse_qs(uri.query),
                                   "status": response.status, "request": json.loads(body) if body else None,
-                                  "evidence": evidence_texts(payload, labels), "bytes": len(data)})
+                                  "evidence": evidence_texts(payload, labels), "original_ids": original_ids, "bytes": len(data)})
             except (OSError, ValueError) as error:
                 log_event(trace, {"tool": "sessiondb", "time": start, "runner_error": str(error)})
             finally:
@@ -192,7 +198,10 @@ def verify_sandbox(root, control, auth, cwd, env, history, binary, installed):
     # must not bypass the managed proxy and connect to another host service.
     hidden = [str(control / "auth.json"), str(auth.resolve()), str(root / "world.json"),
               str(ROOT / "dev/evals/browser/side-topic.json"), str(Path(history["config"]))]
-    with socket.socket() as sentinel:
+    sessions = control / "sessions"
+    sessions.mkdir(exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=sessions) as private_session, socket.socket() as sentinel:
+        hidden.append(private_session.name)
         sentinel.bind(("127.0.0.1", 0))
         sentinel.listen()
         program = """
