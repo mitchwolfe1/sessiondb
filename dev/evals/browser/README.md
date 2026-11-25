@@ -67,6 +67,23 @@ Six matched browser states compared the v0.2.0 guidance with [an experimental in
 
 With v0.2.0 the first browser call used the native connector in all six trials. With the experimental guidance it tried the signed-out default first in all six. The experimental wording changed both the global instruction and the skill text. This comparison measures their combined effect on one task.
 
+### Astra client efficiency
+
+Six new paired browser states compared v0.2.0 to the [client with `--open-first` and batched tool discovery](https://github.com/mitchwolfe1/sessiondb/commit/2bfdb6681e189e13e4d141cf6312bb72242f6879). Each condition used its own binary and installed guidance. The corpus, live Qwen profile, GPT-6.2 Astra model, low reasoning effort and actor sandbox were shared. Order alternated with seed 71204. Package hashes were frozen before confirmation.
+
+| Median per task | v0.2.0 | v0.3.0 |
+| --- | ---: | ---: |
+| Time to final answer | 20.3 s | 17.1 s |
+| Model responses | 5 | 4 |
+| Shell and browser operations | 5 | 3 |
+| Total actor input and output tokens | 74,261 | 58,493 |
+| Actor output tokens | 337 | 268 |
+| Tokens in all visible tool results | 2,057 | 1,534 |
+
+The candidate used fewer model responses, tool calls and total tokens in every pair and finished faster in five of six. The median paired reductions were 16.5% in time, 40% in tool calls and 21.4% in total model tokens. Both clients searched the correct local scope, opened the supporting original, read the live report and cited the source in all six states. Each made two history API calls and two browser calls. The blind judge agreed with every grade. These timings measure six states of this task.
+
+Three additional paired checks used separately seeded team sessions and the installed CLI. The shared-procedure task required a teammate’s original and two details specific to the fixture. The candidate used one shell call in place of three and 27,897 total actor tokens in place of 57,419. The personal-history task required two independent originals and both citations. The candidate used three calls in place of five and 43,015 tokens in place of 58,695. Both arms answered a supplied-data arithmetic control with zero tool calls. Each of these checks used one task instance.
+
 ## Historical tool-interface trials
 
 Earlier runs exposed dedicated history tools and forced the chosen retrieval mode. The following measurements belong to that protocol.
