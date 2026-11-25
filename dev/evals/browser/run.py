@@ -132,7 +132,31 @@ def codex_events(cmd, cwd, env, prompt, timeout, trace_path):
     return events
 
 
-def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180, trace_path=None, audit_work=False):
+def empty_local_catalog(item):
+    """Recognize only Codex's own empty resource listing. Resource reads never qualify."""
+    key = {"list_mcp_resources": "resources", "list_mcp_resource_templates": "resourceTemplates"}.get(item.get("tool"))
+    if not key or item.get("server") != "codex" or item.get("status") != "completed" or item.get("error"):
+        return False
+    result = item.get("result") or {}
+    if not isinstance(result, dict) or set(result) - {"content", "structured_content"}:
+        return False
+    expected = {key: []}
+    if result.get("structured_content") not in (None, {}, expected):
+        return False
+    content = result.get("content")
+    if (not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict)
+            or content[0].get("type") != "text"):
+        return False
+    if any(value is not None for field, value in content[0].items() if field not in {"type", "text"}):
+        return False
+    try:
+        return json.loads(content[0]["text"]) == expected
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180, trace_path=None, audit_work=False,
+               allow_empty_catalog=False):
     if trace_path is None:  # Blind judge: an independent, tool-free turn.
         instructions = cwd.parent / "judge-instructions.txt"
         instructions.write_text(system_prompt)
@@ -160,9 +184,14 @@ def model_turn(model, system_prompt, prompt, options, cwd, env, *, timeout=180, 
             continue
         if trace_path is not None and item["type"] == "command_execution":
             continue
+        if (allow_empty_catalog and trace_path is not None and item["type"] == "mcp_tool_call"
+                and empty_local_catalog(item)):
+            log_event(trace_path, {"tool": "empty_local_catalog", "name": item["tool"]})
+            continue
         if (trace_path is None or item["type"] != "mcp_tool_call" or
                 (item.get("server"), item.get("tool")) != ("workstation", "browser")):
-            raise RuntimeError(f"Unexpected tool in trial: {item['type']}")
+            name = f"{item.get('server')}.{item.get('tool')}" if item["type"] == "mcp_tool_call" else item["type"]
+            raise RuntimeError(f"Unexpected tool in trial: {name}")
     answers = [i["text"] for i in items if i["type"] == "agent_message"]
     completed = [e for e in events if e["type"] == "turn.completed"]
     if not answers or not completed:
@@ -220,6 +249,7 @@ def usage_metrics(trace, encoding):
     tool_outputs = [e["output"] for e in trace if e["tool"] == "command_execution"]
     tool_outputs.extend(json.dumps(e["result"]) for e in trace if e["tool"] == "browser")
     return dict(tool_calls=sum(e["tool"] in {"command_execution", "browser"} for e in trace),
+                  empty_catalog_calls=sum(e["tool"] == "empty_local_catalog" for e in trace),
                   tool_output_tokens=sum(len(encoding.encode_ordinary(text)) for text in tool_outputs),
                   skill_body_observed=any(e["tool"] == "command_execution" and "# Search past work with SessionDB" in e["output"]
                                           for e in trace),
@@ -321,7 +351,8 @@ def run_trial(
             result["actor_started_at"] = now()
             actor_start = time.monotonic()
             answer, usage = model_turn(args.model, None, PROMPT, options, cwd, actor_env,
-                                      timeout=args.turn_timeout, trace_path=trace_file, audit_work=args.audit_model_work)
+                                      timeout=args.turn_timeout, trace_path=trace_file, audit_work=args.audit_model_work,
+                                      allow_empty_catalog=args.allow_empty_catalog)
             result["actor_elapsed_s"] = round(time.monotonic() - actor_start, 2)
             if args.audit_model_work:
                 result["work"] = model_work(root / "codex", usage)
@@ -394,6 +425,8 @@ def main():
                         help="Also run the unaided control when comparing two installations")
     parser.add_argument("--audit-model-work", action="store_true",
                         help="Count actual model responses and outer tool calls from the disposable Codex home")
+    parser.add_argument("--allow-empty-catalog", action="store_true",
+                        help="Accept audited Codex resource catalog checks only when they return empty lists")
     parser.add_argument("--embedding-profile", type=Path, help="Enabled profile to create on a new disposable instance; otherwise use its active profile")
     parser.add_argument("--turn-timeout",type=int,default=180,help="Maximum seconds per actor or judge turn")
     args = parser.parse_args()
@@ -479,6 +512,7 @@ def main():
         ).strip(),
         "history_backend": "sessiondb",
         "audit_model_work": args.audit_model_work,
+        "allow_empty_catalog": args.allow_empty_catalog,
         "history_version": subprocess.check_output(
             [args.sessiondb_bin, "--version"], text=True
         ).strip(),

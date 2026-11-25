@@ -39,6 +39,8 @@ To compare two installations with history enabled in both conditions, pass `--ba
 
 Add `--include-history-off` to an installation comparison to run the unaided control on the same states. With `--pairs 6` each of the six possible orders runs once. All three agents get identical browser access and the same prompt. The control’s sandbox preflight also checks that it has no SessionDB executable on its shell path.
 
+For tasks where agents may enumerate available sources, `--allow-empty-catalog` records Codex’s own resource and resource-template listing calls in `empty_catalog_calls`. The audit requires the list to be empty and the response to come from the local Codex catalog. The normal trial allowlist applies to resource reads and other servers.
+
 ### Isolation and evidence
 
 The controller runs the mock browser and seeds an empty instance from the [pre-cutoff corpus](side-topic.json). The actor shell has a read-only filesystem allowlist containing the synthetic home, Linux runtime, and the harness's installed instructions and sandbox executable. The code checkout, source transcripts, hidden report state, controller traces, and Codex subscription credential are outside that shell. The installed condition routes native HTTP requests through a per-trial proxy for `sessiondb.test`; it forwards fixture API reads and `POST /v1/search`. The proxy supplies the disposable instance key upstream. The control has networking disabled. A preflight checks the effective shell filesystem and direct loopback restrictions and confirms `--local` returns a seeded session on the installed connection.
@@ -85,6 +87,22 @@ Six new paired browser states compared v0.2.0 to the [client with `--open-first`
 The candidate used fewer model responses, tool calls and total tokens in every pair and finished faster in five of six. The median paired reductions were 16.5% in time, 40% in tool calls and 21.4% in total model tokens. Both clients searched the correct local scope, opened the supporting original, read the live report and cited the source in all six states. Each made two history API calls and two browser calls. The blind judge agreed with every grade. These timings measure six states of this task.
 
 Three additional paired checks used separately seeded team sessions and the installed CLI. The shared-procedure task required a teammate’s original and two details specific to the fixture. The candidate used one shell call in place of three and 27,897 total actor tokens in place of 57,419. The personal-history task required two independent originals and both citations. The candidate used three calls in place of five and 43,015 tokens in place of 58,695. Both arms answered a supplied-data arithmetic control with zero tool calls. Each of these checks used one task instance.
+
+### Astra with a history-off control
+
+A fresh `--include-history-off --audit-model-work` run used the same six states, seed 71204, frozen client builds and profile. Each of the six orderings of the three conditions ran once. The control could explore the fixture home and use the browser. Its preflights and traces verified that it had zero SessionDB access.
+
+| Browser measure | History off | v0.2.0 | v0.3.0 |
+| --- | ---: | ---: | ---: |
+| Correct live reports | 4/6 | 6/6 | 6/6 |
+| Median seconds to final response | 34.9 | 20.9 | 15.2 |
+| Median model responses | 12 | 5 | 4 |
+| Median shell and browser operations | 11 | 5 | 3 |
+| Median total actor input and output tokens | 198,243 | 74,446 | 58,478 |
+
+The medians include all attempts. Four unaided agents found the native connector through shell exploration and read the report. Two reached the sign-in tab and asked for a screenshot. Both installed clients read the live report and cited the supporting original in all six states. On the four states completed by all three conditions, v0.3.0’s median paired savings over history off were 56.3% in time, 72.7% in tool calls and 72.1% in total actor tokens. All eighteen blind grades agreed with the trace scores.
+
+In separate transfer checks, the unaided agent asked for the team’s procedure and for an example of the named teammate’s decision. Both installed versions supplied the fixture-specific facts and cited the appropriate originals, including two independent sessions for the personal question. All three answered the supplied-data arithmetic task correctly with zero tool calls. Each transfer question was run once per condition in the final comparison. An earlier supplemental attempt and a diagnostic batch were excluded from these results after the strict validator flagged local catalog listings. The final transfer run verified that all catalogs were empty and counted those checks as operations.
 
 ## Historical tool-interface trials
 

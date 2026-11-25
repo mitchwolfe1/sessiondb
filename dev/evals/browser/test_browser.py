@@ -11,12 +11,21 @@ from uuid import UUID
 
 from fixture import BIDI, NATIVE, grade, perform, write_corpus
 from installed import fixture_proxy, materialize_home
-from run import model_work, trial_order, usage_metrics
+from run import empty_local_catalog, model_work, trial_order, usage_metrics
 
 ROUTE_ID = str(UUID(int=3))
 
 
 class BrowserCase(unittest.TestCase):
+    def test_supplemental_catalog_exception_only_accepts_an_empty_local_listing(self):
+        result = {"content": [{"type": "text", "text": '{"resources": []}'}], "structured_content": None}
+        item = {"server": "codex", "tool": "list_mcp_resources", "status": "completed", "result": result}
+        self.assertTrue(empty_local_catalog(item))
+        self.assertFalse(empty_local_catalog({**item, "server": "outside"}))
+        self.assertFalse(empty_local_catalog({**item, "tool": "read_mcp_resource"}))
+        self.assertFalse(empty_local_catalog({**item, "result": {**result, "structured_content": {"resources": ["x"]}}}))
+        self.assertFalse(empty_local_catalog({**item, "result": {"content": [{"type": "text", "text": '{"resources":["x"]}'}]}}))
+
     def test_six_states_counterbalance_three_conditions(self):
         conditions = ("off", "baseline", "installed")
         orders = [trial_order(conditions, n) for n in range(1, 7)]
