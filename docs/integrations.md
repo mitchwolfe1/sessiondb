@@ -54,7 +54,7 @@ The installer copies the [history skill](../skills/sessiondb-history/SKILL.md) a
 
 The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/agent`, respectively. Existing Codex- or Pi-specific skill copies are updated in place. Rerun the script after pulling a skill update or installing another harness. It preserves text outside its marked instruction block and saves a backup beside an existing skill file when replacing different contents.
 
-For shared tasks, the skill searches team history when an earlier procedure could change the action. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
+For shared tasks, the skill searches team history when a past procedure could be useful. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
 
 Preference and cross-session follow-ups use the same CLI. Search for competing decisions, open independent original exchanges and cite the message URLs. If a source or scope cannot be resolved in SessionDB, report the gap.
 

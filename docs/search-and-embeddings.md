@@ -1,6 +1,6 @@
 # Search and embeddings
 
-Agents can search past work when a decision calls for it and open the original messages on their recorded branch. PostgreSQL keyword retrieval is available through the CLI, HTTP API and Rust SDK. An enabled embedding profile adds exact semantic and hybrid retrieval to the same endpoint and CLI.
+When prior work could be useful, agents can search SessionDB and open the original messages on their recorded branch. PostgreSQL keyword retrieval is available through the CLI, HTTP API and Rust SDK. An enabled embedding profile adds exact semantic and hybrid retrieval to the same endpoint and CLI.
 
 ## Keyword search
 

@@ -2,7 +2,7 @@
 
 Status: accepted product direction.
 
-Agents fetch history from SessionDB when a previous decision or procedure could change their next action. Search returns excerpts linked to original messages. Agents can open those messages on the recorded branch, check who said what and cite the evidence in their answers.
+Agents fetch history from SessionDB when prior work could be useful. Search returns excerpts linked to original messages. Agents can open those messages on the recorded branch, check who said what and cite the evidence in their answers.
 
 The CLI, SDK and harness integrations use the public SessionDB API. For cross-session questions, the calling agent can compare independent exchanges, look for exceptions and report gaps in coverage.
 

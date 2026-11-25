@@ -15,7 +15,7 @@ SKILL = Path("skills/sessiondb-history/SKILL.md")
 BEGIN = b"<!-- sessiondb-history:start -->"
 END = b"<!-- sessiondb-history:end -->"
 GUIDANCE = (
-    b"Use the `sessiondb-history` skill on demand when prior work could change the answer or next action. "
+    b"Use the `sessiondb-history` skill when prior work could be useful. "
     b"Search across the team for shared procedures. For a person's decisions, use `--member HANDLE` or "
     b"`--mine`. For this workstation's setup, start with `--local`. Open the original exchange and cite its message URL."
 )

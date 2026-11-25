@@ -14,7 +14,7 @@ Status: product direction with proposed v1 behavior. See the [delivery plan](roa
 
 **Search history.** Search message content by keyword and filter by project, harness, or date. Configure an embedding provider to enable semantic or hybrid retrieval.
 
-**Reuse past work on demand.** Agents search SessionDB when prior work could guide a decision and cite the original exchanges. Planned timelines, task briefings and reviewed memories will use the same source references. See [ADR 0022](decisions/0022-on-demand-history.md).
+**Reuse past work on demand.** Agents search SessionDB when prior work could be useful and cite the original exchanges. Planned timelines, task briefings and reviewed memories will use the same source references. See [ADR 0022](decisions/0022-on-demand-history.md).
 
 **Build on a common interface.** The CLI and SDK use a versioned HTTP API. Harness adapters normalize native differences while retaining the original data for export and future parsing improvements.
 

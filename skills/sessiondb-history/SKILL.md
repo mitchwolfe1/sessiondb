@@ -1,15 +1,15 @@
 ---
 name: sessiondb-history
-description: Use SessionDB to look up and cite prior team work when carrying out operational procedures, using a workstation-specific setup, or answering questions about a teammate’s decisions and preferences.
+description: Look up and cite earlier coding-agent sessions when prior work could be useful, including team procedures, workstation setup, decisions and preferences.
 ---
 
 # Search past work with SessionDB
 
-Use the configured SessionDB CLI for the whole lookup, including follow-up questions. Fetch history when earlier evidence would change the answer or the next action.
+When prior work could be useful, look it up with the configured SessionDB CLI. Use the same CLI for follow-up questions.
 
 ## Choose the scope for this question
 
-- **Shared operations.** When team practice could affect how you carry out an unfamiliar operation, look up a relevant past procedure before acting, even when the request only names the action. Start across the team. Include the actual service, queue, project or environment in the query. Check the original exchange for what worked and verify the current target. A backlog, a dead-letter queue and a local test can call for different actions.
+- **Shared operations.** When a past procedure could be useful for an unfamiliar operation, look it up before acting, even when the request only names the action. Start across the team. Include the actual service, queue, project or environment in the query. Check the original exchange for what worked and verify the current target. A backlog, a dead-letter queue and a local test can call for different actions.
 - **A particular person.** Add `--member HANDLE` for a named teammate or `--mine` for the current user's preferences. Search across that person's devices. A source label identifies the collecting member. Inspect message role, origin, quoted material and outcomes before attributing a decision.
 - **This workstation.** For a local browser profile, connector or machine setup, start with `--local` (current member and device). A shared report workflow can use team history in a separate lookup. If local evidence is missing, inspect the current setup. Another person's settings require independent verification on this machine.
 - `sessiondb config show --json` shows the member and device for this connection. `sessiondb sources list` lists registered handles and devices. If the member or device cannot be established, say which scope is unknown.
