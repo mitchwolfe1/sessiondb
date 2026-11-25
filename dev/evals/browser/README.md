@@ -49,6 +49,20 @@ Run the fixture tests with `python3 -m unittest discover -s dev/evals/browser`.
 
 In a three-state run with `gpt-6.1-sol` and the engineering-search query prefix, installed agents read the skill, ran a local hybrid search, opened the original and cited it in all three successful tasks. The controls read the correct report in 0/3 cases. The blind judge agreed on all six outcomes. These are three paired states of the same synthetic task.
 
+### Astra comparison of installed instructions
+
+Six matched browser states compared the v0.2.0 guidance with [an experimental instruction to search alongside the first independent read-only check](https://github.com/mitchwolfe1/sessiondb/commit/934c64513b861602c737b6f9be56cbb4fa5e0c6a). Both arms ran `gpt-6.2-astra` with the v0.2.0 CLI, the same seeded archive, the same active Qwen query prefix and seed 231126. Each trial made one local hybrid search and opened the original exchange. The blind judge agreed with all twelve outcome grades.
+
+| Metric | v0.2.0 | Experimental guidance |
+| --- | ---: | ---: |
+| Correct report | 6/6 | 6/6 |
+| Supporting text visible before the first browser call | 6/6 | 0/6 |
+| Cited the browser-access source in the final answer | 6/6 | 0/6 |
+| Median time to first search | 9.1 s | 16.6 s |
+| Median time to final answer | 17.7 s | 26.5 s |
+
+With v0.2.0 the first browser call used the native connector in all six trials. With the experimental guidance it tried the signed-out default first in all six. The experimental wording changed both the global instruction and the skill text. This comparison measures their combined effect on one task.
+
 ## Historical tool-interface trials
 
 Earlier runs exposed dedicated history tools and forced the chosen retrieval mode. The following measurements belong to that protocol.
