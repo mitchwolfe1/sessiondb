@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Install SessionDB's on-demand history skill for the current user's coding agents."""
+
+import argparse
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import sys
+import tempfile
+
+
+SKILL = Path("skills/sessiondb-history/SKILL.md")
+BEGIN = b"<!-- sessiondb-history:start -->"
+END = b"<!-- sessiondb-history:end -->"
+GUIDANCE = (
+    b"Use the `sessiondb-history` skill on demand when prior work could change the answer or next action. "
+    b"Search across the team for shared procedures. For a person's decisions, use `--member HANDLE` or "
+    b"`--mine`. For this workstation's setup, start with `--local`. Open the original exchange and cite its message URL."
+)
+
+
+def instruction_file(command, config):
+    if command == "claude":
+        return config / "CLAUDE.md"
+    override = config / "AGENTS.override.md"
+    if command == "codex":
+        if override.is_file() and override.read_bytes().strip():
+            return override
+    else:
+        for name in ("AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"):
+            if (config / name).is_file():
+                return config / name
+    return config / "AGENTS.md"
+
+
+def with_guidance(path, content):
+    newline = b"\r\n" if b"\r\n" in content else b"\n"
+    block = newline.join((BEGIN, GUIDANCE, END))
+    if BEGIN not in content and END not in content:
+        separator = b""
+        if content and not content.endswith(newline * 2):
+            separator = newline if content.endswith(b"\n") else newline * 2
+        return content + separator + block + newline
+    pattern = rb"^" + re.escape(BEGIN) + rb"\r?\n.*?^" + re.escape(END) + rb"(?=\r?$)"
+    match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+    if content.count(BEGIN) != 1 or content.count(END) != 1 or not match:
+        raise ValueError(f"{path}: repair the incomplete or duplicate SessionDB instruction markers and rerun")
+    return content[:match.start()] + block + content[match.end():]
+
+
+def destination(path):
+    # Keep existing dotfile links, including a Claude skill linked to the shared one.
+    for entry in (path, *path.parents):
+        if entry.is_symlink() and not entry.exists():
+            raise ValueError(f"{entry}: dangling symlink")
+    return path.resolve()
+
+
+def existing(path):
+    if path.is_file():
+        return path.read_bytes()
+    if path.exists():
+        raise ValueError(f"{path}: expected a regular file")
+    return None
+
+
+def install(path, old, new, backup):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = tempfile.NamedTemporaryFile(dir=path.parent, delete=False)
+    tmp = Path(staged.name)
+    try:
+        with staged:
+            staged.write(new)
+        current = existing(path)
+        if current == new:
+            return
+        if current != old:
+            raise ValueError(f"{path}: changed during installation; rerun to pick up the edit")
+        if old is not None:
+            tmp.chmod(stat.S_IMODE(path.stat().st_mode))
+            if backup:
+                with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".bak", delete=False) as saved:
+                    saved.write(old)
+                print(f"Backup: {saved.name}")
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dry-run", action="store_true", help="show what would change without writing files")
+    args = parser.parse_args()
+    home = Path.home()
+    detected = []
+    skills, guides = set(), set()
+    for name, command, env, default in (
+        ("Codex", "codex", "CODEX_HOME", ".codex"),
+        ("Claude Code", "claude", "CLAUDE_CONFIG_DIR", ".claude"),
+        ("Pi", "pi", "PI_CODING_AGENT_DIR", ".pi/agent"),
+    ):
+        config = Path(os.environ.get(env) or home / default).expanduser()
+        if not config.is_dir() and not shutil.which(command):
+            continue
+        detected.append(name)
+        native_skill = config / SKILL
+        shared_skill = home / ".agents" / SKILL
+        if command == "claude" or native_skill.is_file():
+            skills.add(destination(native_skill))
+        if command != "claude" and (shared_skill.is_file() or not native_skill.is_file()):
+            skills.add(destination(shared_skill))
+        guides.add(destination(instruction_file(command, config)))
+
+    if not detected:
+        print("No Codex, Claude Code or Pi installation detected.")
+        return
+    print("Detected: " + ", ".join(detected))
+    if not args.dry_run and not shutil.which("sessiondb"):
+        print("For history lookups, install the CLI from this checkout with 'cargo install --locked --path crates/cli', "
+              "then run 'sessiondb connect SERVER_URL --member HANDLE'.")
+    if skills & guides:
+        raise ValueError("a skill file and an instruction file point to the same destination")
+
+    # Check every instruction block before changing any of the detected harnesses.
+    skill = (Path(__file__).resolve().parents[1] / SKILL).read_bytes()
+    changes = []
+    for path in sorted(skills | guides):
+        old = existing(path)
+        new = skill if path in skills else with_guidance(path, old or b"")
+        if new != old:
+            changes.append((path, old, new, path in skills))
+    if not changes:
+        print("SessionDB harness integration is already up to date.")
+        return
+    for path, old, new, backup in changes:
+        action = "Update" if old is not None else "Create"
+        if args.dry_run:
+            print(f"Would {action.lower()} {path}")
+        else:
+            install(path, old, new, backup)
+            print(f"{action} {path}")
+    if not args.dry_run:
+        print("Start a new agent session to use the SessionDB history skill.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, RuntimeError) as error:
+        sys.exit(f"install-harnesses: {error}")

@@ -40,4 +40,5 @@ jobs:
           node-version: "24"
       - run: pip install pyyaml openapi-spec-validator jsonschema
       - run: python scripts/check-contracts.py
+      - run: python scripts/test_install_harnesses.py
       - run: npx --yes markdownlint-cli2@0.24.1

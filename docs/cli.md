@@ -23,6 +23,7 @@ sessiondb sync --watch
 From a checkout of the same SessionDB release, install the CLI with `cargo install --locked --path crates/cli`. Each teammate connects with the same instance API key and a distinct member handle. Use the same handle on that person's other computers. Handles accept 1–64 ASCII letters, digits, hyphens and underscores, starting with a letter or digit.
 
 ```sh
+./scripts/install-harnesses
 sessiondb connect https://sessions.example.com --member ada
 sessiondb sources add --detect
 sessiondb sync install
@@ -31,7 +32,7 @@ sessiondb config show --json
 
 The client stores the handle per server in `[members]`. Each native store has a device label, generated on first use or selected with `sources add --device-label LABEL`. During sync, the handle applies to all sources configured for that server on this client, including their earlier sessions. Check the source list before configuring a handle on a machine that also collected someone else's work. To label an offline source, use `sessiondb sources set-member SOURCE_ID ada`. To correct a label, use `sessiondb sources set-member SOURCE_ID ada --from prev-handle` and update the collecting client's configuration to match.
 
-All key holders can read the whole collection, including native exports. To give agents the lookup workflow, install the [history skill](integrations.md#on-demand-agent-lookup) on each teammate's machine.
+All key holders can read the whole collection, including native exports. The [harness installer](integrations.md#on-demand-agent-lookup) sets up the history skill and its lookup instructions for the coding agents on each teammate’s machine. For a Pi session store outside the default directory, register it with `sessiondb sources add --harness pi --root /path/to/sessions`.
 
 ## Command groups
 

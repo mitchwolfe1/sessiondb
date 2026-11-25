@@ -37,18 +37,24 @@ STS and ATIF are projections over selected conversation history. Define which br
 
 ## On-demand agent lookup
 
-The [SessionDB history skill](../skills/sessiondb-history/SKILL.md) gives shell-capable agents the search and source-reading workflow. Install the skill directory in a harness's discovered skill location. Codex and Pi can share `~/.agents/skills/sessiondb-history`. Claude Code can load the same directory through `~/.claude/skills/sessiondb-history`. A lookup uses the CLI connection already configured for that user. Skill discovery itself issues no history request.
-
-For shared tasks, the skill searches team history when an earlier procedure could change the action. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
-
-From the repository root, install the shared skill for Codex and Pi:
+Run the [harness installer](../scripts/install-harnesses) from a SessionDB checkout with Python 3. It detects Codex, Claude Code and Pi by their executable on `PATH` or their user configuration directory.
 
 ```sh
-mkdir -p ~/.agents/skills/sessiondb-history
-cp skills/sessiondb-history/SKILL.md ~/.agents/skills/sessiondb-history/
+./scripts/install-harnesses --dry-run
+./scripts/install-harnesses
 ```
 
-For Claude Code, copy the same file to `~/.claude/skills/sessiondb-history/SKILL.md` or link that directory to the shared skill.
+The installer copies the [history skill](../skills/sessiondb-history/SKILL.md) and adds a short instruction to use it on demand. Start a fresh agent session to pick up the changes. The skill uses the teammate’s configured CLI connection. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
+
+| Detected harness | User skill directory | Global instructions |
+| --- | --- | --- |
+| Codex | `~/.agents/skills/sessiondb-history` | `$CODEX_HOME/AGENTS.md`, or the active `AGENTS.override.md` |
+| Claude Code | `$CLAUDE_CONFIG_DIR/skills/sessiondb-history` | `$CLAUDE_CONFIG_DIR/CLAUDE.md` |
+| Pi | `~/.agents/skills/sessiondb-history` | The active context file in `$PI_CODING_AGENT_DIR`, defaulting to `AGENTS.md` |
+
+The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/agent`, respectively. Existing Codex- or Pi-specific skill copies are updated in place. Rerun the script after pulling a skill update or installing another harness. It preserves text outside its marked instruction block and saves a backup beside an existing skill file when replacing different contents.
+
+For shared tasks, the skill searches team history when an earlier procedure could change the action. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
 
 Preference and cross-session follow-ups use the same CLI. Search for competing decisions, open independent original exchanges and cite the message URLs. Keep preserved migration utilities outside the active harness tool list. If a source or scope cannot be resolved in SessionDB, report the gap.
 
