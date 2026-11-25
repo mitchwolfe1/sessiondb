@@ -105,16 +105,16 @@ assert not any(name.removesuffix("Page") in removed_schemas for name in SPEC["co
 for name, resource_schema in SPEC["components"]["schemas"].items():
     assert not ({"revision", "parse_status", "parse_error", "warnings"} & set(resource_schema.get("properties", {}))), name
 assert set(SPEC["components"]["schemas"]["Source"]["properties"]) == {
-    "id", "harness", "device_label", "last_synced_at", "root",
+    "id", "harness", "device_label", "member", "last_synced_at", "root",
 }
 assert set(SPEC["components"]["schemas"]["SourceCreate"]["properties"]) == {
-    "harness", "device_label", "root",
+    "harness", "device_label", "member", "root",
 }
 assert set(SPEC["components"]["schemas"]["Session"]["properties"]) == {
     "id", "project_ids", "harness", "native_session_id", "title", "tags", "recorded_cwd",
-    "started_at", "updated_at", "message_count", "relations",
+    "started_at", "updated_at", "message_count", "relations", "member", "device_label", "source_id",
 }
-for name in ["Source", "SourceCreate", "SourceFile", "FileUpload", "FileUploadResult", "Session", "Problem", "Limits"]:
+for name in ["Source", "SourceCreate", "SourceMemberUpdate", "SourceFile", "FileUpload", "FileUploadResult", "Session", "Problem", "Limits"]:
     assert set(SPEC["components"]["schemas"][name]["properties"]) == rust_fields(
         "crates/types/src/resources.rs", name,
     ), name
@@ -247,10 +247,10 @@ assert first == {
     "listSessions", "getSession", "listSessionMessages", "getMessage",
     "getMessageContent", "exportSession",
 }
-assert implementation == first | {"getArtifact", "getArtifactContent", "searchMessages", "readAroundMessage", "listEmbeddingProfiles", "createEmbeddingProfile", "getEmbeddingProfile", "updateEmbeddingProfile"}
-assert len(implementation) == 23
+assert implementation == first | {"getArtifact", "getArtifactContent", "searchMessages", "readAroundMessage", "listEmbeddingProfiles", "createEmbeddingProfile", "getEmbeddingProfile", "updateEmbeddingProfile", "setSourceMember"}
+assert len(implementation) == 24
 assert not any(re.search(r"/(?:imports|jobs|index-jobs)(?:/|$)", path) for path in SPEC["paths"])
-assert set(SPEC["paths"]["/v1/sources/{source_id}"]) == {"parameters", "get"}
+assert set(SPEC["paths"]["/v1/sources/{source_id}"]) == {"parameters", "get", "patch"}
 upload = SPEC["paths"]["/v1/sources/{source_id}/files"]["post"]
 assert upload["operationId"] == "uploadSourceFile"
 assert set(upload["responses"]) == {"200", "default"}

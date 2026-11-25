@@ -1,15 +1,24 @@
 ---
 name: sessiondb-history
-description: Look up and cite prior coding-agent work in SessionDB on demand, including follow-up questions about the user's preferences, decisions and tradeoffs across sessions.
+description: Use SessionDB to look up and cite prior team work when carrying out operational procedures, using a workstation-specific setup, or answering questions about a teammate’s decisions and preferences.
 ---
 
 # Search past work with SessionDB
 
 Use the configured SessionDB CLI for the whole lookup, including follow-up questions. Fetch history when earlier evidence would change the answer or the next action.
 
-1. Run `sessiondb search --mode hybrid --json -- "question or distinctive terms"`. The first page contains up to three excerpts. Use `--mode keyword` for a literal or quoted phrase. For recent activity, `--mode keyword --sort newest` orders matching sources by time. Filters include `--harness`, `--role`, `--after`, `--before`, `--project PROJECT_UUID` and `--include-tools`. Use the returned cursor with the same query and filters to continue.
+## Choose the scope for this question
+
+- **Shared operations.** When team practice could affect how you carry out an unfamiliar operation, look up a relevant past procedure before acting, even when the request only names the action. Start across the team. Include the actual service, queue, project or environment in the query. Check the original exchange for what worked and verify the current target. A backlog, a dead-letter queue and a local test can call for different actions.
+- **A particular person.** Add `--member HANDLE` for a named teammate or `--mine` for the current user's preferences. Search across that person's devices. A source label identifies the collecting member. Inspect message role, origin, quoted material and outcomes before attributing a decision.
+- **This workstation.** For a local browser profile, connector or machine setup, start with `--local` (current member and device). A shared report workflow can use team history in a separate lookup. If local evidence is missing, inspect the current setup. Another person's settings require independent verification on this machine.
+- `sessiondb config show --json` shows the member and device for this connection. `sessiondb sources list` lists registered handles and devices. If the member or device cannot be established, say which scope is unknown.
+
+## Search and open originals
+
+1. Run `sessiondb search --mode hybrid --json -- "question or distinctive terms"`. Add the scope flags above before `--`. The default search includes every member and unattributed sources. The first page contains up to three excerpts. Use `--mode keyword` for a literal or quoted phrase. For recent activity, `--mode keyword --sort newest` orders matching sources by time. Filters include `--harness`, `--role`, `--after`, `--before`, `--project PROJECT_UUID` and `--include-tools`. Use the returned cursor with the same query and filters to continue.
 2. Follow a hit's `show_command` to open the original exchange. It uses `sessiondb messages show MESSAGE_ID -C 2` and supplies `--leaf` when a descendant selects the branch. Use `-B` and `-A` to inspect earlier context and later corrections. To expand a truncated original, use `sessiondb messages content MESSAGE_ID`.
-3. Cite the message URL. Check the speaker, origin, date and branch. For independent evidence, compare the harness and `native_session_id` from `sessiondb sessions show SESSION_ID --json` with the current conversation. Skip self-matches, repeated prompts and quoted recaps.
+3. Cite the message URL. Check the member, device, speaker, origin, date and branch. Use the project IDs and recorded cwd to assess applicability. For independent evidence, compare the source, harness and `native_session_id` from `sessiondb sessions show SESSION_ID --json` with the current conversation. Skip self-matches, repeated prompts and quoted recaps.
 
 ## Preferences and cross-session questions
 

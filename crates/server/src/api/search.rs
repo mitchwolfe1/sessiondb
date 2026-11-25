@@ -1,6 +1,7 @@
 use super::*;
 use sessiondb_types::{
-    Role, SearchCoverage, SearchMatch, SearchMode, SearchRequest, SearchResponse, SearchSort,
+    MemberHandle, Role, SearchCoverage, SearchMatch, SearchMode, SearchRequest, SearchResponse,
+    SearchSort,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -29,6 +30,10 @@ pub(super) async fn search(
         ));
     }
     if (filters.unassigned && !filters.project_ids.is_empty())
+        || filters
+            .device_label
+            .as_deref()
+            .is_some_and(|label| !sources::valid_device(label))
         || filters
             .after
             .zip(filters.before)
@@ -118,7 +123,9 @@ pub(super) async fn search(
         .bind(request.sort == SearchSort::Newest)
         .bind(i64::from(size) + 1)
         .bind(offset)
-        .bind(operators);
+        .bind(operators)
+        .bind(filters.member.as_ref().map(MemberHandle::as_str))
+        .bind(&filters.device_label);
     if let Some(profile) = &profile {
         let vector = state
             .embedding_client
@@ -172,6 +179,10 @@ pub(super) async fn search(
         data.push(SearchMatch {
             message_id: id,
             session_id: row.try_get("session_id")?,
+            source_id: row.try_get("source_id")?,
+            member: row.try_get("member")?,
+            device_label: row.try_get("device_label")?,
+            recorded_cwd: row.try_get("recorded_cwd")?,
             leaf_id,
             show_command,
             role: row

@@ -54,6 +54,9 @@ enum Command {
         /// Read a replacement key from standard input.
         #[arg(long)]
         key_stdin: bool,
+        /// Attribute this client's selected stores on this server to a team member.
+        #[arg(long)]
+        member: Option<MemberHandle>,
     },
     Sources {
         #[command(subcommand)]
@@ -98,6 +101,13 @@ enum SourceCommand {
     Show {
         id: Uuid,
     },
+    /// Label all sessions from this source. To correct a label, name its previous value.
+    SetMember {
+        id: Uuid,
+        member: MemberHandle,
+        #[arg(long)]
+        from: Option<MemberHandle>,
+    },
     Add {
         #[arg(long)]
         detect: bool,
@@ -114,6 +124,8 @@ enum SessionCommand {
     List {
         #[command(flatten)]
         page: PageArgs,
+        #[command(flatten)]
+        provenance: ProvenanceArgs,
         #[arg(long)]
         harness: Option<Harness>,
         #[arg(long)]
@@ -196,6 +208,8 @@ enum EmbeddingCommand {
 struct SearchArgs {
     /// Ranked keywords. Use AND, OR, quotes or -word for boolean matching.
     query: String,
+    #[command(flatten)]
+    provenance: ProvenanceArgs,
     #[arg(long, default_value = "keyword")]
     mode: SearchMode,
     #[arg(long, default_value = "relevance")]
@@ -222,6 +236,44 @@ struct SearchArgs {
     include_tools: bool,
     #[arg(long)]
     tool_name: Option<String>,
+}
+
+#[derive(Args)]
+struct ProvenanceArgs {
+    /// Limit results to a collecting member.
+    #[arg(long, conflicts_with_all = ["mine", "local"])]
+    member: Option<MemberHandle>,
+    /// Limit results to an exact source device label.
+    #[arg(long, conflicts_with = "local")]
+    device: Option<String>,
+    /// Limit results to this client's member on the selected server, across devices.
+    #[arg(long, conflicts_with = "local")]
+    mine: bool,
+    /// Limit results to this client's member and device together.
+    #[arg(long)]
+    local: bool,
+}
+
+impl ProvenanceArgs {
+    fn resolve(
+        &self,
+        config: &FileConfig,
+        server: &str,
+    ) -> Result<(Option<MemberHandle>, Option<String>)> {
+        let member = if self.mine || self.local {
+            Some(config.members.get(server).with_context(|| format!(
+                "set your member on this server with sessiondb connect {server} --member HANDLE"
+            ))?.clone())
+        } else {
+            self.member.clone()
+        };
+        let device = if self.local {
+            Some(config.device_label.clone().context("no device label configured; register a source or supply an explicit --device label with --mine")?)
+        } else {
+            self.device.clone()
+        };
+        Ok((member, device))
+    }
 }
 
 #[derive(Subcommand)]
@@ -579,6 +631,7 @@ async fn run(args: &Cli) -> Result<()> {
                 std::env::var_os("SESSIONDB_API_KEY").is_some() || config.saved_key(url).is_some()
             });
             let value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,
+                "member":selected.as_ref().and_then(|url| config.members.get(url)), "device_label": config.device_label,
                 "api_key":has_key.then_some("[redacted]"),"sources":config.sources,"sync":config.sync});
             emit(args, &value, |out| {
                 writeln!(
@@ -588,7 +641,11 @@ async fn run(args: &Cli) -> Result<()> {
                 )
             })?;
         }
-        Command::Connect { url, key_stdin } => connect(args, url, *key_stdin).await?,
+        Command::Connect {
+            url,
+            key_stdin,
+            member,
+        } => connect(args, url, *key_stdin, member.as_ref()).await?,
         Command::Sources { command } => {
             let _writer = if matches!(command, SourceCommand::Add { .. }) {
                 Some(config::write_lock(&args.config)?)
@@ -602,15 +659,12 @@ async fn run(args: &Cli) -> Result<()> {
             let mut config = load_config(args).await?;
             let state = LocalState::open(&args.state_dir).await?;
             let _lock = sync::lock(&state.directory)?;
-            let device = if let Some(device) = &config.device_label {
-                device.clone()
-            } else {
+            if config.device_label.is_none() {
                 let _writer = config::write_lock(&args.config)?;
                 config = load_config(args).await?;
-                let device = config::device(&mut config);
+                config::device(&mut config);
                 config::save(&args.config, &config)?;
-                device
-            };
+            }
             if *watch {
                 state.upgrade_watch_state().await?;
             }
@@ -651,10 +705,16 @@ async fn run(args: &Cli) -> Result<()> {
                     let mut results = Vec::new();
                     let mut first_error = None;
                     let info = client.info().await?;
+                    let device = config
+                        .device_label
+                        .as_deref()
+                        .context("no device label configured")?;
+                    let member = config.members.get(client.server());
                     for source in &sources {
                         let result = async {
                             let registered =
-                                sync::ensure_source(&client, &state, &device, source).await?;
+                                sync::ensure_source(&client, &state, device, member, source)
+                                    .await?;
                             sync::source(
                                 &client,
                                 &state,
@@ -737,10 +797,12 @@ async fn run(args: &Cli) -> Result<()> {
             }
         }
         Command::Sessions { command } => {
-            let client = client_for(args, &load_config(args).await?)?;
+            let config = load_config(args).await?;
+            let client = client_for(args, &config)?;
             match command {
                 SessionCommand::List {
                     page,
+                    provenance,
                     harness,
                     unassigned,
                     project,
@@ -748,7 +810,10 @@ async fn run(args: &Cli) -> Result<()> {
                     after,
                     before,
                 } => {
+                    let (member, device_label) = provenance.resolve(&config, client.server())?;
                     let filter = SessionFilter {
+                        member,
+                        device_label,
                         limit: Some(page.limit),
                         cursor: page.cursor.clone(),
                         project_id: *project,
@@ -764,9 +829,11 @@ async fn run(args: &Cli) -> Result<()> {
                         for s in &value.data {
                             writeln!(
                                 out,
-                                "{}\t{}\t{}",
+                                "{}\t{}\t{}\t{}\t{}",
                                 s.id,
                                 s.harness,
+                                s.member.as_deref().unwrap_or("unattributed"),
+                                clean(s.device_label.as_deref().unwrap_or("unknown device")),
                                 clean(&s.title).replace('\n', " ")
                             )?;
                         }
@@ -778,10 +845,12 @@ async fn run(args: &Cli) -> Result<()> {
                     emit(args, &value, |out| {
                         writeln!(
                             out,
-                            "{}\nID: {}\nHarness: {}\nDirectory: {}\nMessages: {}",
+                            "{}\nID: {}\nHarness: {}\nMember: {}\nDevice: {}\nDirectory: {}\nMessages: {}",
                             clean(&value.title),
                             value.id,
                             value.harness,
+                            value.member.as_deref().unwrap_or("unattributed"),
+                            clean(value.device_label.as_deref().unwrap_or("unknown")),
                             clean(value.recorded_cwd.as_deref().unwrap_or("unknown")),
                             value.message_count
                         )
@@ -931,7 +1000,9 @@ async fn run(args: &Cli) -> Result<()> {
             })?;
         }
         Command::Search(search) => {
-            let client = client_for(args, &load_config(args).await?)?;
+            let config = load_config(args).await?;
+            let client = client_for(args, &config)?;
+            let (member, device_label) = search.provenance.resolve(&config, client.server())?;
             let result = client
                 .search(&SearchRequest {
                     query: search.query.clone(),
@@ -940,6 +1011,8 @@ async fn run(args: &Cli) -> Result<()> {
                     limit: Some(search.limit),
                     cursor: search.cursor.clone(),
                     filters: SearchFilters {
+                        member,
+                        device_label,
                         project_ids: search.project.clone(),
                         unassigned: search.unassigned,
                         harnesses: search.harness.clone(),
@@ -956,10 +1029,12 @@ async fn run(args: &Cli) -> Result<()> {
                 for hit in &result.data {
                     writeln!(
                         out,
-                        "{}  [{}]  {}",
+                        "{}  [{}]  {}  {} @ {}",
                         clean(&hit.title),
                         hit.session_id,
-                        hit.harness
+                        hit.harness,
+                        hit.member.as_deref().unwrap_or("unattributed"),
+                        clean(hit.device_label.as_deref().unwrap_or("unknown device"))
                     )?;
                     write!(out, "{}", hit.role)?;
                     if let Some(name) = &hit.tool_name {
@@ -1074,12 +1149,20 @@ async fn stdin_key(origin: &str) -> Result<String> {
     Ok(input.trim_end_matches(['\r', '\n']).to_owned())
 }
 
-async fn verify_key(origin: &str, key: &str, timeout: Duration) -> sessiondb_client::Result<()> {
-    Client::new(origin, key.to_owned(), timeout)?.info().await?;
-    Ok(())
+async fn verify_key(
+    origin: &str,
+    key: &str,
+    timeout: Duration,
+) -> sessiondb_client::Result<ServerInfo> {
+    Client::new(origin, key.to_owned(), timeout)?.info().await
 }
 
-async fn connect(args: &Cli, url: &str, key_stdin: bool) -> Result<()> {
+async fn connect(
+    args: &Cli,
+    url: &str,
+    key_stdin: bool,
+    member: Option<&MemberHandle>,
+) -> Result<()> {
     let origin = config::normalize_server(url)?;
     let config = load_config(args).await?;
     let explicit = if key_stdin {
@@ -1093,21 +1176,28 @@ async fn connect(args: &Cli, url: &str, key_stdin: bool) -> Result<()> {
         (None, None) => (prompt_key(&origin)?, false),
     };
     let timeout = Duration::from_secs(args.timeout);
-    if let Err(error) = verify_key(&origin, &key, timeout).await {
-        if !from_disk || !authentication_failure(&error) {
-            return Err(error.into());
+    let info = match verify_key(&origin, &key, timeout).await {
+        Ok(info) => info,
+        Err(error) if from_disk && authentication_failure(&error) => {
+            if !std::io::stdin().is_terminal() {
+                return Err(anyhow::Error::new(error).context(
+                    "saved API key rejected; reconnect in a terminal or supply a replacement key",
+                ));
+            }
+            eprintln!("Saved API key rejected.");
+            key = prompt_key(&origin)?;
+            verify_key(&origin, &key, timeout).await?
         }
-        if !std::io::stdin().is_terminal() {
-            return Err(anyhow::Error::new(error).context(
-                "saved API key rejected; reconnect in a terminal or supply a replacement key",
-            ));
-        }
-        eprintln!("Saved API key rejected.");
-        key = prompt_key(&origin)?;
-        verify_key(&origin, &key, timeout).await?;
+        Err(error) => return Err(error.into()),
+    };
+    if member.is_some() && !info.capabilities.iter().any(|s| s == "setSourceMember") {
+        bail!("this server needs the team history upgrade before configuring a member");
     }
     let _lock = config::write_lock(&args.config)?;
     let mut latest = load_config(args).await?;
+    if let Some(member) = member {
+        latest.members.insert(origin.clone(), member.clone());
+    }
     latest.remember(origin.clone(), key);
     config::save(&args.config, &latest)?;
     emit(args, &json!({"server":origin}), |out| {
@@ -1126,20 +1216,42 @@ async fn source_command(
             let value = client.sources(&page.options()).await?;
             emit(args, &value, |out| {
                 for s in &value.data {
-                    writeln!(out, "{}\t{}\t{}", s.id, s.harness, clean(&s.root))?;
+                    writeln!(
+                        out,
+                        "{}\t{}\t{}\t{}\t{}",
+                        s.id,
+                        s.harness,
+                        s.member.as_deref().unwrap_or("unattributed"),
+                        clean(&s.device_label),
+                        clean(&s.root)
+                    )?;
                 }
                 Ok(())
             })?;
         }
-        SourceCommand::Show { id } => {
-            let value = client.source(*id).await?;
+        SourceCommand::Show { id } | SourceCommand::SetMember { id, .. } => {
+            let value = if let SourceCommand::SetMember { member, from, .. } = command {
+                client
+                    .set_source_member(
+                        *id,
+                        &SourceMemberUpdate {
+                            member: member.clone(),
+                            expected_member: from.clone(),
+                        },
+                    )
+                    .await?
+            } else {
+                client.source(*id).await?
+            };
             emit(args, &value, |out| {
                 writeln!(
                     out,
-                    "{}\n{}\n{}",
+                    "{}\n{}\n{}\nMember: {}\nDevice: {}",
                     value.id,
                     value.harness,
-                    clean(&value.root)
+                    clean(&value.root),
+                    value.member.as_deref().unwrap_or("unattributed"),
+                    clean(&value.device_label)
                 )
             })?;
         }
@@ -1176,7 +1288,14 @@ async fn source_command(
                     harness,
                     root,
                 };
-                let source = sync::ensure_source(&client, &state, &device, &configured).await?;
+                let source = sync::ensure_source(
+                    &client,
+                    &state,
+                    &device,
+                    config.members.get(client.server()),
+                    &configured,
+                )
+                .await?;
                 if !config.sources.contains(&configured) {
                     config.sources.push(configured);
                 }

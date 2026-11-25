@@ -32,6 +32,8 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 
 `connect` prompts for the instance API key and saves it for that server. On Linux and macOS, `sync install` starts a login service that reads the same client config. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. [Background sync](docs/sync.md#background-service) covers setup and retries.
 
+For a shared team archive, [connect each teammate with a member handle](docs/cli.md#set-up-a-teammate). Search everyone’s work by default, use `--member mark` for a particular person or `--local` for procedures tied to this workstation.
+
 ## Features
 
 - **Automatic sync:** collect new and updated sessions from multiple harnesses and machines.

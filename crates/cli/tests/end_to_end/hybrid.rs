@@ -126,9 +126,10 @@ async fn native_vectors_backfill_filter_reuse_and_recover() {
     let src = source(&api, Harness::Codex, "hybrid-fixture").await;
     let original = session("mixed", "lavender beds", "unique raptor nest");
     let file = ingest(&api, src.id, "first.jsonl", original.clone(), None).await;
+    let other_source = source(&api, Harness::Codex, "second-device").await;
     let other = ingest(
         &api,
-        src.id,
+        other_source.id,
         "second.jsonl",
         session("second", "raptor inquiry", "other answer"),
         None,
@@ -294,7 +295,48 @@ async fn native_vectors_backfill_filter_reuse_and_recover() {
             file.session_ids[0]
         );
     }
+    let member = SourceMemberUpdate {
+        member: "Mark".parse().unwrap(),
+        expected_member: None,
+    };
     let calls = fixture.documents.lock().unwrap().clone();
+    api.set_source_member(src.id, &member).await.unwrap();
+    for mode in [
+        SearchMode::Keyword,
+        SearchMode::Semantic,
+        SearchMode::Hybrid,
+    ] {
+        let mut scoped = SearchRequest {
+            mode,
+            filters: SearchFilters {
+                member: Some(member.member.clone()),
+                ..Default::default()
+            },
+            ..keywords("raptor")
+        };
+        let page = api.search(&scoped).await.unwrap();
+        assert_eq!(page.data.len(), 1);
+        let hit = &page.data[0];
+        assert_eq!(hit.session_id, file.session_ids[0]);
+        assert_eq!(hit.member.as_deref(), Some("mark"));
+        assert_eq!(hit.source_id, Some(src.id));
+        assert_eq!(hit.device_label.as_deref(), Some("hybrid-fixture"));
+        assert_eq!(page.coverage.keyword_ready_messages, 2);
+        if mode != SearchMode::Keyword {
+            assert_eq!(page.coverage.embedding_eligible_passages, 1);
+            assert_eq!(page.coverage.embedded_passages, 1);
+        }
+        scoped.filters.device_label = Some("second-device".into());
+        let empty = api.search(&scoped).await.unwrap();
+        assert!(empty.data.is_empty());
+        assert_eq!(empty.coverage.keyword_ready_messages, 0);
+        assert_eq!(empty.coverage.embedding_eligible_passages, 0);
+        scoped.filters.member = None;
+        assert_eq!(
+            api.search(&scoped).await.unwrap().data[0].session_id,
+            other.session_ids[0]
+        );
+    }
     let repeat = api
         .upload_file(
             src.id,
@@ -332,6 +374,14 @@ async fn native_vectors_backfill_filter_reuse_and_recover() {
     )
     .await;
     assert_eq!(rewritten.session_ids, file.session_ids);
+    assert_eq!(
+        api.session(rewritten.session_ids[0])
+            .await
+            .unwrap()
+            .member
+            .as_deref(),
+        Some("mark")
+    );
     let current = api
         .messages(file.session_ids[0], &MessageFilter::default())
         .await

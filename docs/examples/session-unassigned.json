@@ -1,5 +1,8 @@
 {
   "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "source_id": "44444444-4444-4444-8444-444444444444",
+  "device_label": "Ada laptop",
+  "member": "ada",
   "project_ids": [],
   "harness": "codex",
   "native_session_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",

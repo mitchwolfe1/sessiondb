@@ -41,7 +41,7 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 | Method | Path | Meaning |
 | --- | --- | --- |
 | GET, POST | `/sources` | List/register collection sources. |
-| GET | `/sources/{source_id}` | Inspect source provenance; clients own stopping/starting collection. |
+| GET, PATCH | `/sources/{source_id}` | Inspect a source or set its collecting member. |
 | GET, POST | `/sources/{source_id}/files` | List originals or synchronously accept one multipart file upload. |
 | GET | `/sources/{source_id}/files/{file_id}/generations` | List preserved original generations. |
 | GET | `/sources/{source_id}/files/{file_id}/content` | Download current or selected original generation, with optional byte Range. |
@@ -71,13 +71,17 @@ Relative resource paths below use the prefix `/v1`. Service paths are shown in f
 
 ## Session and message queries
 
-Session lists support `project_id`, `unassigned`, `harness`, `tag`, `after`, `before`, `sort`, `cursor`, and `limit`. `project_id` matches optional associations; `unassigned=true` selects an empty association set and cannot be combined with a project filter. All filters narrow the shared collection without changing access.
+Session lists support `member`, `device_label`, `project_id`, `unassigned`, `harness`, `tag`, `after`, `before`, `sort`, `cursor`, and `limit`. `project_id` matches optional associations; `unassigned=true` selects an empty association set and cannot be combined with a project filter. All filters narrow the shared collection without changing access.
 
-Session detail contains title, tags, `project_ids`, recorded cwd, harness/native IDs, activity times, relationships, and counts. An empty project array is valid. Bodies remain separate. Starting cwd need not lie inside a project directory.
+Session detail includes the original collecting source ID, its member handle (null until attributed), device label, title, tags, `project_ids`, recorded cwd, harness/native IDs, activity times, relationships, and counts. An empty project array is valid. Bodies remain separate. Starting cwd need not lie inside a project directory.
 
 Message/event lists default to all historical records. `leaf_id` chooses conversation ancestry where supported; unresolved structural links remain explicit rather than inventing exact model context. Cursors bind filters and ordering but do not guarantee a snapshot while data changes.
 
 Content follows the [typed block union](normalized-content.md). Bound previews at 64 KiB of UTF-8; oversized structured blocks become `content_reference` rather than broken JSON. `truncated` makes omissions explicit. Full-content responses exclude preview references. Expansion reads current content without a snapshot guarantee. Artifact bytes remain separate. Content URLs are generated for the current public server address.
+
+## Source attribution
+
+`POST /sources` accepts an optional `member`. Handles are case-insensitive and returned in lowercase. `PATCH /sources/{source_id}` accepts `{"member":"ada"}` for an unattributed source. To correct a label, supply the previous handle in `expected_member`. A repeat of the desired value succeeds. A conflicting update returns HTTP 409 `source_member_conflict`. Each key holder can update these labels and read the full archive.
 
 ## Project assignment
 

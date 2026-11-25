@@ -2,13 +2,16 @@ use super::*;
 use crate::objects::ObjectError;
 use axum::{body::Body, http::HeaderMap};
 use serde::Deserialize;
-use sessiondb_types::{Harness, ListOptions, Source, SourceCreate, SourceFile};
+use sessiondb_types::{
+    Harness, ListOptions, MemberHandle, Source, SourceCreate, SourceFile, SourceMemberUpdate,
+};
 use sqlx::postgres::PgRow;
 use tokio_util::io::ReaderStream;
 
 pub(crate) fn source(row: &PgRow) -> ApiResult<Source> {
     Ok(Source {
         id: row.get("id"),
+        member: row.get("member"),
         harness: row
             .get::<String, _>("harness")
             .parse()
@@ -44,16 +47,16 @@ pub(super) async fn create(
     if input.root.is_empty()
         || input.root.len() > 4096
         || input.root.chars().any(char::is_control)
-        || input.device_label.is_empty()
-        || input.device_label.len() > 200
+        || !valid_device(&input.device_label)
     {
         return Err(ApiError::bad(
             "invalid_source",
             "A source needs a device label and native store root.",
         ));
     }
-    let row = sqlx::query("INSERT INTO sources(id,harness,device_label,root) VALUES($1,$2,$3,$4) ON CONFLICT(harness,device_label,root) DO NOTHING RETURNING *")
-        .bind(Uuid::new_v4()).bind(input.harness.as_str()).bind(&input.device_label).bind(&input.root).fetch_optional(&state.pool).await?;
+    let row = sqlx::query("INSERT INTO sources(id,harness,device_label,root,member) VALUES($1,$2,$3,$4,$5) ON CONFLICT(harness,device_label,root) DO NOTHING RETURNING *")
+        .bind(Uuid::new_v4()).bind(input.harness.as_str()).bind(&input.device_label).bind(&input.root)
+        .bind(input.member.as_ref().map(MemberHandle::as_str)).fetch_optional(&state.pool).await?;
     let row = row.ok_or_else(|| {
         ApiError::conflict(
             "source_exists",
@@ -72,6 +75,35 @@ pub(super) async fn create(
         Json(result),
     )
         .into_response())
+}
+pub(super) fn valid_device(label: &str) -> bool {
+    !label.is_empty() && label.len() <= 200 && !label.contains('\0')
+}
+
+pub(super) async fn set_member(
+    State(state): State<Arc<AppState>>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(input): ApiJson<SourceMemberUpdate>,
+) -> ApiResult<Json<Source>> {
+    let row = sqlx::query(
+        "UPDATE sources SET member=$2 WHERE id=$1
+         AND (member IS NOT DISTINCT FROM $3 OR member=$2) RETURNING *",
+    )
+    .bind(id)
+    .bind(input.member.as_str())
+    .bind(input.expected_member.as_ref().map(MemberHandle::as_str))
+    .fetch_optional(&state.pool)
+    .await?;
+    match row {
+        Some(row) => Ok(Json(source(&row)?)),
+        None => {
+            read(&state, id).await?;
+            Err(ApiError::conflict(
+                "source_member_conflict",
+                "The source has a different member. Inspect the source and supply its current handle to correct it.",
+            ))
+        }
+    }
 }
 pub(super) async fn get(
     State(state): State<Arc<AppState>>,

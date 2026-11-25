@@ -282,6 +282,27 @@ paths:
                 $ref: '#/components/schemas/Source'
       x-first-build: true
       x-implemented: true
+    patch:
+      operationId: setSourceMember
+      tags:
+      - sources
+      summary: Attribute a native store and its history to a team member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceMemberUpdate'
+      responses:
+        '200':
+          description: Updated source or an idempotent repeat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Source'
+        default:
+          $ref: '#/components/responses/Problem'
+      x-implemented: true
   /v1/sources/{source_id}/files:
     parameters:
     - name: source_id
@@ -494,6 +515,14 @@ paths:
         schema:
           type: string
         description: Opaque cursor bound to filters and ordering; no snapshot guarantee.
+      - name: member
+        in: query
+        schema:
+          $ref: '#/components/schemas/MemberHandle'
+      - name: device_label
+        in: query
+        schema:
+          type: string
       - name: project_id
         in: query
         schema:
@@ -1171,6 +1200,20 @@ components:
       - codex
       - claude
       - pi
+    MemberHandle:
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+      description: Team-chosen handle for a collecting member, normalized to lowercase.
+    SourceMemberUpdate:
+      type: object
+      additionalProperties: false
+      required: [member]
+      properties:
+        member:
+          $ref: '#/components/schemas/MemberHandle'
+        expected_member:
+          $ref: '#/components/schemas/MemberHandle'
+          description: Current handle when correcting a label. Omit to label an unattributed source.
     Source:
       type: object
       properties:
@@ -1186,6 +1229,10 @@ components:
           - type: string
             format: date-time
           - type: 'null'
+        member:
+          anyOf:
+          - $ref: '#/components/schemas/MemberHandle'
+          - type: 'null'
         root:
           type: string
           minLength: 1
@@ -1196,6 +1243,7 @@ components:
       - id
       - harness
       - device_label
+      - member
       - last_synced_at
       - root
     SourceCreate:
@@ -1205,6 +1253,8 @@ components:
           $ref: '#/components/schemas/Harness'
         device_label:
           type: string
+        member:
+          $ref: '#/components/schemas/MemberHandle'
         root:
           type: string
           minLength: 1
@@ -1360,6 +1410,15 @@ components:
           format: uuid
         harness:
           $ref: '#/components/schemas/Harness'
+        source_id:
+          type: string
+          format: uuid
+        device_label:
+          type: string
+        member:
+          anyOf:
+          - $ref: '#/components/schemas/MemberHandle'
+          - type: 'null'
         native_session_id:
           type: string
         title:
@@ -1398,6 +1457,9 @@ components:
       - id
       - harness
       - native_session_id
+      - source_id
+      - device_label
+      - member
       - title
       - tags
       - updated_at
@@ -1409,6 +1471,9 @@ components:
         project_ids:
         - 22222222-2222-4222-8222-222222222222
         harness: claude
+        source_id: 55555555-5555-4555-8555-555555555555
+        device_label: Ada laptop
+        member: ada
         native_session_id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
         title: Payment retry investigation
         tags:
@@ -1421,6 +1486,9 @@ components:
       - id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
         project_ids: []
         harness: codex
+        source_id: 44444444-4444-4444-8444-444444444444
+        device_label: Ada laptop
+        member: ada
         native_session_id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
         title: Home directory session
         tags: []
@@ -1636,6 +1704,10 @@ components:
     SearchFilters:
       type: object
       properties:
+        member:
+          $ref: '#/components/schemas/MemberHandle'
+        device_label:
+          type: string
         project_ids:
           type: array
           items:
@@ -1732,6 +1804,19 @@ components:
     SearchMatch:
       type: object
       properties:
+        source_id:
+          type: string
+          format: uuid
+        device_label:
+          type: string
+        member:
+          anyOf:
+          - $ref: '#/components/schemas/MemberHandle'
+          - type: 'null'
+        recorded_cwd:
+          anyOf:
+          - type: string
+          - type: 'null'
         session_id:
           type: string
           format: uuid
@@ -1787,6 +1872,10 @@ components:
       additionalProperties: true
       required:
       - session_id
+      - source_id
+      - device_label
+      - member
+      - recorded_cwd
       - message_id
       - title
       - harness
@@ -1852,6 +1941,10 @@ components:
       examples:
       - data:
         - session_id: 66666666-6666-4666-8666-666666666666
+          source_id: 55555555-5555-4555-8555-555555555555
+          device_label: Ada laptop
+          member: ada
+          recorded_cwd: /home/ada
           message_id: 77777777-7777-4777-8777-777777777777
           project_ids:
           - 22222222-2222-4222-8222-222222222222

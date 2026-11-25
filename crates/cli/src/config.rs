@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use directories::{BaseDirs, ProjectDirs};
 use serde::{Deserialize, Serialize};
-use sessiondb_types::Harness;
+use sessiondb_types::{Harness, MemberHandle};
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -14,6 +14,8 @@ pub struct FileConfig {
     pub server: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     api_keys: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub members: BTreeMap<String, MemberHandle>,
     pub device_label: Option<String>,
     pub sources: Vec<ConfiguredSource>,
     pub project_rules: Vec<ProjectRule>,
@@ -32,6 +34,7 @@ pub struct ConfiguredSource {
 struct StoredConfig {
     server: Option<String>,
     api_keys: BTreeMap<String, String>,
+    members: BTreeMap<String, MemberHandle>,
     device_label: Option<String>,
     sources: Vec<StoredSource>,
     project_rules: Vec<ProjectRule>,
@@ -137,21 +140,25 @@ pub async fn load(
             }
         }
     }
-    let mut api_keys = BTreeMap::new();
-    for (url, key) in stored.api_keys {
-        let origin = normalize_server(&url)?;
-        if api_keys.insert(origin, key).is_some() {
-            bail!("duplicate API key entries for the same server URL");
-        }
-    }
     Ok(FileConfig {
         server,
-        api_keys,
+        api_keys: normalize_entries(stored.api_keys, "API key")?,
+        members: normalize_entries(stored.members, "member")?,
         device_label: stored.device_label,
         sources,
         project_rules: stored.project_rules,
         sync: stored.sync,
     })
+}
+
+fn normalize_entries<T>(entries: BTreeMap<String, T>, label: &str) -> Result<BTreeMap<String, T>> {
+    let mut result = BTreeMap::new();
+    for (url, value) in entries {
+        if result.insert(normalize_server(&url)?, value).is_some() {
+            bail!("duplicate {label} entries for the same server URL");
+        }
+    }
+    Ok(result)
 }
 
 impl StoredConfig {

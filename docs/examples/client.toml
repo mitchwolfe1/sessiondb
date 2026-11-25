@@ -1,6 +1,9 @@
 # sessiondb connect writes verified per-origin credentials to [api_keys] in this private client file.
 server = "https://sessions.example.com"
 
+[members]
+"https://sessions.example.com" = "ada"
+
 [[sources]]
 server = "https://sessions.example.com"
 harness = "codex"

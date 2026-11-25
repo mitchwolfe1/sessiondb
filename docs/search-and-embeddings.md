@@ -4,13 +4,13 @@ Agents can search past work when a decision calls for it and open the original m
 
 ## Keyword search
 
-`sessiondb search "browser connector"` ranks exchanges across the selected archive and returns three excerpts by default. Each hit includes its session and message IDs, role, origin, available timestamp, content block index, branch endpoint and original message URL. Excerpts contain at most 480 characters. A cursor opens more results, including additional exchanges in the same session.
+`sessiondb search "browser connector"` ranks exchanges across the selected archive and returns three excerpts by default. Each hit includes its collecting source ID, member (null if unknown), device, project IDs, recorded cwd, session and message IDs, role, origin, available timestamp, content block index, branch endpoint and original message URL. Excerpts contain at most 480 characters. A cursor opens more results, including additional exchanges in the same session.
 
 Plain keywords match English full-text lexemes. Exchanges covering more distinct query terms rank first, followed by PostgreSQL cover-density rank with document-length normalization. Use `AND`, `OR`, quoted phrases or `-word` to request web-search matching. Each alternative must require a positive searchable term. The winning passage supplies the excerpt. Shared branch prefixes and multiple matching segments of an original message yield one source citation.
 
 An exchange follows a recorded user request through its same-branch assistant responses, including responses separated by tool activity. Standalone messages have their own entries. The index uses full text blocks, JSON values and artifact descriptions. Reasoning and binary data are outside the keyword corpus. Tool calls and results form separate entries, selectable with `--include-tools`, `--role tool` or `--tool-name NAME`. Tool hits include the recorded name when available. A result inherits its name from its unambiguous recorded call ID.
 
-Large exchanges split at block boundaries. Large individual blocks split into word groups, with a hard bound for unbroken strings. Each segment retains its original message and block index. Role and date filters apply to contributing passages before scoring. Projects, tags and harness filters use current session metadata.
+Large exchanges split at block boundaries. Large individual blocks split into word groups, with a hard bound for unbroken strings. Each segment retains its original message and block index. Role and date filters apply to contributing passages before scoring. Projects, tags and harness filters use current session metadata. The default ranking includes all teammates. Member and exact device filters restrict the candidate sessions and coverage before keyword, vector or fused ranking.
 
 Migrations 0004 and 0005 index accepted messages one session at a time. Migration 0005 packs oversized blocks into whole-word groups. File acceptance publishes updated passages and exchange vectors in the same transaction as the messages. Identical retries reuse the accepted projection. Search coverage counts distinct messages with an eligible passage in the selected scope, independently of the query and page.
 
@@ -47,7 +47,7 @@ PostgreSQL persists pending inputs, expiring claims and retry times. An orderly 
 | `semantic` | Embed the query and rank eligible exchange segments by exact pgvector cosine distance. |
 | `hybrid` | Fuse up to 200 keyword and 200 semantic exchange ranks with reciprocal rank fusion, using `1 / (60 + rank)` per contributing list. Newly accepted text participates through keywords while vectors catch up. |
 
-Apply project, harness, tag, tool, role and time filters before scoring. For an intact exchange, use its whole-text vector. When role, date or tool-name filters select a subset, score only the eligible members using the closest available member vector. Select a cited member by query similarity, with lexical evidence available while individual members are pending. Each result identifies its contributing retrieval methods. The same original message appears once.
+Apply member, device, project, harness, tag, tool, role and time filters before scoring. For an intact exchange, use its whole-text vector. When role, date or tool-name filters select a subset, score only the eligible members using the closest available member vector. Select a cited member by query similarity, with lexical evidence available while individual members are pending. Each result identifies its contributing retrieval methods. The same original message appears once.
 
 Vector-mode responses identify the profile, the number of eligible exchange segments and the number with a usable vector for the selected filters. Keyword-only responses identify keyword-ready messages. Cursors bind the profile, mode, query, filters and ordering. Newest ordering applies to keyword search.
 

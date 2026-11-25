@@ -8,9 +8,14 @@ use sessiondb_types::{
 use sqlx::{Postgres, QueryBuilder, postgres::PgRow};
 use tokio_util::io::ReaderStream;
 
+const SESSION_SELECT: &str = "SELECT s.*, src.member, src.device_label FROM sessions s
+    JOIN sources src ON src.id=s.source_id";
+
 async fn read(state: &AppState, id: Uuid) -> ApiResult<PgRow> {
-    sqlx::query("SELECT * FROM sessions WHERE id=$1")
-        .bind(id)
+    QueryBuilder::new(SESSION_SELECT)
+        .push(" WHERE s.id=")
+        .push_bind(id)
+        .build()
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(ApiError::not_found)
@@ -25,6 +30,9 @@ async fn session(state: &AppState, row: &PgRow) -> ApiResult<Session> {
     .await?;
     let mut session = Session {
         id,
+        source_id: row.try_get("source_id")?,
+        device_label: row.try_get("device_label")?,
+        member: row.try_get("member")?,
         harness: row
             .try_get::<String, _>("harness")?
             .parse()
@@ -90,7 +98,17 @@ pub(super) async fn list(
     filter.limit = None;
     let scope = scope(("sessions", &filter))?;
     let cursor = decode_cursor(value.as_deref(), &scope)?;
-    let mut q = QueryBuilder::<Postgres>::new("SELECT s.* FROM sessions s WHERE true");
+    let mut q = QueryBuilder::<Postgres>::new(SESSION_SELECT);
+    q.push(" WHERE true");
+    if let Some(member) = &filter.member {
+        q.push(" AND src.member=").push_bind(member.as_str());
+    }
+    if let Some(label) = &filter.device_label {
+        if !sources::valid_device(label) {
+            return Err(ApiError::bad("invalid_filter", "Invalid device label."));
+        }
+        q.push(" AND src.device_label=").push_bind(label);
+    }
     if let Some(h) = filter.harness {
         q.push(" AND s.harness=").push_bind(h.as_str());
     }

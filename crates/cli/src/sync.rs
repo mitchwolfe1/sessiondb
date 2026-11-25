@@ -7,7 +7,8 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use sessiondb_client::Client;
 use sessiondb_types::{
-    FileUpload, Harness, ListOptions, ServerInfo, Source, SourceCreate, SourceFile,
+    FileUpload, Harness, ListOptions, MemberHandle, ServerInfo, Source, SourceCreate, SourceFile,
+    SourceMemberUpdate,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -24,6 +25,7 @@ pub async fn ensure_source(
     client: &Client,
     state: &LocalState,
     device: &str,
+    member: Option<&MemberHandle>,
     configured: &ConfiguredSource,
 ) -> Result<Source> {
     let root = expand(&configured.root)?;
@@ -38,7 +40,7 @@ pub async fn ensure_source(
         .await?
     {
         match client.source(id).await {
-            Ok(source) => return Ok(source),
+            Ok(source) => return attribute_source(client, source, member).await,
             Err(sessiondb_client::Error::Problem(p)) if p.status == 404 => {}
             Err(e) => return Err(e.into()),
         }
@@ -62,17 +64,54 @@ pub async fn ensure_source(
             if page.next_cursor.is_some() {
                 options.cursor = page.next_cursor;
             } else {
-                break client
+                match client
                     .create_source(&SourceCreate {
                         harness: configured.harness,
+                        member: member.cloned(),
                         device_label: device.into(),
                         root: root.into(),
                     })
-                    .await?;
+                    .await
+                {
+                    Ok(source) => break source,
+                    // A concurrent registration won. Re-read its actual member.
+                    Err(sessiondb_client::Error::Problem(p)) if p.code == "source_exists" => {
+                        options.cursor = None
+                    }
+                    Err(error) => return Err(error.into()),
+                }
             }
         };
+    let source = attribute_source(client, source, member).await?;
     state.register(client.server(), device, &source).await?;
     Ok(source)
+}
+
+async fn attribute_source(
+    client: &Client,
+    source: Source,
+    member: Option<&MemberHandle>,
+) -> Result<Source> {
+    let Some(member) = member else {
+        return Ok(source);
+    };
+    match source.member.as_deref() {
+        Some(current) if current == member.as_str() => Ok(source),
+        Some(current) => bail!(
+            "source {} is attributed to {current}, but this client is configured for {}. Check the device label and registered store before syncing",
+            source.id,
+            member.as_str()
+        ),
+        None => Ok(client
+            .set_source_member(
+                source.id,
+                &SourceMemberUpdate {
+                    member: member.clone(),
+                    expected_member: None,
+                },
+            )
+            .await?),
+    }
 }
 pub fn lock(directory: &Path) -> Result<std::fs::File> {
     private_dir(directory)?;

@@ -28,7 +28,10 @@ pub fn router(state: Arc<AppState>) -> Router {
     let protected = Router::new()
         .route("/v1/info", get(info))
         .route("/v1/sources", get(sources::list).post(sources::create))
-        .route("/v1/sources/{source_id}", get(sources::get))
+        .route(
+            "/v1/sources/{source_id}",
+            get(sources::get).patch(sources::set_member),
+        )
         .route(
             "/v1/sources/{source_id}/files",
             get(sources::files).post(crate::ingest::upload),
@@ -126,6 +129,7 @@ async fn info(State(state): State<Arc<AppState>>) -> Json<ServerInfo> {
             "getArtifactContent",
             "searchMessages",
             "readAroundMessage",
+            "setSourceMember",
             "listEmbeddingProfiles",
             "createEmbeddingProfile",
             "getEmbeddingProfile",

@@ -58,6 +58,8 @@ Migrations 0004 and 0005 backfill keyword passages and exchange vectors from acc
 
 For optional semantic retrieval, install pgvector, run `CREATE EXTENSION vector` in the catalog and rerun `migrate` with the new binary. Migration 0006 is compatible with keyword-only PostgreSQL. [Embedding setup and progress](search-and-embeddings.md#configure-semantic-and-hybrid-search) covers provider credentials and backfill.
 
+Migration 0007 adds source member labels. Upgrade the server first and replace the CLI on each workstation before enabling a member. Restart an existing watcher with the new executable (`sessiondb sync install` refreshes its executable path). Older clients can keep syncing with their existing config until upgraded. Once the handle is set, the next sync attributes previously accepted sessions from that client’s configured sources. [Team setup](cli.md#set-up-a-teammate) covers offline sources and corrections.
+
 Before upgrading, back up PostgreSQL and object storage, stop the API, run `migrate` using the new server build/configuration/environment, then restart that build. Preserve client state and server volumes. Do not edit the migration ledger, replay the initial migration, or reset the deployed database to bypass a checksum/version mismatch. Abandoned pre-deployment identity catalogs are not a supported deployed upgrade source. See [ADR 0018](decisions/0018-deployed-native-compatibility.md).
 
 The toolchain and dependencies are locked in Cargo. Release checks include formatting, Clippy, unit/integration tests, API compatibility, and migration tests. PostgreSQL/pgvector/object-store versions belong in the tested deployment matrix rather than being inferred from `latest` tags. Supported release targets still require packaging checks.

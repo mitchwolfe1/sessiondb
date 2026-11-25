@@ -19,6 +19,43 @@ string_enum!(Harness { Codex => "codex", Claude => "claude", Pi => "pi" });
 string_enum!(Role { User => "user", Assistant => "assistant", System => "system", Tool => "tool", Unknown => "unknown" });
 string_enum!(Origin { NativeUser => "native_user", Model => "model", Tool => "tool", Harness => "harness", Unknown => "unknown" });
 
+/// A team-chosen provenance label, canonicalized for use across devices.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct MemberHandle(String);
+
+impl MemberHandle {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl FromStr for MemberHandle {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !(1..=64).contains(&s.len())
+            || !s.as_bytes()[0].is_ascii_alphanumeric()
+            || !s
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        {
+            return Err(
+                "use 1 to 64 ASCII letters, digits, hyphens or underscores, starting with a letter or digit",
+            );
+        }
+        Ok(Self(s.to_ascii_lowercase()))
+    }
+}
+
+impl<'de> Deserialize<'de> for MemberHandle {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 string_enum!(#[derive(Default)] SearchMode {
     #[default] Keyword => "keyword", Semantic => "semantic", Hybrid => "hybrid"
 });
@@ -57,12 +94,22 @@ impl Default for Limits {
 #[serde(deny_unknown_fields)]
 pub struct SourceCreate {
     pub harness: Harness,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<MemberHandle>,
     pub device_label: String,
     pub root: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceMemberUpdate {
+    pub member: MemberHandle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_member: Option<MemberHandle>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     pub id: Uuid,
+    pub member: Option<String>,
     pub harness: Harness,
     pub device_label: String,
     pub root: String,
@@ -121,6 +168,10 @@ pub struct SessionRelation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
+    /// Older servers omit collecting source and device from their responses.
+    pub source_id: Option<Uuid>,
+    pub device_label: Option<String>,
+    pub member: Option<String>,
     pub harness: Harness,
     pub native_session_id: String,
     pub title: String,
@@ -204,6 +255,10 @@ pub struct SessionFilter {
     pub project_id: Option<Uuid>,
     pub unassigned: Option<bool>,
     pub harness: Option<Harness>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<MemberHandle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_label: Option<String>,
     pub tag: Option<String>,
     pub after: Option<DateTime<Utc>>,
     pub before: Option<DateTime<Utc>>,

@@ -1,7 +1,7 @@
 , active AS (
-    SELECT id, include_tools FROM embedding_profiles WHERE id=$15 AND enabled
+    SELECT id, include_tools FROM embedding_profiles WHERE id=$17 AND enabled
 ), query_vector AS (
-    SELECT $16::real[]::vector AS value
+    SELECT $18::real[]::vector AS value
 ), semantic_units AS MATERIALIZED (
     SELECT e.leaf_id, e.is_tool, e.segment, members.ids,
            CASE WHEN members.ids=e.embedding_passages THEN whole.embedding <=> q.value
@@ -26,13 +26,13 @@
     FROM nearest n CROSS JOIN query_vector q CROSS JOIN keywords k
     CROSS JOIN LATERAL (
         SELECT p.id FROM unnest(n.ids) member(id) JOIN eligible p USING(id)
-        LEFT JOIN embedding_cache c ON c.profile_id=$15 AND c.digest=p.text_hash
+        LEFT JOIN embedding_cache c ON c.profile_id=$17 AND c.digest=p.text_hash
         ORDER BY c.embedding <=> q.value NULLS LAST, ts_rank(p.terms,k.any_term) DESC,
                  p.sequence DESC,p.block_index,p.piece LIMIT 1
     ) member
 ), lexical AS (
     SELECT m.*, row_number() OVER (ORDER BY matched_words DESC,score DESC,leaf_id,is_tool,segment) AS rank
-    FROM matches m WHERE $17
+    FROM matches m WHERE $19
     ORDER BY matched_words DESC,score DESC,leaf_id,is_tool,segment LIMIT 200
 ), ranked AS (
     SELECT leaf_id,is_tool,segment,coalesce(d.anchor,l.anchor) AS anchor,

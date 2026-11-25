@@ -8,7 +8,7 @@ Status: accepted in [ADR 0013](decisions/0013-instance-api-key.md), superseding 
 
 Require bearer authentication on all `/v1` APIs, including info, file uploads, originals, messages, artifacts, native exports, and planned search/changes. Only liveness, readiness, and static OpenAPI are public. Planned resources inherit the same boundary.
 
-A project is optional classification metadata, not a container or security boundary. Source IDs, device labels, harness names, and native paths describe provenance, not the caller's identity. All key holders can inspect unparsed originals and linked parent/dependency data. Missing dependencies remain explicit; there is no per-reader export omission policy.
+A collecting member is a self-reported source label. Every key holder can read and correct it. A project is optional classification metadata, not a container or security boundary. Source IDs, device labels, harness names, and native paths describe provenance, not the caller's identity. All key holders can inspect unparsed originals and linked parent/dependency data. Missing dependencies remain explicit; there is no per-reader export omission policy.
 
 ## Safe collection and deployment
 

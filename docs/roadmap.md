@@ -35,6 +35,8 @@ The first search milestone implements two operations agents can call at the poin
 
 The first implementation PR should cover the contract, a forward migration, backfill of accepted messages and one working CLI-to-API search and expansion. Verify that a newly accepted append becomes searchable and that retries and rewrites keep the derived index consistent with canonical reads. The agent chooses when to look up history.
 
+Team history uses member and device provenance throughout retrieval. [ADR 0024](decisions/0024-team-history.md) describes team-wide procedures and person- or workstation-specific lookups.
+
 ## Optional semantic search
 
 The native hybrid slice adds an explicitly configured embedding endpoint, restartable background backfill and pgvector exact similarity search. Reuse vectors for unchanged exchange text within the same embedding profile. Hybrid search combines keyword and vector ranks, then selects a short source passage inside each hit. Newly accepted text participates through keyword search while embedding catches up. Expose actual retrieval mode and coverage through the existing search proposal.
@@ -86,6 +88,7 @@ Complete CLI packaging, client SDK documentation, installation and upgrade proce
 | A25 | A broad code-review question has examples favoring simplification and an accepted exception | The agent cites independent original decisions, identifies their scope, and applies both to a held-out review containing a redundant wrapper and a necessary retry. |
 | A26 | A survey asks how often a decision occurred in a fixed corpus containing duplicate records | The reported count and denominator match the fixture, and the client reports coverage. |
 | A27 | A fresh agent runs with only SessionDB available after migration | Search, anchored reads, timelines, on-demand briefings and cross-session research work. Migrated memories retain their review status and resolve to the original evidence. |
+| A28 | Three teammates share an archive and use different workstation setups | Named-member research cites that person’s independent exchanges, shared operations find applicable teammate procedures, and workstation-specific lookups use the current member and device. |
 
 ## Later work
 

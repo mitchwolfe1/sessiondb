@@ -156,6 +156,16 @@ impl Client {
     pub async fn source(&self, id: Uuid) -> Result<Source> {
         self.get(&format!("v1/sources/{id}")).await
     }
+    /// Attribute a native store and its existing sessions, or correct a known label.
+    pub async fn set_source_member(&self, id: Uuid, update: &SourceMemberUpdate) -> Result<Source> {
+        self.request(
+            Method::PATCH,
+            &format!("v1/sources/{id}"),
+            None::<&()>,
+            Some(update),
+        )
+        .await
+    }
     pub async fn source_files(&self, id: Uuid, options: &ListOptions) -> Result<Page<SourceFile>> {
         self.get_query(&format!("v1/sources/{id}/files"), options)
             .await

@@ -11,6 +11,9 @@ WITH parsed AS (
       AND (NOT $3 OR NOT EXISTS (SELECT FROM session_projects sp WHERE sp.session_id = s.id))
       AND (cardinality($4::text[]) = 0 OR s.harness = ANY($4))
       AND (cardinality($5::text[]) = 0 OR s.tags @> $5)
+      AND (($15::text IS NULL AND $16::text IS NULL) OR s.source_id IN (
+            SELECT src.id FROM sources src WHERE ($15 IS NULL OR src.member=$15)
+              AND ($16 IS NULL OR src.device_label=$16)))
 ), eligible AS NOT MATERIALIZED (
     SELECT p.*, m.session_id, m.role, m.origin, m.recorded_at, s.updated_at,
            m.sequence

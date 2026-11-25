@@ -14,9 +14,10 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - Codex inline message and tool-result images, reasoning configuration updates, and web page actions. Claude session and request metadata and tool-reference results.
 - Archive-wide PostgreSQL keyword search through the API, SDK and CLI, with compact source excerpts, filters, pagination and branch-aware reads around the matching message. Forward migrations 0004 and 0005 backfill accepted history and pack oversized blocks into whole-word passages.
 - Optional pgvector semantic and hybrid retrieval, immutable instance embedding profiles, restartable background indexing and scoped coverage.
+- Team-wide retrieval and source attribution, with member and device filters across all search modes and session lists. [Team setup](cli.md#set-up-a-teammate) covers clients and existing sources.
 - Readiness, request IDs, and optional aggregate request metrics.
 
-[OpenAPI](openapi.yaml) marks **15 baseline operations** with `x-first-build` and **23 implemented operations**, including artifact reads, search, anchored context and embedding profiles, with `x-implemented`. `/v1/info` advertises actual operation capabilities.
+[OpenAPI](openapi.yaml) marks **15 baseline operations** with `x-first-build` and **24 implemented operations**, including artifact reads, search, anchored context, source attribution and embedding profiles, with `x-implemented`. `/v1/info` advertises actual operation capabilities.
 
 ## Planned
 
@@ -29,6 +30,8 @@ An unavailable planned route returns `501 not_implemented`; unsupported paramete
 ## Compatibility and validation
 
 Migration 0004 was verified on fresh catalogs and on an isolated upgrade containing previously accepted Codex, Claude and Pi sessions. The CLI opened the original source anchors after backfill. The [browser pilot](../dev/evals/browser/README.md#native-sessiondb-pilot) records the task outcomes and the separate frozen-query replay.
+
+The Docker suite covers source attribution on an upgraded catalog, equal-key access, scoped coverage in all three search modes, copies, retries, corrections and rewrites. In three fresh Codex trials on a synthetic archive (three people, four installations, seven sessions), the agent cited two of the named member’s original decisions, found a teammate’s queue procedure before clearing a simulated queue, and read a report via the correct workstation’s browser connector. Each trial used the native CLI and hybrid search.
 
 Only supported, valid native files are accepted. Any unsupported or malformed supplied record rejects the whole file with HTTP 400 before storage/catalog mutation. Native compatibility is bounded by the [fixture families](../fixtures/README.md), not a guarantee of exact model requests or harness resume.
 

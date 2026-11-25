@@ -14,7 +14,7 @@ Status: accepted and implemented, originating in the immutable [initial migratio
 | `artifacts` | Session-linked image/file/audio/video metadata and an object reference; binary media types belong here. |
 | `projects` | Optional labels with unique slug and name, not an access or archive lifecycle. Repository URLs remain a planned API extension. |
 | `session_projects` | Unique session/project pairs; the only persisted project association set. |
-| `sources` | Harness, device label, native store root, and last sync time; unique by harness/device/root. |
+| `sources` | Harness, device label, optional member, native store root, and last sync time; unique by harness/device/root. |
 | `source_files` | Unique source-relative paths, current generation and upload version. |
 | `file_generations` | Immutable original-object references; a verified append advances the reference in the same generation, while a rewrite starts a new generation. |
 | `session_files` | Links conversations to the contributing file generations, including inherited native dependencies. |
@@ -27,6 +27,8 @@ Opaque message content, provider usage, and native event data use PostgreSQL `js
 Forward migration 0004 adds two derived tables. `search_passages` holds the searchable text and original block location. `search_exchanges` groups passage IDs on one branch and stores the GIN-indexed full-text vector. File acceptance updates both alongside the canonical messages. See [keyword search](search-and-embeddings.md#keyword-search).
 
 Migration 0005 rebuilds oversized keyword passages with integer word-group boundaries. Migration 0006 adds embedding profiles and content digests for exchange segments and their eligible member passages. In a pgvector-enabled catalog, the optional embedding cache stores one vector per profile and digest. A pending input has a retry time and an expiring claim. A ready input has a vector.
+
+Migration 0007 adds a nullable member handle to each source. Sessions and hits look up current attribution through the original collecting source. Assigning a handle makes earlier accepted sessions searchable by member immediately.
 
 ## Conversations and native history
 

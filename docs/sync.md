@@ -6,7 +6,7 @@ Status: accepted synchronous per-file protocol; see [ADR 0014](decisions/0014-se
 
 ## Sources and capture
 
-Discover Codex under `CODEX_HOME` or `~/.codex`, including native archived sessions; Claude under its configured home or `~/.claude/projects`; and Pi under its configured directory or `~/.pi/agent/sessions`. Explicit roots override discovery. A source records harness, device label, and native store root, not a repository boundary or owner.
+Discover Codex under `CODEX_HOME` or `~/.codex`, including native archived sessions; Claude under its configured home or `~/.claude/projects`; and Pi under its configured directory or `~/.pi/agent/sessions`. Explicit roots override discovery. A source records harness, device label, native store root and an optional collecting member. The watcher reads the member from the pinned server’s client settings on each pass. A conflicting label stops uploads from that store and is reported. See [team setup](cli.md#set-up-a-teammate) for assignment and correction.
 
 `sessiondb sync` runs one pass; `sessiondb sync --watch` reconciles periodically until interrupted. Stop the client/watch process to stop collection; there is no server pause flag. Local disappearance or an offline device does not remove accepted history.
 

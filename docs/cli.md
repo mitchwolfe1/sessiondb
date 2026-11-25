@@ -18,6 +18,21 @@ sessiondb sync --watch
 
 `sessiondb sync install` installs and starts a login service using systemd on Linux or launchd on macOS. It pins the server URL, absolute executable, config and state paths, and request timeout. It picks up source and sync settings from that config on each pass. Installing again refreshes and restarts the service. See [background sync](sync.md#background-service) for credentials, logs and lifecycle.
 
+## Set up a teammate
+
+From a checkout of the same SessionDB release, install the CLI with `cargo install --locked --path crates/cli`. Each teammate connects with the same instance API key and a distinct member handle. Use the same handle on that person's other computers. Handles accept 1–64 ASCII letters, digits, hyphens and underscores, starting with a letter or digit.
+
+```sh
+sessiondb connect https://sessions.example.com --member ada
+sessiondb sources add --detect
+sessiondb sync install
+sessiondb config show --json
+```
+
+The client stores the handle per server in `[members]`. Each native store has a device label, generated on first use or selected with `sources add --device-label LABEL`. During sync, the handle applies to all sources configured for that server on this client, including their earlier sessions. Check the source list before configuring a handle on a machine that also collected someone else's work. To label an offline source, use `sessiondb sources set-member SOURCE_ID ada`. To correct a label, use `sessiondb sources set-member SOURCE_ID ada --from prev-handle` and update the collecting client's configuration to match.
+
+All key holders can read the whole collection, including native exports. To give agents the lookup workflow, install the [history skill](integrations.md#on-demand-agent-lookup) on each teammate's machine.
+
 ## Command groups
 
 | Group | Commands |
@@ -25,7 +40,7 @@ sessiondb sync --watch
 | `sessions` | `list`, `show`, `messages`, `export`; events/update/delete are planned |
 | `search` | Keyword, semantic and hybrid excerpts with filters and pagination |
 | `messages` | `show` with optional context, `content` |
-| `sources` | `list`, `add`, `show`; collection starts/stops on the client |
+| `sources` | `list`, `add`, `show`, `set-member`; collection starts/stops on the client |
 | `sync` | One pass, `--watch`, `install`, `start`, `stop`, `uninstall`, `status`, `logs [--follow]`, `rejected`, `retry` |
 | `embeddings` | `create FILE`, `list`, `show ID`, `enable ID`, `disable ID` |
 | `connect SERVER_URL` | Verify and save the server URL and API key |
@@ -41,6 +56,10 @@ Implemented examples:
 ```sh
 sessiondb sessions list --harness codex --limit 20
 sessiondb sessions list --unassigned
+sessiondb search --mode hybrid -- "production RabbitMQ dead-letter queue"
+sessiondb search --mode hybrid --member mark -- "RabbitMQ backlog"
+sessiondb search --mode hybrid --local -- "connect to my running browser"
+sessiondb sessions list --mine
 sessiondb search "payment retries" --harness claude
 sessiondb search "temporary AND failure" --tool-name test_runner --json
 sessiondb messages show MESSAGE_ID
@@ -51,6 +70,8 @@ sessiondb sessions messages SESSION_ID --leaf MESSAGE_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 sessiondb sync status --json
 ```
+
+Search and session lists default to the whole collection. `--member HANDLE` filters by collecting member, `--device LABEL` by exact device, `--mine` by the member configured for the selected server, and `--local` by that member and this device together. If a required local setting is missing, the command reports it. `config show --json` includes the current member and device label.
 
 Search returns three excerpts by default. Use `--limit` and `--cursor` to read more. Use `--include-tools` to include tool input and output. Use `--mode hybrid` with an enabled profile to combine term and vector evidence. Title, tag and project updates and session deletion are planned. See `sessiondb --help` and [implementation status](implementation.md).
 

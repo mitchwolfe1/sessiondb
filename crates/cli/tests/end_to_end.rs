@@ -77,6 +77,7 @@ async fn source(client: &Client, harness: Harness, label: &str) -> Source {
     client
         .create_source(&SourceCreate {
             harness,
+            member: None,
             device_label: label.into(),
             root: format!("/synthetic/{label}"),
         })
@@ -281,6 +282,32 @@ async fn authenticated_sync_storage_and_recovery() {
             .ends_with(&format!("/v1/messages/{}", hit.message_id))
     );
     assert!(legacy_cases.iter().any(|case| case.id == hit.session_id));
+    assert_eq!(hit.member, None);
+    assert_eq!(hit.device_label.as_deref(), Some("legacy-fixture"));
+    let source_id = hit.source_id.unwrap();
+    let member = SourceMemberUpdate {
+        member: "ada".parse().unwrap(),
+        expected_member: None,
+    };
+    peer.set_source_member(source_id, &member).await.unwrap();
+    let mut scoped = query.clone();
+    scoped.filters.member = Some(member.member);
+    let backfilled = peer.search(&scoped).await.unwrap();
+    assert_eq!(
+        backfilled.coverage.keyword_ready_messages,
+        first_page.coverage.keyword_ready_messages
+    );
+    assert_eq!(backfilled.data[0].message_id, hit.message_id);
+    assert_eq!(backfilled.data[0].url, hit.url);
+    assert_eq!(
+        owner
+            .session(hit.session_id)
+            .await
+            .unwrap()
+            .member
+            .as_deref(),
+        Some("ada")
+    );
     let context = owner
         .read_around(hit.message_id, &AroundOptions::default())
         .await
@@ -1960,3 +1987,6 @@ async fn upgrade_repacks_existing_large_blocks_without_changing_the_source() {
 
 #[path = "end_to_end/hybrid.rs"]
 mod hybrid;
+
+#[path = "end_to_end/team.rs"]
+mod team;

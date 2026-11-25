@@ -1,5 +1,8 @@
 {
   "id": "66666666-6666-4666-8666-666666666666",
+  "source_id": "55555555-5555-4555-8555-555555555555",
+  "device_label": "Ada laptop",
+  "member": "ada",
   "project_ids": ["22222222-2222-4222-8222-222222222222"],
   "harness": "claude",
   "native_session_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
