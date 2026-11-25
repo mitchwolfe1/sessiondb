@@ -15,7 +15,7 @@ The two executables are `sessiondb-server` and `sessiondb`. Both support `--help
 
 ## Release the client
 
-Client releases are built locally and uploaded manually to [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). GitHub Actions is disabled for this repository. Run the [local checks](#checks) on the release commit and use a tag matching the workspace Cargo version.
+Client releases are built locally and uploaded manually to [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). GitHub Actions is disabled for this repository. Run the [local checks](#checks) on the release commit and use a tag matching the Cargo version of `sessiondb-cli`. Bump the client version even for a skill-only release so installed watchers can discover and apply it.
 
 On each Linux or macOS machine you want to support, check out the same release commit and run:
 
@@ -25,7 +25,7 @@ target="$(rustc -vV | sed -n 's/^host: //p')"
 scripts/package-client "$target" "target/dist/$tag" "$tag"
 ```
 
-The [packager](../scripts/package-client) builds the CLI with the pinned toolchain and locked dependencies, unpacks the archive, checks the executable version and installs the bundled skill into a temporary home. Each build produces a `.tar.gz` archive and a matching `.sha256` file. The archive includes `sessiondb`, `scripts/install-harnesses`, and `skills/sessiondb/SKILL.md`.
+The [packager](../scripts/package-client) builds the CLI with the pinned toolchain and locked dependencies, unpacks the archive, checks the executable version and installs the bundled skill into a temporary home. Each build produces a `.tar.gz` archive and a matching `.sha256` file. The archive includes `sessiondb`, `scripts/install-harnesses`, and `skills/sessiondb/SKILL.md`. When adding workstation setup files, include them in the archive and install them from the bundled `scripts/install-harnesses` entry point. Updaters run that release's installer from the extracted bundle before replacing the binary. The installer must tolerate retries after an interruption.
 
 For a new release, collect the intended archives and their checksum files in one directory on the publishing machine. A single platform is sufficient. From the release commit, push its tag and run the [publisher](../scripts/publish-client-release) with an authenticated GitHub CLI:
 

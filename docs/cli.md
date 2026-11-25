@@ -20,10 +20,10 @@ sessiondb sync --watch
 
 ## Set up a teammate
 
-Tagged client builds appear on [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). Download the archive for your OS and CPU and the accompanying `SHA256SUMS`. For example, to verify and unpack an Apple silicon archive in a fresh download directory:
+Download the archive for your OS and CPU and the accompanying `SHA256SUMS` from [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). This example verifies and installs a Linux x86-64 release from a fresh download directory.
 
 ```sh
-archive=sessiondb-v0.1.0-aarch64-apple-darwin.tar.gz
+archive=sessiondb-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 awk -v file="$archive" '$2 == file' SHA256SUMS | shasum -a 256 -c - && tar -xzf "$archive"
 cd "${archive%.tar.gz}"
 mkdir -p "$HOME/.local/bin"
@@ -46,7 +46,7 @@ The client stores the handle per server in `[members]`. Each native store has a 
 
 All key holders can read the whole collection, including native exports. The [harness installer](integrations.md#on-demand-agent-lookup) sets up the history skill and its lookup instructions for the coding agents on each teammate’s machine. For a Pi session store outside the default directory, register it with `sessiondb sources add --harness pi --root /path/to/sessions`.
 
-To upgrade or roll back, install the chosen release at the same binary path, rerun `./scripts/install-harnesses`, and run `sessiondb sync install` if this workstation uses a watcher. This restarts the watcher using the installed binary and existing configuration and checkpoints.
+Sync [automatically installs newer client releases](sync.md#client-updates), including their harness setup files. To bootstrap an older installation or roll back to a pinned version, install the chosen release at the same binary path, rerun `./scripts/install-harnesses`, and run `sessiondb sync install` if this workstation uses a watcher. This restarts the watcher using the installed binary and existing configuration and checkpoints.
 
 ## Command groups
 
@@ -122,7 +122,7 @@ Each configured source stores its destination URL. `--server URL` and `SESSIONDB
 
 See the [client configuration example](examples/client.toml). It contains no credentials or unsupported future settings. Preserve existing registrations, pending files, and checkpoints across upgrades; do not reset deployed client state to apply a server fix. Recovery persists pending per-file snapshots and advances checkpoints individually after HTTP 200; `sync status --json` reports `pending_files`.
 
-The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. It also reports `rejected_files`, the last completed watch pass with its server URL, timestamp and error, and the native service name, definition path and state. `sync rejected --json` lists remembered paths and reasons for the selected server. `sync retry` clears those rejection hashes in this state directory so the next watch pass tests the files again. One-shot sync always retries them. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. Only `[sync] reconcile_interval_seconds` and `upload_concurrency` are current sync settings; debounce/batch settings and future matching rules are not runnable configuration.
+The status object contains `state_path`, `sources`, `accepted_files`, nullable `last_accepted_at`, and `pending_files`. It also reports `rejected_files`, the last completed watch pass with its server URL, timestamp and error, and the native service name, definition path and state. `sync rejected --json` lists remembered paths and reasons for the selected server. `sync retry` clears those rejection hashes in this state directory so the next watch pass tests the files again. One-shot sync always retries them. Local SQLite stores registrations by server/device/harness/root, pending snapshots by source/path, and accepted per-file checkpoints. The `[sync]` settings are `reconcile_interval_seconds`, `upload_concurrency` and `auto_update`; debounce/batch settings and future matching rules are not runnable configuration.
 
 ## Rust client crate
 

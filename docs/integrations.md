@@ -52,7 +52,7 @@ The installer copies the [`sessiondb` skill](../skills/sessiondb/SKILL.md) and a
 | Claude Code | `$CLAUDE_CONFIG_DIR/skills/sessiondb` | `$CLAUDE_CONFIG_DIR/CLAUDE.md` |
 | Pi | `~/.agents/skills/sessiondb` | The active context file in `$PI_CODING_AGENT_DIR`, defaulting to `AGENTS.md` |
 
-The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/agent`, respectively. Existing Codex- or Pi-specific skill copies are updated in place. Rerun the script after pulling a skill update or installing another harness. When upgrading from `sessiondb-history`, the installer updates its marked instructions and archives the old installation in `sessiondb-skill-backups/` beside the skills directory. It preserves other instructions and backs up an existing skill file before replacing different contents.
+The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/agent`, respectively. Existing Codex- or Pi-specific skill copies are updated in place. [Automatic client updates](sync.md#client-updates) run the installer from each new release. To set up a newly installed harness immediately, rerun the script. When upgrading from `sessiondb-history`, the installer updates its marked instructions and archives the old installation in `sessiondb-skill-backups/` beside the skills directory. It preserves other instructions and backs up an existing skill file before replacing different contents.
 
 For shared tasks, the skill searches team history when a past procedure could be useful. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
 

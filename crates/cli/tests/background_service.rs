@@ -70,6 +70,7 @@ async fn user_service_uploads_recovers_and_uninstalls() {
         .tempdir()
         .unwrap();
     let root = temp.path();
+    support::pin_test_client(root);
     let services = Services::start().await;
     let mut server = Server::start(root, &services).await;
     let connected = run(&server, root, &["connect", &server.url, "--json"]).await;

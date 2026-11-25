@@ -20,5 +20,6 @@ harness = "pi"
 root = "~/.pi/agent/sessions"
 
 [sync]
+auto_update = true
 reconcile_interval_seconds = 60
 upload_concurrency = 4

@@ -37,6 +37,8 @@ def build_native(documents, root, url, binary, profile_file=None):
         "config": str(root / "client.toml"),
         "state": str(root / "client-state"),
     }
+    # Pin the selected CLI and keep corpus seeding local to the disposable instance.
+    Path(history["config"]).write_text("[sync]\nauto_update = false\n")
     command(history, "connect", url, "--member", MEMBER)
     if load_page(history, "sessions", "list", "--limit", "1")["data"]:
         raise ValueError("The browser corpus requires an empty disposable SessionDB")

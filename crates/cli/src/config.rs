@@ -64,12 +64,19 @@ pub struct ProjectRule {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SyncOptions {
+    #[serde(skip_serializing_if = "is_true")]
+    pub auto_update: bool,
     pub reconcile_interval_seconds: u64,
     pub upload_concurrency: usize,
+}
+// Keep default configs readable by clients that predate automatic updates.
+fn is_true(value: &bool) -> bool {
+    *value
 }
 impl Default for SyncOptions {
     fn default() -> Self {
         Self {
+            auto_update: true,
             reconcile_interval_seconds: 60,
             upload_concurrency: 4,
         }
@@ -441,6 +448,7 @@ upload_concurrency=2
         assert_eq!(config.server.as_deref(), Some("https://a.example/"));
         assert_eq!(config.device_label.as_deref(), Some("same-device"));
         assert_eq!(config.sync.upload_concurrency, 2);
+        assert!(config.sync.auto_update);
         assert_eq!(config.sources.len(), 2);
         assert_eq!(config.sources[0].server, "https://a.example/");
         assert_eq!(config.sources[1].server, "http://test.example:8000/");
@@ -448,6 +456,7 @@ upload_concurrency=2
         save(&path, &config).unwrap();
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(!written.contains("context"));
+        assert!(!written.contains("auto_update"));
         let reread = load(&path, dir.path(), None).await.unwrap();
         assert!(reread.sources == config.sources);
     }

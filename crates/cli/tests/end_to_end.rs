@@ -1024,6 +1024,7 @@ async fn authenticated_sync_storage_and_recovery() {
         fixture("codex/precision.jsonl"),
     )
     .unwrap();
+    support::pin_test_client(root.path());
     let mut connect = support::cli_with_saved_server(&server, root.path())
         .env("SESSIONDB_URL", "http://127.0.0.1:1")
         .env("SESSIONDB_API_KEY", "unused-environment-override")

@@ -63,7 +63,7 @@ for path in [*ROOT.glob("docs/examples/*.toml"), ROOT / "dev/server.toml"]:
         assert isinstance(config["server"], str)
         assert all(set(source) == rust_fields(client_config, "ConfiguredSource") for source in config["sources"])
         assert all(isinstance(source["server"], str) and source["server"] for source in config["sources"])
-        assert set(config.get("sync", {})) <= {"reconcile_interval_seconds", "upload_concurrency"}
+        assert set(config.get("sync", {})) <= {"reconcile_interval_seconds", "upload_concurrency", "auto_update"}
         assert set(config.get("sync", {})) <= rust_fields(client_config, "SyncOptions")
         assert "project_rules" not in config, "matching rules are not implemented"
     else:

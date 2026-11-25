@@ -2,6 +2,8 @@ mod config;
 mod service;
 mod state;
 mod sync;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod update;
 
 use anyhow::{Context as _, Result, bail};
 use clap::{Args, Parser, Subcommand};
@@ -630,9 +632,10 @@ async fn run(args: &Cli) -> Result<()> {
             let has_key = selected.as_deref().is_some_and(|url| {
                 std::env::var_os("SESSIONDB_API_KEY").is_some() || config.saved_key(url).is_some()
             });
-            let value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,
+            let mut value = json!({"config_path":args.config,"state_path":args.state_dir,"server":selected,
                 "member":selected.as_ref().and_then(|url| config.members.get(url)), "device_label": config.device_label,
                 "api_key":has_key.then_some("[redacted]"),"sources":config.sources,"sync":config.sync});
+            value["sync"]["auto_update"] = config.sync.auto_update.into();
             emit(args, &value, |out| {
                 writeln!(
                     out,
@@ -675,6 +678,8 @@ async fn run(args: &Cli) -> Result<()> {
             if args.verbose > 0 {
                 eprintln!("Using {target}");
             }
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            let mut updater = None;
             let mut watched_files = HashMap::new();
             let shutdown = sync_shutdown();
             tokio::pin!(shutdown);
@@ -693,6 +698,14 @@ async fn run(args: &Cli) -> Result<()> {
                             client = Client::new(&target, updated_key.clone(), timeout)?;
                             key = updated_key;
                         }
+                    }
+                    #[cfg(any(target_os = "linux", target_os = "macos"))]
+                    if config.sync.auto_update
+                        && let Err(error) =
+                            update::Updater::before_sync(&mut updater, &target, args.quiet).await
+                        && !args.quiet
+                    {
+                        eprintln!("Client update failed; continuing sync: {error:#}");
                     }
                     let sources: Vec<_> = config
                         .sources

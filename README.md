@@ -10,7 +10,7 @@ Sessions contain messages, structural events, and artifacts. Sources record nati
 
 **Status: initial implementation.** Authenticated sync, original storage, session reads, and native exports work across Codex, Claude Code, and Pi. See [implementation status](docs/implementation.md) for available features and remaining milestones.
 
-Client downloads are distributed through [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). See [workstation setup](docs/cli.md#set-up-a-teammate) for binary and source installation, or [build and run SessionDB](docs/development.md) for local development.
+Client downloads are distributed through [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). Once installed, sync keeps the CLI, agent skill and managed harness instructions up to date. See [workstation setup](docs/cli.md#set-up-a-teammate) for binary and source installation, or [build and run SessionDB](docs/development.md) for local development.
 
 ## Sync and query sessions
 

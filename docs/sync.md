@@ -12,6 +12,16 @@ Discover Codex under `CODEX_HOME` or `~/.codex`, including native archived sessi
 
 For active JSONL, capture a bounded snapshot through the last complete newline. Defer incomplete tail bytes until the next pass. Complete malformed lines remain in the captured snapshot and cause rejection; do not silently remove them. Preserve native parent/child/subagent files and allowlisted artifacts, without sweeping adjacent credential directories.
 
+## Client updates
+
+At the start of each one-shot sync and each watcher reconciliation, the client checks the [latest public SessionDB release](https://github.com/mitchwolfe1/sessiondb/releases/latest). A newer stable SemVer tag with an archive for the client's Rust target triggers an update. Each release, including a skill-only change, needs a new client version and tag.
+
+The updater verifies the archive against that release's `SHA256SUMS`, stages its files, checks the packaged executable's version, and runs its bundled `scripts/install-harnesses` for the current user. This refreshes supported harness skills and managed instructions. It then atomically replaces the executable at its installed path and resumes the same sync invocation with the same server, settings and checkpoints. Fresh harness sessions pick up changed instructions.
+
+Update diagnostics go to stderr. An offline release site, unavailable target, failed verification or unsuccessful installer leaves sync available and the next pass checks again. The executable's directory must be user-writable for replacement. Set `auto_update = false` under `[sync]` to pin a client, including during a manual rollback. The default is enabled.
+
+Clients on v0.1.0 need one manual upgrade. Install the v0.2.0 or newer binary, run the bundled harness installer, and restart any existing watcher with `sessiondb sync install`. For a rollback to v0.1.0, remove any explicit `auto_update` setting before starting that older client.
+
 ## Background service
 
 Run `sessiondb connect SERVER_URL` and select the source roots for that server. The watcher reads the saved key for its pinned URL from the same client config. A key supplied in the service manager’s environment overrides the saved key. The generated service definition contains only nonsecret arguments.

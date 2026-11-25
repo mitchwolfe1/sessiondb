@@ -29,6 +29,7 @@ fn transcript(id: &str, cwd: &str, text: &str) -> String {
 async fn register(server: &Server, dir: &Path, device: &str, member: Option<&str>) -> Source {
     let store = dir.join("native");
     fs::create_dir_all(&store).unwrap();
+    super::support::pin_test_client(dir);
     let mut args = vec!["connect", server.url.as_str()];
     if let Some(handle) = member {
         args.extend_from_slice(&["--member", handle]);

@@ -347,6 +347,10 @@ impl Drop for Server {
     }
 }
 
+pub fn pin_test_client(root: &Path) {
+    fs::write(root.join("client.toml"), "[sync]\nauto_update = false\n").unwrap();
+}
+
 pub fn cli_with_saved_server(server: &Server, root: &Path) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_sessiondb"));
     command
