@@ -264,13 +264,13 @@ def run_trial(
             # Check the harness's actual discovery output without handing the actor a skill prompt.
             discovered = subprocess.check_output(["codex", "debug", "prompt-input", *ACTOR_FEATURES], cwd=cwd, env=actor_env,
                                                  text=True, stderr=subprocess.PIPE, timeout=30)
-            skill_path = root / "home/.agents/skills/sessiondb-history/SKILL.md"
-            description = (ROOT / "skills/sessiondb-history/SKILL.md").read_text().split("description: ", 1)[1].splitlines()[0]
+            skill_path = root / "home/.agents/skills/sessiondb/SKILL.md"
+            description = (ROOT / "skills/sessiondb/SKILL.md").read_text().split("description: ", 1)[1].splitlines()[0]
             advertised = (str(skill_path.parent.parent) in discovered and
-                          f"sessiondb-history: {description}" in discovered)
-            if advertised and skill_path.read_bytes() != (ROOT / "skills/sessiondb-history/SKILL.md").read_bytes():
+                          f"sessiondb: {description}" in discovered)
+            if advertised and skill_path.read_bytes() != (ROOT / "skills/sessiondb/SKILL.md").read_bytes():
                 raise RuntimeError("Installed skill differs from the tracked skill")
-            guidance = "<!-- sessiondb-history:start -->" in discovered
+            guidance = "<!-- sessiondb:start -->" in discovered
             if (advertised, guidance) != (arm == "installed", arm == "installed"):
                 raise RuntimeError("Harness discovery disagrees with the trial condition")
             result.update(skill_advertised=advertised, installed_instructions=guidance)
@@ -381,7 +381,7 @@ def main():
     summary = {
         "protocol": "installed-skill-v1",
         "installer_sha256": hashlib.sha256((ROOT / "scripts/install-harnesses").read_bytes()).hexdigest(),
-        "skill_sha256": hashlib.sha256((ROOT / "skills/sessiondb-history/SKILL.md").read_bytes()).hexdigest(),
+        "skill_sha256": hashlib.sha256((ROOT / "skills/sessiondb/SKILL.md").read_bytes()).hexdigest(),
         "prompt": PROMPT,
         "history_before_utc": CUTOFF,
         "seed": args.seed,

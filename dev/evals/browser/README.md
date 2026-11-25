@@ -9,7 +9,7 @@ The `installed-skill-v1` protocol compares the teammate installation with a hist
 | Condition | Setup |
 | --- | --- |
 | Off | Synthetic home, shell, and browser. The control has no configured SessionDB connection or installed history skill. |
-| Installed | The [team installer](../../../scripts/install-harnesses) installs the tracked [sessiondb-history skill](../../../skills/sessiondb-history/SKILL.md) and the Codex global instructions. A real `sessiondb` binary on `PATH` uses a saved connection, member and device. The agent chooses whether to load the skill, which search mode and scope to use, and whether to follow a hit’s `show_command`. |
+| Installed | The [team installer](../../../scripts/install-harnesses) installs the tracked [`sessiondb` skill](../../../skills/sessiondb/SKILL.md) and the Codex global instructions. A real `sessiondb` binary on `PATH` uses a saved connection, member and device. The agent chooses whether to load the skill, which search mode and scope to use, and whether to follow a hit’s `show_command`. |
 
 The caller’s task names only the report. Search results, the skill body and sample commands are never added to that request. The runner checks Codex's discovered skill path and instruction marker before each trial. A seeded source belongs to member `pilot` on device `browser-workstation`, so `sessiondb search --mode hybrid --local` and branch-aware message reads work as on an installed workstation.
 

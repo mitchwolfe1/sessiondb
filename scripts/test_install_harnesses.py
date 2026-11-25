@@ -6,10 +6,10 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).with_name("install-harnesses").resolve()
-SKILL = Path("skills/sessiondb-history/SKILL.md")
+SKILL = Path("skills/sessiondb/SKILL.md")
 BUNDLED = (SCRIPT.parents[1] / SKILL).read_bytes()
-START = b"<!-- sessiondb-history:start -->"
-END = b"<!-- sessiondb-history:end -->"
+START = b"<!-- sessiondb:start -->"
+END = b"<!-- sessiondb:end -->"
 
 
 class HarnessInstallTest(unittest.TestCase):
@@ -107,6 +107,53 @@ class HarnessInstallTest(unittest.TestCase):
         self.assertIn("already up to date", self.install().stdout)
         self.assertEqual([p.stat().st_mtime_ns for p in files], mtimes)
         self.assertEqual(list(shared.parent.glob("*.bak")), backups)
+
+    def test_upgrade_renames_shared_and_linked_skill_and_preserves_local_files(self):
+        old = self.home / ".agents/skills/sessiondb-history"
+        old.mkdir(parents=True)
+        (old / "SKILL.md").write_bytes(b"Locally edited previous version")
+        (old / "notes.txt").write_bytes(b"Keep my notes")
+        claude = self.home / ".claude"
+        (claude / "skills").mkdir(parents=True)
+        (claude / "skills/sessiondb-history").symlink_to(old, target_is_directory=True)
+        codex = self.home / ".codex"
+        codex.mkdir()
+        guide = codex / "AGENTS.md"
+        guide.write_bytes(b"Before\r\n<!-- sessiondb-history:start -->\r\nOld guide\r\n"
+                          b"<!-- sessiondb-history:end -->\r\nAfter")
+        self.assertIn("Would archive", self.install("--dry-run").stdout)
+        self.assertTrue(old.is_dir())
+        self.assertFalse((self.home / ".agents" / SKILL).exists())
+
+        self.install()
+        shared = self.home / ".agents" / SKILL
+        self.assertEqual(shared.read_bytes(), BUNDLED)
+        self.assertTrue((claude / SKILL.parent).is_symlink())
+        self.assertEqual((claude / SKILL).resolve(), shared)
+        self.assertFalse(old.exists())
+        self.assertFalse((claude / "skills/sessiondb-history").is_symlink())
+        backup, = (self.home / ".agents/sessiondb-skill-backups").glob("*/sessiondb-history")
+        self.assertEqual((backup / "SKILL.md").read_bytes(), b"Locally edited previous version")
+        self.assertEqual((backup / "notes.txt").read_bytes(), b"Keep my notes")
+        self.assertTrue(guide.read_bytes().startswith(b"Before\r\n" + START))
+        self.assertTrue(guide.read_bytes().endswith(END + b"\r\nAfter"))
+        self.assertNotIn(b"sessiondb-history", guide.read_bytes())
+        self.assertIn("already up to date", self.install().stdout)
+
+    def test_upgrade_of_dangling_checkout_link_and_both_instruction_blocks(self):
+        pi = self.home / ".pi/agent"
+        (pi / "skills").mkdir(parents=True)
+        old = pi / "skills/sessiondb-history"
+        old.symlink_to(self.home / "checkout/skills/sessiondb-history", target_is_directory=True)
+        (pi / "AGENTS.md").write_bytes(START + b"\nNew\n" + END + b"\nKeep\n" +
+            b"<!-- sessiondb-history:start -->\nOld\n<!-- sessiondb-history:end -->\n")
+        self.install()
+        self.assertEqual((pi / SKILL).read_bytes(), BUNDLED)
+        self.assertFalse(old.is_symlink())
+        guide = (pi / "AGENTS.md").read_bytes()
+        self.assertEqual(guide.count(START), 1)
+        self.assertIn(b"Keep", guide)
+        self.assertNotIn(b"sessiondb-history", guide)
 
     def test_invalid_markers_do_not_partially_install(self):
         (self.home / ".codex").mkdir()

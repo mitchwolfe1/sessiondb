@@ -44,15 +44,15 @@ Run the [harness installer](../scripts/install-harnesses) from a SessionDB check
 ./scripts/install-harnesses
 ```
 
-The installer copies the [history skill](../skills/sessiondb-history/SKILL.md) and adds a short instruction to use it on demand. Start a fresh agent session to pick up the changes. The skill uses the teammate’s configured CLI connection. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
+The installer copies the [`sessiondb` skill](../skills/sessiondb/SKILL.md) and adds a short instruction to use it on demand. Start a fresh session to pick up the changes. In Codex, you can also invoke it explicitly with `$sessiondb`. The skill uses the teammate’s configured CLI connection. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
 
 | Detected harness | User skill directory | Global instructions |
 | --- | --- | --- |
-| Codex | `~/.agents/skills/sessiondb-history` | `$CODEX_HOME/AGENTS.md`, or the active `AGENTS.override.md` |
-| Claude Code | `$CLAUDE_CONFIG_DIR/skills/sessiondb-history` | `$CLAUDE_CONFIG_DIR/CLAUDE.md` |
-| Pi | `~/.agents/skills/sessiondb-history` | The active context file in `$PI_CODING_AGENT_DIR`, defaulting to `AGENTS.md` |
+| Codex | `~/.agents/skills/sessiondb` | `$CODEX_HOME/AGENTS.md`, or the active `AGENTS.override.md` |
+| Claude Code | `$CLAUDE_CONFIG_DIR/skills/sessiondb` | `$CLAUDE_CONFIG_DIR/CLAUDE.md` |
+| Pi | `~/.agents/skills/sessiondb` | The active context file in `$PI_CODING_AGENT_DIR`, defaulting to `AGENTS.md` |
 
-The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/agent`, respectively. Existing Codex- or Pi-specific skill copies are updated in place. Rerun the script after pulling a skill update or installing another harness. It preserves text outside its marked instruction block and saves a backup beside an existing skill file when replacing different contents.
+The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/agent`, respectively. Existing Codex- or Pi-specific skill copies are updated in place. Rerun the script after pulling a skill update or installing another harness. When upgrading from `sessiondb-history`, the installer updates its marked instructions and archives the old installation in `sessiondb-skill-backups/` beside the skills directory. It preserves other instructions and backs up an existing skill file before replacing different contents.
 
 For shared tasks, the skill searches team history when a past procedure could be useful. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
 

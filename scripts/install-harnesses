@@ -11,11 +11,12 @@ import sys
 import tempfile
 
 
-SKILL = Path("skills/sessiondb-history/SKILL.md")
-BEGIN = b"<!-- sessiondb-history:start -->"
-END = b"<!-- sessiondb-history:end -->"
+SKILL = Path("skills/sessiondb/SKILL.md")
+PREVIOUS = "sessiondb-history"
+BEGIN = b"<!-- sessiondb:start -->"
+END = b"<!-- sessiondb:end -->"
 GUIDANCE = (
-    b"Use the `sessiondb-history` skill when prior work could be useful. "
+    b"Use the `sessiondb` skill when prior work could be useful. "
     b"Search across the team for shared procedures. For a person's decisions, use `--member HANDLE` or "
     b"`--mine`. For this workstation's setup, start with `--local`. Open the original exchange and cite its message URL."
 )
@@ -38,16 +39,30 @@ def instruction_file(command, config):
 def with_guidance(path, content):
     newline = b"\r\n" if b"\r\n" in content else b"\n"
     block = newline.join((BEGIN, GUIDANCE, END))
-    if BEGIN not in content and END not in content:
-        separator = b""
-        if content and not content.endswith(newline * 2):
-            separator = newline if content.endswith(b"\n") else newline * 2
-        return content + separator + block + newline
-    pattern = rb"^" + re.escape(BEGIN) + rb"\r?\n.*?^" + re.escape(END) + rb"(?=\r?$)"
-    match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
-    if content.count(BEGIN) != 1 or content.count(END) != 1 or not match:
-        raise ValueError(f"{path}: repair the incomplete or duplicate SessionDB instruction markers and rerun")
-    return content[:match.start()] + block + content[match.end():]
+    matches = []
+    for name in (SKILL.parent.name, PREVIOUS):
+        start = f"<!-- {name}:start -->".encode()
+        end = f"<!-- {name}:end -->".encode()
+        if start not in content and end not in content:
+            continue
+        pattern = rb"^" + re.escape(start) + rb"\r?\n.*?^" + re.escape(end) + rb"(?=\r?$)"
+        match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+        if content.count(start) != 1 or content.count(end) != 1 or not match:
+            raise ValueError(f"{path}: repair the incomplete or duplicate SessionDB instruction markers and rerun")
+        matches.append(match.span())
+    if matches:
+        matches.sort()
+        if len(matches) == 2:
+            (_, stop), (second, last) = matches
+            if second < stop:
+                raise ValueError(f"{path}: overlapping SessionDB instruction blocks")
+            content = content[:second] + content[last:]
+        start, end = matches[0]
+        return content[:start] + block + content[end:]
+    separator = b""
+    if content and not content.endswith(newline * 2):
+        separator = newline if content.endswith(b"\n") else newline * 2
+    return content + separator + block + newline
 
 
 def destination(path):
@@ -90,13 +105,23 @@ def install(path, old, new, backup):
             tmp.unlink()
 
 
+def archive(path):
+    # A renamed backup inside skills/ could still be discovered by its frontmatter.
+    backups = path.parent.parent / "sessiondb-skill-backups"
+    backups.mkdir(mode=0o700, exist_ok=True)
+    saved = Path(tempfile.mkdtemp(dir=backups)) / path.name
+    shutil.move(str(path), saved)
+    print(f"Archived {path} at {saved}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="show what would change without writing files")
     args = parser.parse_args()
     home = Path.home()
     detected = []
-    skills, guides = set(), set()
+    skills, guides, previous = set(), set(), set()
+    links = {}
     for name, command, env, default in (
         ("Codex", "codex", "CODEX_HOME", ".codex"),
         ("Claude Code", "claude", "CLAUDE_CONFIG_DIR", ".claude"),
@@ -106,12 +131,23 @@ def main():
         if not config.is_dir() and not shutil.which(command):
             continue
         detected.append(name)
-        native_skill = config / SKILL
-        shared_skill = home / ".agents" / SKILL
-        if command == "claude" or native_skill.is_file():
-            skills.add(destination(native_skill))
-        if command != "claude" and (shared_skill.is_file() or not native_skill.is_file()):
-            skills.add(destination(shared_skill))
+        native = destination(config / "skills")
+        shared = destination(home / ".agents" / "skills")
+        old_native, old_shared = native / PREVIOUS, shared / PREVIOUS
+        new_native, new_shared = native / SKILL.parent.name, shared / SKILL.parent.name
+        has_native = (new_native / SKILL.name).is_file() or os.path.lexists(old_native)
+        has_shared = (new_shared / SKILL.name).is_file() or os.path.lexists(old_shared)
+        shared_link = old_native.is_symlink() and old_native.resolve() == old_shared.resolve()
+        if os.path.lexists(old_native):
+            previous.add(old_native)
+        if (command != "claude" or shared_link) and os.path.lexists(old_shared):
+            previous.add(old_shared)
+        if shared_link and native != shared and not os.path.lexists(new_native):
+            links[new_native] = new_shared
+        elif command == "claude" or has_native:
+            skills.add(destination(new_native / SKILL.name))
+        if shared_link or (command != "claude" and (has_shared or not has_native)):
+            skills.add(destination(new_shared / SKILL.name))
         guides.add(destination(instruction_file(command, config)))
 
     if not detected:
@@ -132,9 +168,12 @@ def main():
         new = skill if path in skills else with_guidance(path, old or b"")
         if new != old:
             changes.append((path, old, new, path in skills))
-    if not changes:
+    if not (changes or previous or links):
         print("SessionDB harness integration is already up to date.")
         return
+    for path in previous:
+        if any(p.is_relative_to(path) for p in skills | guides):
+            raise ValueError(f"An active installation still points inside {path}; update its link before archiving it")
     for path, old, new, backup in changes:
         action = "Update" if old is not None else "Create"
         if args.dry_run:
@@ -142,6 +181,17 @@ def main():
         else:
             install(path, old, new, backup)
             print(f"{action} {path}")
+    for path, target in sorted(links.items()):
+        if args.dry_run:
+            print(f"Would link {path} to {target}")
+        elif not path.is_symlink() or path.resolve() != target.resolve():
+            path.symlink_to(target, target_is_directory=True)
+            print(f"Linked {path} to {target}")
+    for path in sorted(previous):
+        if args.dry_run:
+            print(f"Would archive {path}")
+        elif os.path.lexists(path):
+            archive(path)
     if not args.dry_run:
         print("Start a new agent session to use the SessionDB history skill.")
 

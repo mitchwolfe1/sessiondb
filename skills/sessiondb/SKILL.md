@@ -1,5 +1,5 @@
 ---
-name: sessiondb-history
+name: sessiondb
 description: Look up and cite earlier coding-agent sessions when prior work could be useful, including team procedures, workstation setup, decisions and preferences.
 ---
 

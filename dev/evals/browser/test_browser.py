@@ -131,7 +131,7 @@ class BrowserCase(unittest.TestCase):
              "time": "2026-10-01T10:00:00+00:00", "completed_at": "2026-10-01T10:00:01+00:00"},
             {"tool": "command_execution", "command": "/bin/sh -c 'sessiondb search --local --json tabs'",
              "time": "2026-10-01T10:00:02+00:00", "output": "the matching source"},
-            {"tool": "command_execution", "command": "cat ~/.agents/skills/sessiondb-history/SKILL.md", "output": "skill"},
+            {"tool": "command_execution", "command": "cat ~/.agents/skills/sessiondb/SKILL.md", "output": "skill"},
         ]
         metrics = usage_metrics(trace, SimpleNamespace(encode_ordinary=str.split))
         self.assertEqual(metrics["history_tokens"], 3)
