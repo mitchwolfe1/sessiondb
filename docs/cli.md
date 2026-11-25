@@ -73,7 +73,7 @@ sessiondb sessions list --harness codex --limit 20
 sessiondb sessions list --unassigned
 sessiondb search --mode hybrid -- "production RabbitMQ dead-letter queue"
 sessiondb search --mode hybrid --member mark -- "RabbitMQ backlog"
-sessiondb search --mode hybrid --local -- "connect to my running browser"
+sessiondb search --mode hybrid --local --open-first -- "connect to my running browser"
 sessiondb sessions list --mine
 sessiondb search "payment retries" --harness claude
 sessiondb search "temporary AND failure" --tool-name test_runner --json
@@ -90,7 +90,7 @@ Search and session lists default to the whole collection. `--member HANDLE` filt
 
 Search returns three excerpts by default. Use `--limit` and `--cursor` to read more. Use `--include-tools` to include tool input and output. Use `--mode hybrid` with an enabled profile to combine term and vector evidence. Title, tag and project updates and session deletion are planned. See `sessiondb --help` and [implementation status](implementation.md).
 
-Every search hit includes a `show_command` that opens the matching message with `-C 2` on the same connection. The command includes `--leaf` when a descendant identifies the continuation.
+Every search hit includes a `show_command` that opens the matching message with `-C 2` on the same connection. The command includes `--leaf` when a descendant identifies the continuation. Add `--open-first` to fetch that original for the first hit on the returned page in the same CLI invocation. The CLI displays the exchange under its hit and keeps the other results available. In JSON output, `first_context` contains the same `anchor_id`, messages and branch choices as the corresponding `messages show`. The field is omitted for an empty page or a search without the flag. A failed original read returns an error.
 
 `messages show ID` returns the single message. `-C N` (`--context N`) adds up to N messages on each side. `-B N` (`--before N`) and `-A N` (`--after N`) set the two sides independently. A single directional flag defaults the other side to zero. When combined with `-C`, a directional flag overrides its side. Each count accepts 0–50. Passing `--leaf` alone opens two messages of context on each side.
 

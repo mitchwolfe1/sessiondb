@@ -1856,6 +1856,41 @@ async fn search_indexes_full_exchange_text_and_only_the_selected_branch() {
     assert_eq!(context.data[1].id, hit.leaf_id);
     assert!(context.branch_choices.is_empty());
 
+    let combined = cli(
+        &server,
+        root.path(),
+        &["search", "--open-first", "--json", "amber"],
+    )
+    .await;
+    assert!(combined.status.success());
+    let mut combined: Value = serde_json::from_slice(&combined.stdout).unwrap();
+    assert_eq!(
+        combined.as_object_mut().unwrap().remove("first_context"),
+        Some(serde_json::to_value(&context).unwrap())
+    );
+    assert_eq!(combined, serde_json::to_value(&shared).unwrap());
+    let opened_text = cli(&server, root.path(), &["search", "--open-first", "amber"]).await;
+    assert!(opened_text.status.success());
+    let text = String::from_utf8(opened_text.stdout).unwrap();
+    assert!(
+        text.contains(&hit.url)
+            && text.contains(&format!(
+                "> {} [{}]",
+                context.data[0].role, context.anchor_id
+            ))
+    );
+    assert!(text.contains(&context.data[1].id.to_string()));
+    let empty = cli(
+        &server,
+        root.path(),
+        &["search", "--open-first", "--json", "nonexistentquartzite"],
+    )
+    .await;
+    assert!(empty.status.success());
+    let empty: Value = serde_json::from_slice(&empty.stdout).unwrap();
+    assert_eq!(empty["data"], json!([]));
+    assert!(empty.get("first_context").is_none());
+
     let id = page.data[2].id.to_string();
     let descendant = page.data[3].id.to_string();
     for (flags, sequences) in [
@@ -1930,6 +1965,30 @@ async fn search_indexes_full_exchange_text_and_only_the_selected_branch() {
     let more = client.search(&pages).await.unwrap();
     assert_eq!(more.data.len(), 2);
     assert!(more.next_cursor.is_none());
+    let cursor = pages.cursor.as_deref().unwrap();
+    let plain_page = cli(
+        &server,
+        root.path(),
+        &["search", "marigold", "--cursor", cursor, "--json"],
+    )
+    .await;
+    assert!(plain_page.status.success());
+    let plain_page: Value = serde_json::from_slice(&plain_page.stdout).unwrap();
+    assert!(plain_page.get("first_context").is_none());
+    let page_with_original = cli(
+        &server,
+        root.path(),
+        &["search", "marigold", "--cursor", cursor, "--open-first"],
+    )
+    .await;
+    assert!(page_with_original.status.success());
+    let text = String::from_utf8(page_with_original.stdout).unwrap();
+    assert_eq!(text.matches("Original exchange\n").count(), 1);
+    assert!(text.contains(&format!(
+        "> {} [{}]",
+        more.data[0].role, more.data[0].message_id
+    )));
+    assert!(text.lines().any(|line| line == more.data[1].show_command));
     let ids: std::collections::HashSet<_> = first
         .data
         .iter()

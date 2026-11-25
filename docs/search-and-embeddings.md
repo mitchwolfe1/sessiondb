@@ -14,7 +14,7 @@ Large exchanges split at block boundaries. Large individual blocks split into wo
 
 Migrations 0004 and 0005 index accepted messages one session at a time. Migration 0005 packs oversized blocks into whole-word groups. File acceptance publishes updated passages and exchange vectors in the same transaction as the messages. Identical retries reuse the accepted projection. Search coverage counts distinct messages with an eligible passage in the selected scope, independently of the query and page.
 
-Run the hit’s `show_command` to open the source with `sessiondb messages show MESSAGE_ID -C 2`. It follows up to two parents and two children and supplies `--leaf` when the continuation is known. At an unresolved fork, choose a returned child ID with `--leaf`. Use `-B` and `-A` for different amounts of earlier and later context.
+Add `--open-first` to a CLI search to see the first hit’s original, or run any hit’s `show_command` to open it with `sessiondb messages show MESSAGE_ID -C 2`. Both follow up to two parents and two children and use `--leaf` when the continuation is known. At an unresolved fork, choose a returned child ID with `--leaf`. Use `-B` and `-A` for different amounts of earlier and later context.
 
 ## Configure semantic and hybrid search
 

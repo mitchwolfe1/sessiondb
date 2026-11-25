@@ -14,7 +14,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 - Source registration, one-shot and polling watch sync, Linux systemd and macOS launchd user-service management, persistent rejection hashes, per-file snapshots/checkpoints, and `pending_files` recovery. A sync pass reports individual native-file rejections and continues collecting other files.
 - Native branch/subagent/inherited-history handling, typed content expansion, artifact reads, ranges, and native ZIP exports.
 - Codex inline message and tool-result images, reasoning configuration updates, and web page actions. Claude session and request metadata and tool-reference results.
-- Archive-wide PostgreSQL keyword search through the API, SDK and CLI, with compact source excerpts, filters, pagination and branch-aware reads around the matching message. Forward migrations 0004 and 0005 backfill accepted history and pack oversized blocks into whole-word passages.
+- Archive-wide PostgreSQL keyword search through the API, SDK and CLI, with compact source excerpts, filters, pagination and branch-aware reads around the matching message. The CLI’s `search --open-first` includes the first hit’s original exchange in the same invocation. Forward migrations 0004 and 0005 backfill accepted history and pack oversized blocks into whole-word passages.
 - Optional pgvector semantic and hybrid retrieval, immutable instance embedding profiles, restartable background indexing and scoped coverage.
 - Team-wide retrieval and source attribution, with member and device filters across all search modes and session lists. [Team setup](cli.md#set-up-a-teammate) covers clients and existing sources.
 - Readiness, request IDs, and optional aggregate request metrics.

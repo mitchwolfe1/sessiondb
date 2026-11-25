@@ -44,7 +44,7 @@ Run the [harness installer](../scripts/install-harnesses) from an unpacked clien
 ./scripts/install-harnesses
 ```
 
-The installer copies the [`sessiondb` skill](../skills/sessiondb/SKILL.md) and adds a short instruction to use it on demand. Start a fresh session to pick up the changes. In Codex, you can also invoke it explicitly with `$sessiondb`. The skill uses the teammate’s configured CLI connection. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
+The installer copies the [`sessiondb` skill](../skills/sessiondb/SKILL.md) and adds a short instruction to use it on demand. When the scope is clear, the agent can read the skill and run a scoped `search --open-first` in one shell call. If another tool needs discovery, the agent can fetch its argument signature in the same batch. The search output includes ranked excerpts, source URLs, and the top hit’s branch-aware original. An agent can inspect another source when it better fits the question. Use `--json` for structured provenance or scripting. Start a fresh session to pick up the changes. In Codex, you can also invoke `$sessiondb` explicitly. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
 
 | Detected harness | User skill directory | Global instructions |
 | --- | --- | --- |

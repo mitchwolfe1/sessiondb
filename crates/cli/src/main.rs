@@ -220,6 +220,9 @@ struct SearchArgs {
     limit: u32,
     #[arg(long)]
     cursor: Option<String>,
+    /// Include the first hit's original exchange with two messages of context on its branch.
+    #[arg(long)]
+    open_first: bool,
     #[arg(long, conflicts_with = "unassigned")]
     project: Vec<Uuid>,
     #[arg(long)]
@@ -238,6 +241,14 @@ struct SearchArgs {
     include_tools: bool,
     #[arg(long)]
     tool_name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct SearchOutput {
+    #[serde(flatten)]
+    page: SearchResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_context: Option<MessageContext>,
 }
 
 #[derive(Args)]
@@ -549,6 +560,19 @@ fn show_message(out: &mut dyn Write, m: &Message) -> io::Result<()> {
         )?;
     }
     writeln!(out)
+}
+
+fn show_context(out: &mut dyn Write, context: &MessageContext) -> io::Result<()> {
+    for message in &context.data {
+        if message.id == context.anchor_id {
+            write!(out, "> ")?;
+        }
+        show_message(out, message)?;
+    }
+    for child in &context.branch_choices {
+        writeln!(out, "Continue with --leaf {child}")?;
+    }
+    Ok(())
 }
 
 // Older login services already pin a URL. Accept their exact generated invocation
@@ -1038,8 +1062,28 @@ async fn run(args: &Cli) -> Result<()> {
                     },
                 })
                 .await?;
+            let mut result = SearchOutput {
+                page: result,
+                first_context: None,
+            };
+            if search.open_first
+                && let Some(hit) = result.page.data.first()
+            {
+                result.first_context = Some(
+                    client
+                        .read_around(
+                            hit.message_id,
+                            &AroundOptions {
+                                before: Some(2),
+                                after: Some(2),
+                                leaf_id: (hit.leaf_id != hit.message_id).then_some(hit.leaf_id),
+                            },
+                        )
+                        .await?,
+                );
+            }
             emit(args, &result, |out| {
-                for hit in &result.data {
+                for (index, hit) in result.page.data.iter().enumerate() {
                     writeln!(
                         out,
                         "{}  [{}]  {}  {} @ {}",
@@ -1057,10 +1101,17 @@ async fn run(args: &Cli) -> Result<()> {
                         write!(out, "  {}", at.to_rfc3339())?;
                     }
                     writeln!(out, "  {}\n{}", hit.url, clean(&hit.excerpt))?;
-                    writeln!(out, "{}", hit.show_command)?;
+                    if index == 0
+                        && let Some(context) = &result.first_context
+                    {
+                        writeln!(out, "Original exchange")?;
+                        show_context(out, context)?;
+                    } else {
+                        writeln!(out, "{}", hit.show_command)?;
+                    }
                     writeln!(out)?;
                 }
-                if let Some(cursor) = &result.next_cursor {
+                if let Some(cursor) = &result.page.next_cursor {
                     writeln!(out, "More results: --cursor {cursor}")?;
                 }
                 Ok(())
@@ -1092,18 +1143,7 @@ async fn run(args: &Cli) -> Result<()> {
                             },
                         )
                         .await?;
-                    emit(args, &context, |out| {
-                        for message in &context.data {
-                            if message.id == context.anchor_id {
-                                write!(out, "> ")?;
-                            }
-                            show_message(out, message)?;
-                        }
-                        for child in &context.branch_choices {
-                            writeln!(out, "Continue with --leaf {child}")?;
-                        }
-                        Ok(())
-                    })?;
+                    emit(args, &context, |out| show_context(out, &context))?;
                 }
                 MessageCommand::Content { id } => {
                     let value = client.content(*id).await?;
