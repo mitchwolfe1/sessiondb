@@ -11,7 +11,31 @@ cargo build --locked --workspace --bins
 export PATH="$PWD/target/debug:$PATH"
 ```
 
-The two executables are `sessiondb-server` and `sessiondb`. There are no published binary releases yet. Both support `--help` and `--version`.
+The two executables are `sessiondb-server` and `sessiondb`. Both support `--help` and `--version`. The [client release workflow](#release-the-client) packages the workstation CLI.
+
+## Release the client
+
+The [Client release workflow](../.github/workflows/release-client.yml) builds the `sessiondb` executable from the pinned Rust toolchain and locked dependencies. Each archive contains the CLI, `scripts/install-harnesses`, and `skills/sessiondb/SKILL.md`. The native runner unpacks its archive, checks the CLI version, and installs the bundled skill into a temporary home.
+
+| Platform | Architecture | Archive target |
+| --- | --- | --- |
+| Linux (Ubuntu 22.04 build) | Intel/AMD x86-64 | `x86_64-unknown-linux-gnu` |
+| Linux (Ubuntu 22.04 build) | ARM64 | `aarch64-unknown-linux-gnu` |
+| macOS | Intel | `x86_64-apple-darwin` |
+| macOS | Apple silicon | `aarch64-apple-darwin` |
+
+To rehearse all four builds, select **Client release → Run workflow** in GitHub Actions, or run `gh workflow run release-client.yml --ref main`. Each successful build produces a downloadable Actions artifact containing the archive and its SHA-256 checksum.
+
+To publish, update the workspace version and `Cargo.lock` together, run the [development checks](#checks), and push the release commit. Tag that commit with `v` followed by the exact Cargo version. For example, for version `0.1.0`:
+
+```sh
+git tag -a v0.1.0 -m "SessionDB client v0.1.0"
+git push origin refs/tags/v0.1.0
+```
+
+Once all four builds succeed, the workflow verifies their checksums, uploads the archives and `SHA256SUMS` to a draft, and publishes it with generated release notes. SemVer prerelease versions generate GitHub prereleases. Re-running a failed tag workflow can finish its draft. Published releases keep their original assets.
+
+To exercise packaging locally on the current host, run `scripts/package-client "$(rustc -vV | sed -n 's/^host: //p')" /tmp/sessiondb-dist`.
 
 ## Local services
 

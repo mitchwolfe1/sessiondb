@@ -10,7 +10,7 @@ Sessions contain messages, structural events, and artifacts. Sources record nati
 
 **Status: initial implementation.** Authenticated sync, original storage, session reads, and native exports work across Codex, Claude Code, and Pi. See [implementation status](docs/implementation.md) for available features and remaining milestones.
 
-Build instructions and a local development setup are in [Build and run SessionDB](docs/development.md).
+Client downloads are distributed through [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). See [workstation setup](docs/cli.md#set-up-a-teammate) for binary and source installation, or [build and run SessionDB](docs/development.md) for local development.
 
 ## Sync and query sessions
 
@@ -32,7 +32,7 @@ sessiondb sessions export SESSION_ID --format native --output session.zip
 
 `connect` prompts for the instance API key and saves it for that server. On Linux and macOS, `sync install` starts a login service that reads the same client config. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. [Background sync](docs/sync.md#background-service) covers setup and retries.
 
-Run `./scripts/install-harnesses` from the checkout to add the history skill to detected installations of Codex, Claude Code and Pi. For a shared team archive, [connect each teammate with a member handle](docs/cli.md#set-up-a-teammate). Search everyone’s work by default, use `--member mark` for a particular person or `--local` for procedures tied to this workstation.
+Run `./scripts/install-harnesses` from the client archive or checkout to add the history skill to detected installations of Codex, Claude Code and Pi. For a shared team archive, [connect each teammate with a member handle](docs/cli.md#set-up-a-teammate). Search everyone’s work by default, use `--member mark` for a particular person or `--local` for procedures tied to this workstation.
 
 ## Features
 
@@ -69,4 +69,4 @@ The [first-build plan](docs/first-build.md) selects the initial working path. [R
 
 Contributions follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), such as `docs: describe session queries`, `feat: add file upload`, or `fix: retry interrupted uploads`.
 
-The repository is private. Distribution and licensing are undecided.
+The [release workflow](docs/development.md#release-the-client) packages the client. Licensing remains undecided.

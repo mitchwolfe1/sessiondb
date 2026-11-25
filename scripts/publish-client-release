@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Publish the tested archives attached to an existing tag.
+set -euo pipefail
+if [[ $# != 2 ]]; then
+  echo "Usage: scripts/publish-client-release TAG ARCHIVE_DIR" >&2
+  exit 2
+fi
+tag=$1
+: "${GH_REPO:?Set GH_REPO to the GitHub owner/repository}"
+built_commit=$(git rev-parse HEAD)
+remote_commit=$(gh api "repos/$GH_REPO/commits/refs/tags/$tag" --jq '.sha')
+if [[ "$remote_commit" != "$built_commit" ]]; then
+  echo "Tag $tag no longer points to the checked-out release commit" >&2
+  exit 1
+fi
+
+cd "$2"
+archives=()
+: > SHA256SUMS
+for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+  archive="sessiondb-${tag//+/_}-$target.tar.gz"
+  checksum=$(sha256sum "$archive")
+  if [[ "$checksum" != "$(cat "$archive.sha256")" ]]; then
+    echo "Checksum mismatch for $archive" >&2
+    exit 1
+  fi
+  printf '%s\n' "$checksum" >> SHA256SUMS
+  archives+=("$archive")
+done
+
+prerelease=false
+if [[ "${tag%%+*}" == *-* ]]; then prerelease=true; fi
+# Looking up a pending tag through GraphQL finds drafts too. A failed request
+# stops the job before any release is created or modified.
+release=$(gh api graphql -f owner="${GH_REPO%/*}" -f name="${GH_REPO#*/}" -f tag="$tag" \
+  -f query='query($owner:String!, $name:String!, $tag:String!) {
+    repository(owner:$owner, name:$name) {
+      release(tagName:$tag) { isDraft releaseAssets(first:100) { nodes { name } } }
+    }
+  }' --jq '.data.repository.release // {}')
+case $(jq -r '.isDraft' <<< "$release") in
+  false)
+    for asset in "${archives[@]}" SHA256SUMS; do
+      if ! jq -e --arg name "$asset" 'any(.releaseAssets.nodes[]; .name == $name)' <<< "$release" > /dev/null; then
+        echo "Published release $tag is missing $asset" >&2
+        exit 1
+      fi
+    done
+    echo "Release $tag is already published"
+    exit 0
+    ;;
+  null)
+    gh release create "$tag" --verify-tag --draft --prerelease="$prerelease" \
+      --title "SessionDB client $tag" --generate-notes \
+      --notes "See the [workstation installation and upgrade guide](https://github.com/$GH_REPO/blob/$tag/docs/cli.md#set-up-a-teammate)."
+    ;;
+esac
+
+gh release upload "$tag" "${archives[@]}" SHA256SUMS --clobber
+gh release edit "$tag" --draft=false --prerelease="$prerelease"

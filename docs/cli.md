@@ -20,7 +20,19 @@ sessiondb sync --watch
 
 ## Set up a teammate
 
-From a checkout of the same SessionDB release, install the CLI with `cargo install --locked --path crates/cli`. Each teammate connects with the same instance API key and a distinct member handle. Use the same handle on that person's other computers. Handles accept 1–64 ASCII letters, digits, hyphens and underscores, starting with a letter or digit.
+Tagged client builds appear on [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). Download the archive for your OS and CPU and the accompanying `SHA256SUMS`. For example, to verify and unpack an Apple silicon archive in a fresh download directory:
+
+```sh
+archive=sessiondb-v0.1.0-aarch64-apple-darwin.tar.gz
+awk -v file="$archive" '$2 == file' SHA256SUMS | shasum -a 256 -c - && tar -xzf "$archive"
+cd "${archive%.tar.gz}"
+mkdir -p "$HOME/.local/bin"
+install -m 755 sessiondb "$HOME/.local/bin/sessiondb"
+export PATH="$HOME/.local/bin:$PATH"
+sessiondb --version
+```
+
+Use the actual archive filename for your release. For a source installation, run `cargo install --locked --path crates/cli` from the checkout. Run the following commands from the unpacked archive or checkout. Each teammate connects with the same instance API key and a distinct member handle. Use the same handle on that person's other computers. Handles accept 1–64 ASCII letters, digits, hyphens and underscores, starting with a letter or digit.
 
 ```sh
 ./scripts/install-harnesses
@@ -33,6 +45,8 @@ sessiondb config show --json
 The client stores the handle per server in `[members]`. Each native store has a device label, generated on first use or selected with `sources add --device-label LABEL`. During sync, the handle applies to all sources configured for that server on this client, including their earlier sessions. Check the source list before configuring a handle on a machine that also collected someone else's work. To label an offline source, use `sessiondb sources set-member SOURCE_ID ada`. To correct a label, use `sessiondb sources set-member SOURCE_ID ada --from prev-handle` and update the collecting client's configuration to match.
 
 All key holders can read the whole collection, including native exports. The [harness installer](integrations.md#on-demand-agent-lookup) sets up the history skill and its lookup instructions for the coding agents on each teammate’s machine. For a Pi session store outside the default directory, register it with `sessiondb sources add --harness pi --root /path/to/sessions`.
+
+To upgrade or roll back, install the chosen release at the same binary path, rerun `./scripts/install-harnesses`, and run `sessiondb sync install` if this workstation uses a watcher. This restarts the watcher using the installed binary and existing configuration and checkpoints.
 
 ## Command groups
 

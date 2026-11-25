@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Build and exercise the workstation distribution on its native target.
+set -euo pipefail
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: scripts/package-client TARGET OUTPUT_DIR [RELEASE_TAG]" >&2
+  exit 2
+fi
+
+target=$1
+mkdir -p "$2"
+output=$(cd "$2" && pwd)
+cd "$(dirname "$0")/.."
+host=$(rustc -vV | sed -n 's/^host: //p')
+if [[ "$target" != "$host" ]]; then
+  echo "Expected a native $target runner, found $host" >&2
+  exit 1
+fi
+metadata=$(cargo metadata --locked --no-deps --format-version 1)
+version=$(jq -er '.packages[] | select(.name == "sessiondb-cli") | .version' <<< "$metadata")
+tag=${3:-v$version}
+if [[ "$tag" != "v$version" ]]; then
+  echo "Release tag $tag must match CLI version v$version" >&2
+  exit 1
+fi
+
+cargo build --locked --release --package sessiondb-cli --bin sessiondb --target "$target"
+target_dir=$(jq -er '.target_directory' <<< "$metadata")
+work=$(mktemp -d "$output/.package-client.XXXXXXXX")
+trap 'rm -rf "$work"' EXIT
+# Use portable release asset names, including for versions with build metadata.
+name="sessiondb-${tag//+/_}-$target"
+archive="$name.tar.gz"
+mkdir -p "$work/$name/scripts" "$work/$name/skills/sessiondb"
+install -m 755 "$target_dir/$target/release/sessiondb" "$work/$name/sessiondb"
+install -m 755 scripts/install-harnesses "$work/$name/scripts/install-harnesses"
+install -m 644 skills/sessiondb/SKILL.md "$work/$name/skills/sessiondb/SKILL.md"
+COPYFILE_DISABLE=1 tar -czf "$work/$archive" -C "$work" "$name"
+
+mkdir -p "$work/unpacked" "$work/home/.codex"
+tar -xzf "$work/$archive" -C "$work/unpacked"
+package="$work/unpacked/$name"
+if [[ "$("$package/sessiondb" --version)" != "sessiondb $version" ]]; then
+  echo "Packaged executable reports the wrong version" >&2
+  exit 1
+fi
+"$package/sessiondb" sync --help > /dev/null
+env -i HOME="$work/home" PATH="$package:/usr/bin:/bin" "$package/scripts/install-harnesses"
+cmp skills/sessiondb/SKILL.md "$work/home/.agents/skills/sessiondb/SKILL.md"
+(cd "$work" && shasum -a 256 "$archive" > "$archive.sha256")
+mv "$work/$archive" "$work/$archive.sha256" "$output/"

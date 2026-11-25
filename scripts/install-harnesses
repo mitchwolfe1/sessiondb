@@ -155,8 +155,11 @@ def main():
         return
     print("Detected: " + ", ".join(detected))
     if not args.dry_run and not shutil.which("sessiondb"):
-        print("For history lookups, install the CLI from this checkout with 'cargo install --locked --path crates/cli', "
-              "then run 'sessiondb connect SERVER_URL --member HANDLE'.")
+        if (Path(__file__).resolve().parents[1] / "sessiondb").is_file():
+            hint = "install the bundled sessiondb executable in a directory on PATH"
+        else:
+            hint = "install the CLI from this checkout with 'cargo install --locked --path crates/cli'"
+        print(f"For history lookups, {hint}, then run 'sessiondb connect SERVER_URL --member HANDLE'.")
     if skills & guides:
         raise ValueError("a skill file and an instruction file point to the same destination")
 

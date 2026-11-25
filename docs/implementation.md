@@ -4,6 +4,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 ## Available
 
+- Tag-triggered [GitHub client release workflow](development.md#release-the-client) with Linux and macOS archives, harness setup files, and SHA-256 checksums.
 - Eleven sessions-first domain tables originating in the immutable initial PostgreSQL migration, with forward deployed-data repairs.
 - API-mediated synchronous multipart upload: verify and fully normalize one file before HTTP 200, reject unsupported/malformed input as a whole, and safely recover lost responses.
 - S3 immutable originals/artifacts and age-based unreferenced-object cleanup.
@@ -23,7 +24,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 The [on-demand history workflow](decisions/0022-on-demand-history.md) supports agent-led research with keyword, semantic and hybrid search and branch-aware reads. Dedicated cross-session research tools, timelines, task briefings and reviewed memories remain planned.
 
-Project administration/matching, metadata mutation, change feeds, normalized/STS exports and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
+Project administration/matching, metadata mutation, change feeds, normalized/STS exports and published server images remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
 
 An unavailable planned route returns `501 not_implemented`; unsupported parameters return input errors. CLI help lists available commands. Source pause, project archive, transcript MIME, upload TTLs, and generic workers are not part of the current design.
 

@@ -1,6 +1,6 @@
 # Contributing
 
-SessionDB is private and follows documentation-first development. The initial implementation follows the accepted specification; [implementation status](docs/implementation.md) separates working capabilities from the remaining plan.
+SessionDB follows documentation-first development. The initial implementation follows the accepted specification; [implementation status](docs/implementation.md) separates working capabilities from the remaining plan.
 
 ## Documentation changes
 
@@ -51,4 +51,4 @@ Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) fo
 
 Implementation pull requests identify the requirement and acceptance scenario they satisfy. Keep the checked-in API contract and Rust client synchronized, and generate a contract diff for public API changes. Use Semantic Versioning for released crates and binaries; the `/v1` HTTP namespace has its own compatibility policy.
 
-A release should include documentation, migrations, binary checksums, supported-platform artifacts, and upgrade/rollback instructions. The exact publishing workflow and license remain decisions for the first release, not claims about available artifacts today.
+A release should include documentation, migrations, binary checksums, supported-platform artifacts, and upgrade/rollback instructions. The [client release workflow](docs/development.md#release-the-client) packages the CLI and harness setup files on matching Linux and macOS runners.

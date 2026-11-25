@@ -37,7 +37,7 @@ STS and ATIF are projections over selected conversation history. Define which br
 
 ## On-demand agent lookup
 
-Run the [harness installer](../scripts/install-harnesses) from a SessionDB checkout with Python 3. It detects Codex, Claude Code and Pi by their executable on `PATH` or their user configuration directory.
+Run the [harness installer](../scripts/install-harnesses) from an unpacked client archive or a SessionDB checkout with Python 3. It detects Codex, Claude Code and Pi by their executable on `PATH` or their user configuration directory.
 
 ```sh
 ./scripts/install-harnesses --dry-run
