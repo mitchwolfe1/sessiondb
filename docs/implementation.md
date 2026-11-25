@@ -21,7 +21,7 @@ SessionDB has a server, CLI, and async SDK for authenticated per-file sync, orig
 
 ## Planned
 
-Full [replacement of hype-history](decisions/0022-replace-hype-history.md) is a product goal. Keyword, semantic and hybrid retrieval and anchored reads are available. Timelines, on-demand briefings, cross-session research and migration of saved evidence remain planned.
+The [on-demand history workflow](decisions/0022-on-demand-history.md) supports agent-led research with keyword, semantic and hybrid search and branch-aware reads. Dedicated cross-session research tools, timelines, task briefings and reviewed memories remain planned.
 
 Project administration/matching, metadata mutation, change feeds, normalized/STS exports and published release artifacts remain delivery milestones. Their retained target-v1 contracts are explicitly marked unimplemented. Removed import/job/index-job APIs are not future compatibility routes.
 

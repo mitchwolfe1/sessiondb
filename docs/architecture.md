@@ -53,6 +53,6 @@ The eleven domain tables originate in immutable `0001_catalog.sql`. Athena is de
 
 ## Applications and future retrieval
 
-The HTTP API is the interoperability boundary for SessionDB clients and other applications. SessionDB will provide the agent-facing history workflows described in [ADR 0022](decisions/0022-replace-hype-history.md). The calling agent can interpret evidence retrieved through those interfaces.
+The HTTP API is the interoperability boundary for SessionDB clients and other applications. SessionDB will provide the agent-facing history workflows described in [ADR 0022](decisions/0022-on-demand-history.md). The calling agent can interpret evidence retrieved through those interfaces.
 
 Keyword retrieval uses a GIN index over branch-specific exchange segments and returns source passages. A background indexer embeds changed exchange text through an enabled profile. Hybrid retrieval combines exact cosine and keyword rankings. Project administration and change feeds are planned. Storage, sync, and reads must remain useful without a model endpoint.

@@ -17,10 +17,11 @@ from fixture import (
     CUTOFF,
     DEFAULT_HOME_ENTRIES,
     PROMPT,
-    build_history,
     grade,
+    write_corpus,
     write_json,
 )
+from native import build_native, enable_embeddings, retrieval_metrics
 
 HERE = Path(__file__).resolve().parent
 STATUSES = [
@@ -216,9 +217,7 @@ def run_trial(
             raise RuntimeError("A fixture tool failed; see trace.jsonl")
         result["score"] = grade(world, trace, answer)
         lookups = [e for e in trace if e["tool"] in {"search_history", "read_around"}]
-        if getattr(args, "sessiondb_url", None):
-            from native import retrieval_metrics
-            result.update(retrieval_metrics(lookups))
+        result.update(retrieval_metrics(lookups))
         result.update(
             tool_calls=len(trace),
             history_calls=len(lookups),
@@ -259,24 +258,20 @@ def main():
     parser.add_argument(
         "--judge", action="store_true", help="Also run a blind subscription judge"
     )
-    parser.add_argument("--sessiondb-url", help="Seed and query this empty disposable SessionDB")
-    parser.add_argument("--sessiondb-bin", default="sessiondb", help="Native CLI used with --sessiondb-url")
+    parser.add_argument("--sessiondb-url", required=True, help="Seed and query this empty disposable SessionDB")
+    parser.add_argument("--sessiondb-bin", default="sessiondb", help="SessionDB CLI executable")
     parser.add_argument("--embedding-profile", type=Path, help="Enabled native profile JSON for a third, hybrid arm")
     parser.add_argument("--turn-timeout",type=int,default=180,help="Maximum seconds per actor or judge turn")
     args = parser.parse_args()
     if args.turn_timeout <= 0:
         parser.error("--turn-timeout must be positive")
-    if args.embedding_profile and not args.sessiondb_url:
-        parser.error("--embedding-profile requires --sessiondb-url")
-    if args.sessiondb_url:
-        try:
-            from native import retrieval_metrics
-            retrieval_metrics([])
-        except ImportError:
-            parser.error("Install tiktoken for native retrieval metrics")
-        args.sessiondb_bin = shutil.which(args.sessiondb_bin)
-        if not args.sessiondb_bin or not os.environ.get("SESSIONDB_API_KEY"):
-            parser.error("Supply a built SessionDB CLI and the disposable instance's SESSIONDB_API_KEY")
+    args.sessiondb_bin = shutil.which(args.sessiondb_bin)
+    if not args.sessiondb_bin or not os.environ.get("SESSIONDB_API_KEY"):
+        parser.error("Supply a SessionDB CLI and the disposable instance's SESSIONDB_API_KEY")
+    try:
+        retrieval_metrics([])
+    except ImportError:
+        parser.error("Install tiktoken for retrieval metrics")
     args.output = args.output.expanduser().resolve()
     env = model_environment()
     auth = subprocess.run(
@@ -323,9 +318,9 @@ def main():
         "codex_version": subprocess.check_output(
             ["codex", "--version"], text=True
         ).strip(),
-        "history_backend": "sessiondb" if args.sessiondb_url else "hype-history",
+        "history_backend": "sessiondb",
         "history_version": subprocess.check_output(
-            [args.sessiondb_bin if args.sessiondb_url else "hype-history", "--version"], text=True
+            [args.sessiondb_bin, "--version"], text=True
         ).strip(),
         "corpus_sha256": hashlib.sha256(corpus).hexdigest(),
         "home_entry_count": len(home_entries),
@@ -337,10 +332,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix="browser-trial-") as tmp:
         root = Path(tmp)
         (root / "actor").mkdir()
-        history = build_history(json.loads(corpus), root, native_url=args.sessiondb_url, native_cli=args.sessiondb_bin)
+        documents = write_corpus(json.loads(corpus), root)
+        history = build_native(documents, root, args.sessiondb_url, args.sessiondb_bin)
         conditions = ("off", "keyword")
         if args.embedding_profile:
-            from native import enable_embeddings
             summary["embedding_profile"] = enable_embeddings(history, args.embedding_profile)
             conditions = ("off", "keyword", "hybrid")
         for pair, status in enumerate(statuses, start=1):

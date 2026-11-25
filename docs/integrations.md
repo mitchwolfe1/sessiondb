@@ -2,7 +2,7 @@
 
 Applications use SessionDB to collect, read, and search coding-agent history. Its APIs support session browsers, briefing and memory tools, analytics, and evaluation pipelines.
 
-Status: agreed integration direction with proposed export and migration contracts.
+Status: CLI-based agent lookup is available. Additional export formats and research interfaces are planned.
 
 ## First consumers
 
@@ -56,15 +56,7 @@ The default configuration directories are `~/.codex`, `~/.claude` and `~/.pi/age
 
 For shared tasks, the skill searches team history when an earlier procedure could change the action. It uses the named member for personal decisions and the current member/device pair for workstation setup. Each hit carries the collecting context alongside the original citation.
 
-Preference and cross-session follow-ups use the same CLI. Search for competing decisions, open independent original exchanges and cite the message URLs. Keep preserved migration utilities outside the active harness tool list. If a source or scope cannot be resolved in SessionDB, report the gap.
-
-## hype-history migration
-
-[ADR 0022](decisions/0022-replace-hype-history.md) makes SessionDB the successor to the entire history tool. The proposed cutover has three steps.
-
-1. Deliver native SessionDB search, branch-aware reads, timelines, on-demand briefings, cross-session research and reviewed-memory access. Exercise the workflows used by Codex, Claude Code and Pi, including requests for tool evidence and later corrections.
-2. Map legacy session and message references to SessionDB resources and check the original content and branch. Legacy message IDs incorporate absolute source paths. Migrate memory records with their scope, review status, relationships and source citations. Report unresolved references for reconciliation. Map repository labels to optional project associations.
-3. Compare results against the legacy baseline, switch agent tool registrations and workspace instructions to SessionDB, and run the acceptance suite with the legacy tools and index offline. After verification, retire the legacy indexing and embedding schedules. SessionDB becomes the sole running history system.
+Preference and cross-session follow-ups use the same CLI. Search for competing decisions, open independent original exchanges and cite the message URLs. If a source or scope cannot be resolved in SessionDB, report the gap.
 
 ## SDK and API consumers
 

@@ -25,7 +25,7 @@ Decision records explain choices that affect several SessionDB components. Requi
 | [0019 Lossless native JSON payloads](0019-native-json-payloads.md) | Accepted implementation correction | Preserve valid control characters with PostgreSQL JSON and a typed JSON parameter codec |
 | [0020 Connect by URL](0020-connect-by-url.md) | Accepted | Verify and save one default server URL, with source roots and watchers bound to their destination |
 | [0021 Save the API key when connecting](0021-connect-stores-client-keys.md) | Accepted | One client setup command with private origin-bound key storage |
-| [0022 Replace hype-history](0022-replace-hype-history.md) | Accepted direction | SessionDB owns the history workflows and their evidence through cutover |
+| [0022 On-demand access to session history](0022-on-demand-history.md) | Accepted direction | Agents retrieve original exchanges and cite evidence for past decisions |
 | [0023 Native hybrid search](0023-native-hybrid-search.md) | Implemented | Profile-scoped exchange and member vectors, exact cosine ranking and keyword rank fusion |
 | [0024 Team history](0024-team-history.md) | Accepted | Source attribution and member/device search across one shared collection |
 

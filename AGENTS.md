@@ -42,6 +42,6 @@ Do not treat a list of open questions as permission to stop documentation work. 
 
 ## Boundaries
 
-SessionDB is the planned replacement for hype-history under [ADR 0022](docs/decisions/0022-replace-hype-history.md). SessionDB owns collection, retrieval, on-demand briefings, cross-session research and reviewed-memory workflows. Use SessionDB for agent history lookups, including preference research. The preserved implementation is available for explicitly requested migration and evaluation work. Keep evidence provenance and review decisions explicit.
+Use SessionDB for on-demand history lookups, including preference research. Open original exchanges and keep evidence provenance and review decisions explicit. [ADR 0022](docs/decisions/0022-on-demand-history.md) defines the agent workflow.
 
 Require the nonempty `SESSIONDB_API_KEY` at server startup and bearer-key authentication for all `/v1` operations, including `/v1/info`. Only health, readiness, and the static contract are public. The optional collecting member and source/device/harness identifiers describe provenance under [ADR 0024](docs/decisions/0024-team-history.md); project filters classify content, never restrict credential access. Follow ADR 0013 for the clean cutover; do not restore identity routes or compatibility modes.

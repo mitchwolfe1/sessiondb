@@ -10,7 +10,7 @@ Each adapter can discover default/configured roots, inspect recorded cwd and rep
 
 Outputs include session metadata, messages/content blocks, tool calls/results, structural events, and relationships. Keep source-relative references for artifacts. Reject the entire file on unsupported or malformed native records before any storage or publication.
 
-The adapter reports observed metadata without making project assignment a collection requirement. It must not perform HTTP requests to native content URLs, execute recorded commands, or apply hype-history's application-specific memory filters.
+The adapter reports observed metadata without making project assignment a collection requirement. It must not perform HTTP requests to native content URLs or execute recorded commands.
 
 ## Native support matrix
 
@@ -63,5 +63,3 @@ Entry timestamps are ISO strings; nested message timestamps use epoch millisecon
 Record harness name, native client version when available, format version, and adapter version. Publish a tested compatibility matrix at release time instead of claiming all future versions work. Missing fields have explicit unknown states; unknown native types reject the file.
 
 Create synthetic fixtures for ordinary conversations, tool calls, repeated usage, branches, compaction, inherited context, subagents, artifacts, malformed records, and incomplete tails. Keep expected normalized results small enough for review. Tests must verify source references and the complete user-visible session behavior, including explicit unresolved links for missing relationships and rejection of unsupported records.
-
-The existing hype-history prototype is a design reference for incremental reading and branch-aware evidence. Its Python implementation is not copied into a Rust server, and its narrower text projection is not treated as a complete native replay model.

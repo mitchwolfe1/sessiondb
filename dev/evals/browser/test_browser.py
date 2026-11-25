@@ -2,24 +2,21 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from uuid import UUID
 
-from fixture import BIDI, NATIVE, build_history, grade, perform
+from fixture import BIDI, NATIVE, grade, perform, write_corpus
+
+ROUTE_ID = str(UUID(int=3))
 
 
 class BrowserCase(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        temp = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(temp.cleanup)
-        corpus = Path(__file__).with_name("corpus.json")
-        cls.history = build_history(json.loads(corpus.read_text()), Path(temp.name))
-
     def setUp(self):
         self.world = {
             "status": "Needs owner review",
             "tab_id": "237",
             "arm": "keyword",
-            "history": self.history,
+            "history": {"native_labels": [ROUTE_ID]},
         }
         self.trace = []
 
@@ -28,29 +25,60 @@ class BrowserCase(unittest.TestCase):
         self.trace.append({"tool": tool, "args": args, "result": result})
         return result
 
-    def test_search_and_read_obey_cutoff(self):
-        hits = self.call("search_history", query="existing browser tabs")["messages"]
-        self.assertIn("c3", [hit["id"] for hit in hits])
-        self.assertTrue(all("supports_route" not in hit for hit in hits))
-        context = self.call("read_around", message_id="c3")["messages"]
-        self.assertEqual([m["id"] for m in context], ["c1", "c2", "c3"])
-        self.assertIn("error", self.call("read_around", message_id="c4"))
-        self.assertEqual(self.call("search_history", query="future")["messages"], [])
-        self.assertIn("error", self.call("search_history", query="?!"))
+    def returned_evidence(self, tool):
+        self.trace.append({
+            "tool": tool, "args": {},
+            "result": {"messages": [{"id": ROUTE_ID, "text": f"I read the tab via {NATIVE}."}]},
+        })
 
-    def test_full_index_text_is_separate_from_the_display_excerpt(self):
+    def test_corpus_omits_the_turn_at_the_cutoff(self):
+        rows = json.loads(Path(__file__).with_name("corpus.json").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            documents = write_corpus(rows, root)
+            expected_ids = {row["id"] for row in rows} - {"c4"}
+            self.assertEqual({m["id"] for ms in documents.values() for m in ms}, expected_ids)
+            written_ids = set()
+            for source in (root / "sources").glob("*.jsonl"):
+                records = [json.loads(line) for line in source.read_text().splitlines()]
+                ids = [r["payload"]["id"] for r in records[1:]]
+                self.assertEqual(ids, [m["id"] for m in documents[source.stem]])
+                written_ids.update(ids)
+            self.assertEqual(written_ids, expected_ids)
+
+    def test_full_original_is_written_when_display_excerpt_is_shorter(self):
         with tempfile.TemporaryDirectory() as tmp:
             full = "The appendix records an emerald compass."
-            history = build_history([{"session":"deep", "id":"deep-source", "role":"user",
-                                      "at":"2026-06-01T00:00:00Z", "text":"The appendix.",
-                                      "index_text":full}], Path(tmp))
+            write_corpus([{"session": "deep", "id": "deep-source", "role": "user",
+                           "at": "2026-06-01T00:00:00Z", "text": "The appendix.",
+                           "index_text": full}], Path(tmp))
             source = (Path(tmp) / "sources" / "session-0.jsonl").read_text().splitlines()
             self.assertEqual(json.loads(source[-1])["payload"]["content"][0]["text"], full)
-            hit = perform({**self.world, "history":history}, "search_history", {"query":"emerald"})
-            self.assertEqual([m["id"] for m in hit["messages"]], ["deep-source"])
+
+    @patch("native.load_page")
+    def test_search_and_read_use_sessiondb_ids_and_branch(self, page):
+        leaf = str(UUID(int=4))
+        self.world["arm"] = "hybrid"
+        page.return_value = {"data": [{
+            "message_id": ROUTE_ID, "session_id": "session", "timestamp": None,
+            "role": "assistant", "excerpt": "Read the open tab.", "url": "source",
+            "leaf_id": leaf,
+        }], "next_cursor": None}
+        result = self.call("search_history", query="open tabs", cursor="next")
+        page.assert_called_once_with(self.world["history"], "search", "--mode", "hybrid",
+                                     "--cursor", "next", "--", "open tabs")
+        hit, = result["messages"]
+        page.return_value = {"data": [{
+            "id": ROUTE_ID, "session_id": "session", "timestamp": None, "role": "assistant",
+            "content": [{"type": "text", "text": NATIVE}], "content_url": None,
+        }], "branch_choices": []}
+        context = self.call("read_around", message_id=hit["id"], leaf_id=hit["leaf_id"])
+        page.assert_called_with(self.world["history"], "messages", "show", ROUTE_ID, "-C", "2", "--leaf", leaf)
+        self.assertEqual(context["messages"][0]["text"], NATIVE)
+        self.assertIn("error", self.call("read_around", message_id="invalid"))
 
     def test_history_can_help_before_browser_choice(self):
-        self.call("search_history", query="existing browser tabs")
+        self.returned_evidence("search_history")
         self.call("browser", connection=NATIVE, operation="read", tab_id="237")
         score = grade(self.world, self.trace, "Needs owner review")
         self.assertTrue(score["pass"])
@@ -100,7 +128,7 @@ class BrowserCase(unittest.TestCase):
 
     def test_late_lookup_and_restart(self):
         self.call("browser", connection=NATIVE, operation="read", tab_id="237")
-        self.call("read_around", message_id="c3")
+        self.returned_evidence("read_around")
         self.call("browser", connection=NATIVE, operation="restart")
         score = grade(self.world, self.trace, "Needs owner review")
         self.assertTrue(score["read_report"])
@@ -108,9 +136,8 @@ class BrowserCase(unittest.TestCase):
         self.assertFalse(score["pass"])
 
     def test_source_id_with_an_unrelated_excerpt_does_not_count_as_evidence(self):
-        self.world["history"] = {"native_labels": ["c3"]}
         self.trace.append({"tool": "search_history", "args": {}, "result": {
-            "messages": [{"id": "c3", "text": "The weekly delivery report."}]
+            "messages": [{"id": ROUTE_ID, "text": "The weekly delivery report."}]
         }})
         self.call("browser", connection=NATIVE, operation="read", tab_id="237")
         score = grade(self.world, self.trace, "Needs owner review")
@@ -118,7 +145,7 @@ class BrowserCase(unittest.TestCase):
         self.assertFalse(score["evidence_before_report_read"])
 
     def test_overlapping_calls_do_not_get_credit_for_prior_evidence(self):
-        self.call("read_around", message_id="c3")
+        self.returned_evidence("read_around")
         self.call("browser", connection=NATIVE, operation="read", tab_id="237")
         self.trace[0].update(time=1, completed_at=3)
         self.trace[1].update(time=2, completed_at=4)

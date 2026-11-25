@@ -1,10 +1,10 @@
-"""Isolated workstation, frozen keyword corpus and trace-based outcome checks."""
+"""Isolated workstation, frozen SessionDB corpus and trace-based outcome checks."""
 
 import json
-import re
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+
+from native import lookup
 
 CUTOFF = "2026-10-27T00:00:00Z"
 NATIVE = "~/plugins/firefox-native"
@@ -19,7 +19,7 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
 
 
-def build_history(rows, root, *, native_url=None, native_cli=None):
+def write_corpus(rows, root):
     """Materialize only eligible turns. Both search and neighbor reads use this slice."""
     sessions = {}
     ids = set()
@@ -53,8 +53,6 @@ def build_history(rows, root, *, native_url=None, native_cli=None):
     workspace.mkdir(parents=True)
     documents = {}
     for number, messages in enumerate(sessions.values()):
-        # Use a canonical filename and recorded line to map FTS hits back to
-        # the original corpus IDs, independently of the temporary index path.
         doc = f"session-{number}"
         messages.sort(key=lambda m: m["at"])
         documents[doc] = messages
@@ -85,86 +83,7 @@ def build_history(rows, root, *, native_url=None, native_cli=None):
         (sources / f"{doc}.jsonl").write_text(
             "".join(json.dumps(r) + "\n" for r in records)
         )
-    if native_url:
-        from native import build_native
-        return build_native(documents, root, native_url, native_cli)
-    config = root / "history.toml"
-    config.write_text(
-        f"workspace_roots = [{json.dumps(str(workspace.parent))}]\n"
-        f"database = {json.dumps(str(root / 'history.sqlite'))}\n"
-        f'[[sources]]\nkind = "codex"\npath = {json.dumps(str(sources))}\n'
-    )
-    subprocess.run(
-        ["hype-history", "--config", str(config), "index", "--json"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
-    return {"config": str(config), "documents": documents}
-
-
-def public_message(message):
-    return {key: message[key] for key in ("session", "id", "at", "role", "text")}
-
-
-def history_lookup(history, name, args, mode="keyword"):
-    if "native_labels" in history:
-        from native import lookup
-        return lookup(history, name, args, mode=mode)
-    documents = history["documents"]
-    if name == "read_around":
-        for messages in documents.values():
-            for i, message in enumerate(messages):
-                if message["id"] == args.get("message_id"):
-                    return {
-                        "messages": [
-                            public_message(m) for m in messages[max(0, i - 2) : i + 3]
-                        ]
-                    }
-        return {"error": "Unknown message ID"}
-    query = args.get("query", "")
-    if (
-        not isinstance(query, str)
-        or len(query) > 2000
-        or "\x00" in query
-        or not re.search(r"\w", query)
-    ):
-        return {"error": "Enter a word or phrase, up to 2000 characters"}
-    result = subprocess.run(
-        [
-            "hype-history",
-            "--config",
-            history["config"],
-            "search",
-            "--retrieval",
-            "keyword",
-            "--source",
-            "transcript",
-            "--mode",
-            "any",
-            "--before",
-            CUTOFF,
-            "--limit",
-            "5",
-            "--no-refresh",
-            "--json",
-            "--",
-            query,
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    found = []
-    for session in json.loads(result.stdout)["results"]:
-        for match in session["matches"]:
-            source = match["source"]
-            messages = documents[Path(source["path"]).stem]
-            index = source["line"] - 2
-            if not 0 <= index < len(messages):
-                raise ValueError("Search hit outside fixture source")
-            found.append(public_message(messages[index]))
-    return {"messages": found}
+    return documents
 
 
 def workstation_path(path):
@@ -177,9 +96,9 @@ def workstation_path(path):
 
 def perform(world, name, args):
     if name in {"search_history", "read_around"}:
-        if world["arm"] != "keyword" and not (world["arm"] == "hybrid" and "native_labels" in world["history"]):
+        if world["arm"] not in {"keyword", "hybrid"}:
             return {"error": "History unavailable"}
-        return history_lookup(world["history"], name, args, world["arm"])
+        return lookup(world["history"], name, args, mode=world["arm"])
     if name == "list_directory":
         entries = {
             "~": world.get("home_entries", DEFAULT_HOME_ENTRIES),
@@ -224,12 +143,7 @@ def perform(world, name, args):
 def grade(world, trace, answer):
     accessed = inspected = interrupted = False
     evidence_returned = first_choice = first_read = None
-    labeled = set(world["history"].get("native_labels", [])) | {
-        m["id"]
-        for ms in world["history"].get("documents", {}).values()
-        for m in ms
-        if m.get("supports_route")
-    }
+    labeled = set(world["history"].get("native_labels", []))
     for index, event in enumerate(trace):
         # The MCP server can run independent calls concurrently. Compare a
         # lookup's finish to a browser call's start, not append order.

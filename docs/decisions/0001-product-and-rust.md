@@ -12,6 +12,6 @@ Develop specifications and documentation before application code. Use Convention
 
 ## Consequences
 
-The server, CLI, collection agent, and first native SDK are Rust components. An existing Python prototype can inform behavior and tests without making Python part of the server runtime. Other-language API clients are integrations, not a change to the implementation language.
+The server, CLI, collection agent, and first native SDK are Rust components. Other-language API clients are integrations, not a change to the implementation language.
 
 Storage, sync, session queries, search, useful APIs, and embedding extensibility define the core product. Shared access is a supported capability; its technical model is documented separately. Implementation starts after the relevant design is reviewed and explicitly requested.

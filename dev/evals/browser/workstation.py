@@ -58,7 +58,7 @@ def main():
 
         @server.tool(annotations=readonly)
         def search_history(query: str, cursor: str | None = None) -> str:
-            """Search earlier work by keyword when a tool choice depends on past decisions. Use a returned cursor for more hits."""
+            """Search earlier work when a tool choice depends on past decisions. Use a returned cursor for more hits."""
             return call("search_history", {"query": query, "cursor": cursor})
 
         @server.tool(annotations=readonly)

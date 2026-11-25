@@ -49,9 +49,9 @@ Deliver cross-session research through SessionDB’s own agent tools. For questi
 
 For requests about frequency or the whole archive, add a client-side batched scan of a declared project and time range using paginated session and message reads. Track the unit being counted, duplicates and how much of the selected corpus was examined. Use a frozen corpus when a reproducible count is required. This is a later delivery slice.
 
-## Replace hype-history
+## Timelines, briefings and reviewed memories
 
-Move the remaining history workflows, saved references and reviewed memories to SessionDB. Switch harness registrations and workspace instructions after validating the native workflows. The [migration plan](integrations.md#hype-history-migration) defines when the legacy tool and index can be retired.
+Add timelines that order linked exchanges and briefings that agents can request for a specific task. Preserve the scope, review status and original citations of each reviewed memory. See [the on-demand history decision](decisions/0022-on-demand-history.md).
 
 ## V1 release
 
@@ -87,7 +87,7 @@ Complete CLI packaging, client SDK documentation, installation and upgrade proce
 | A24 | The only verified workflow is a side exchange in a session on another topic | Archive-wide search surfaces the original exchange and the agent uses it to complete a fresh task. |
 | A25 | A broad code-review question has examples favoring simplification and an accepted exception | The agent cites independent original decisions, identifies their scope, and applies both to a held-out review containing a redundant wrapper and a necessary retry. |
 | A26 | A survey asks how often a decision occurred in a fixed corpus containing duplicate records | The reported count and denominator match the fixture, and the client reports coverage. |
-| A27 | A fresh agent runs with only SessionDB available after migration | Search, anchored reads, timelines, on-demand briefings and cross-session research work. Migrated memories retain their review status and resolve to the original evidence. |
+| A27 | A fresh agent researches a task using SessionDB | It can search across sessions, open the original exchanges on their branches, trace a timeline and request a briefing. Reviewed memories retain their scope, review status and citations. |
 | A28 | Three teammates share an archive and use different workstation setups | Named-member research cites that person’s independent exchanges, shared operations find applicable teammate procedures, and workstation-specific lookups use the current member and device. |
 
 ## Later work
