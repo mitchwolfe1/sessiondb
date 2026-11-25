@@ -229,7 +229,7 @@ def usage_metrics(trace, encoding):
 
 
 def run_trial(
-    args, root, env, history, pair, arm, tab_id, status, *, home_entries=DEFAULT_HOME_ENTRIES
+    args, root, env, history, pair, arm, tab_id, status, *, home_entries=DEFAULT_HOME_ENTRIES, install_root=ROOT
 ):
     directory = args.output / f"{pair:02d}-{arm}"
     directory.mkdir()
@@ -257,28 +257,33 @@ def run_trial(
     result = {"pair": pair, "arm": arm, "status": status, "tab_id": tab_id}
     start = time.monotonic()
     try:
+        installed = arm != "off"
         upstream = (fixture_proxy(history["url"], os.environ["SESSIONDB_API_KEY"], history["native_labels"], trace_file)
-                    if arm == "installed" else nullcontext(None))
+                    if installed else nullcontext(None))
         with upstream as connection:
-            cwd, actor_env = actor_setup(root, connection, history, home_entries)
+            cwd, actor_env = actor_setup(root, connection, history, home_entries, install_root)
             # Check the harness's actual discovery output without handing the actor a skill prompt.
             discovered = subprocess.check_output(["codex", "debug", "prompt-input", *ACTOR_FEATURES], cwd=cwd, env=actor_env,
                                                  text=True, stderr=subprocess.PIPE, timeout=30)
             skill_path = root / "home/.agents/skills/sessiondb/SKILL.md"
-            description = (ROOT / "skills/sessiondb/SKILL.md").read_text().split("description: ", 1)[1].splitlines()[0]
+            expected_skill = install_root / "skills/sessiondb/SKILL.md"
+            description = expected_skill.read_text().split("description: ", 1)[1].splitlines()[0]
             advertised = (str(skill_path.parent.parent) in discovered and
                           f"sessiondb: {description}" in discovered)
-            if advertised and skill_path.read_bytes() != (ROOT / "skills/sessiondb/SKILL.md").read_bytes():
-                raise RuntimeError("Installed skill differs from the tracked skill")
+            if advertised and skill_path.read_bytes() != expected_skill.read_bytes():
+                raise RuntimeError("Installed skill differs from the selected package")
             guidance = "<!-- sessiondb:start -->" in discovered
-            if (advertised, guidance) != (arm == "installed", arm == "installed"):
+            if (advertised, guidance) != (installed, installed):
                 raise RuntimeError("Harness discovery disagrees with the trial condition")
             result.update(skill_advertised=advertised, installed_instructions=guidance)
             # Keep setup probes separate from actions chosen by the model.
             trace_file.replace(directory / "setup-trace.jsonl")
             trace_file.touch()
+            result["actor_started_at"] = now()
+            actor_start = time.monotonic()
             answer, usage = model_turn(args.model, None, PROMPT, options, cwd, actor_env,
                                       timeout=args.turn_timeout, trace_path=trace_file)
+            result["actor_elapsed_s"] = round(time.monotonic() - actor_start, 2)
         result.update(answer=answer, usage=usage, elapsed_s=round(time.monotonic() - start, 2))
         trace = [json.loads(line) for line in trace_file.read_text().splitlines()]
         if any("runner_error" in event for event in trace):
@@ -308,6 +313,13 @@ def run_trial(
     return result
 
 
+def install_hashes(directory):
+    return {
+        "installer_sha256": hashlib.sha256((directory / "scripts/install-harnesses").read_bytes()).hexdigest(),
+        "skill_sha256": hashlib.sha256((directory / "skills/sessiondb/SKILL.md").read_bytes()).hexdigest(),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -325,6 +337,10 @@ def main():
     )
     parser.add_argument("--sessiondb-url", required=True, help="Seed and query this empty disposable SessionDB")
     parser.add_argument("--sessiondb-bin", default="sessiondb", help="SessionDB CLI executable")
+    parser.add_argument(
+        "--baseline-install", type=Path,
+        help="Compare a previous installer and skill with the current ones, with history enabled for both",
+    )
     parser.add_argument("--embedding-profile", type=Path, help="Enabled profile to create on a new disposable instance; otherwise use its active profile")
     parser.add_argument("--turn-timeout",type=int,default=180,help="Maximum seconds per actor or judge turn")
     args = parser.parse_args()
@@ -375,13 +391,20 @@ def main():
             for entry in home_entries
         ):
             parser.error("--home-listing must contain a JSON array of basenames")
+    installations = {"off": ROOT, "installed": ROOT}
+    if args.baseline_install:
+        baseline = args.baseline_install.expanduser().resolve()
+        try:
+            baseline_hashes = install_hashes(baseline)
+        except OSError as error:
+            parser.error(f"Cannot read the baseline installation: {error}")
+        installations = {"baseline": baseline, "installed": ROOT}
     args.output.mkdir(parents=True, exist_ok=False)
     rng = random.Random(args.seed)
     statuses = rng.sample(STATUSES, args.pairs)
     summary = {
-        "protocol": "installed-skill-v1",
-        "installer_sha256": hashlib.sha256((ROOT / "scripts/install-harnesses").read_bytes()).hexdigest(),
-        "skill_sha256": hashlib.sha256((ROOT / "skills/sessiondb/SKILL.md").read_bytes()).hexdigest(),
+        "protocol": "installed-guidance-v1" if args.baseline_install else "installed-skill-v1",
+        **install_hashes(ROOT),
         "prompt": PROMPT,
         "history_before_utc": CUTOFF,
         "seed": args.seed,
@@ -401,6 +424,8 @@ def main():
         ).hexdigest(),
         "trials": [],
     }
+    if args.baseline_install:
+        summary["baseline_install"] = baseline_hashes
     # Codex creates executable aliases in CODEX_HOME and requires a non-/tmp location.
     scratch = Path.home() / ".local/state/sessiondb/evals/work"
     scratch.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -409,7 +434,7 @@ def main():
         documents = write_corpus(json.loads(corpus), root)
         history = build_native(documents, root, args.sessiondb_url, args.sessiondb_bin, args.embedding_profile)
         summary["embedding_profile"] = history["profile"]
-        conditions = ("off", "installed")
+        conditions = tuple(installations)
         for pair, status in enumerate(statuses, start=1):
             tab_id = str(rng.randrange(1000, 1000000))
             start = (pair - 1) % len(conditions)
@@ -426,6 +451,7 @@ def main():
                     tab_id,
                     status,
                     home_entries=home_entries,
+                    install_root=installations[arm],
                 )
                 summary["trials"].append(result)
                 write_json(args.output / "summary.json", summary)

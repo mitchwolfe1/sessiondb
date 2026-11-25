@@ -123,7 +123,7 @@ def materialize_home(home, entries):
         (home / "plugins" / name).mkdir(parents=True, exist_ok=True)
 
 
-def actor_setup(root, upstream, history, home_entries):
+def actor_setup(root, upstream, history, home_entries, install_root=ROOT):
     home = root / "home"
     home.mkdir()
     materialize_home(home, home_entries)
@@ -146,7 +146,7 @@ def actor_setup(root, upstream, history, home_entries):
         bypass = "chatgpt.com,.chatgpt.com,openai.com,.openai.com"
         env.update(http_proxy=proxy, HTTP_PROXY=proxy, no_proxy=bypass, NO_PROXY=bypass)
         shutil.copy2(history["cli"], bindir / "sessiondb")
-        subprocess.run([sys.executable, str(ROOT / "scripts/install-harnesses")],
+        subprocess.run([sys.executable, str(install_root / "scripts/install-harnesses")],
                        env={**env, "PATH": str(bindir)}, check=True, stdout=subprocess.DEVNULL)
         # Connect through the same alias and saved per-origin config the actor uses.
         config = home / ".config/sessiondb/config.toml"
