@@ -11,12 +11,21 @@ from uuid import UUID
 
 from fixture import BIDI, NATIVE, grade, perform, write_corpus
 from installed import fixture_proxy, materialize_home
-from run import model_work, usage_metrics
+from run import model_work, trial_order, usage_metrics
 
 ROUTE_ID = str(UUID(int=3))
 
 
 class BrowserCase(unittest.TestCase):
+    def test_six_states_counterbalance_three_conditions(self):
+        conditions = ("off", "baseline", "installed")
+        orders = [trial_order(conditions, n) for n in range(1, 7)]
+        self.assertEqual(len(set(orders)), 6)
+        for pos in range(3):
+            self.assertEqual([sum(order[pos] == arm for order in orders) for arm in conditions], [2, 2, 2])
+        self.assertEqual([trial_order(("off", "installed"), n) for n in range(1, 4)],
+                         [("off", "installed"), ("installed", "off"), ("off", "installed")])
+
     def setUp(self):
         self.world = {
             "status": "Needs owner review",

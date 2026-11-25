@@ -361,6 +361,13 @@ def install_hashes(directory):
     }
 
 
+def trial_order(conditions, pair):
+    cycle, start = divmod(pair - 1, len(conditions))
+    order = conditions[start:] + conditions[:start]
+    # Reverse the second set of rotations to cover every three-condition order.
+    return order[::-1] if len(conditions) == 3 and cycle % 2 else order
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -383,6 +390,8 @@ def main():
         help="Compare a previous installer and skill with the current ones, with history enabled for both",
     )
     parser.add_argument("--baseline-bin", help="Use the released CLI for the baseline installation")
+    parser.add_argument("--include-history-off", action="store_true",
+                        help="Also run the unaided control when comparing two installations")
     parser.add_argument("--audit-model-work", action="store_true",
                         help="Count actual model responses and outer tool calls from the disposable Codex home")
     parser.add_argument("--embedding-profile", type=Path, help="Enabled profile to create on a new disposable instance; otherwise use its active profile")
@@ -442,19 +451,23 @@ def main():
             for entry in home_entries
         ):
             parser.error("--home-listing must contain a JSON array of basenames")
-    installations = {"off": ROOT, "installed": ROOT}
+    installations = {}
+    if not args.baseline_install or args.include_history_off:
+        installations["off"] = ROOT
     if args.baseline_install:
         baseline = args.baseline_install.expanduser().resolve()
         try:
             baseline_hashes = install_hashes(baseline)
         except OSError as error:
             parser.error(f"Cannot read the baseline installation: {error}")
-        installations = {"baseline": baseline, "installed": ROOT}
+        installations["baseline"] = baseline
+    installations["installed"] = ROOT
     args.output.mkdir(parents=True, exist_ok=False)
     rng = random.Random(args.seed)
     statuses = rng.sample(STATUSES, args.pairs)
     summary = {
         "protocol": "installed-guidance-v1" if args.baseline_install else "installed-skill-v1",
+        "conditions": list(installations),
         **install_hashes(ROOT),
         "prompt": PROMPT,
         "history_before_utc": CUTOFF,
@@ -493,9 +506,7 @@ def main():
         conditions = tuple(installations)
         for pair, status in enumerate(statuses, start=1):
             tab_id = str(rng.randrange(1000, 1000000))
-            start = (pair - 1) % len(conditions)
-            arms = conditions[start:] + conditions[:start]
-            for arm in arms:
+            for arm in trial_order(conditions, pair):
                 trial_root = Path(tempfile.mkdtemp(prefix="trial-", dir=root))
                 result = run_trial(
                     args,

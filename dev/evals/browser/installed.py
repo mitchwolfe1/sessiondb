@@ -205,8 +205,10 @@ def verify_sandbox(root, control, auth, cwd, env, history, binary, installed):
         sentinel.bind(("127.0.0.1", 0))
         sentinel.listen()
         program = """
-import os, socket, sys
-if any(os.access(path, os.R_OK) for path in sys.argv[2:]):
+import os, shutil, socket, sys
+if sys.argv[2] == "off" and shutil.which("sessiondb") is not None:
+    sys.exit("SessionDB executable available in the history-off shell")
+if any(os.access(path, os.R_OK) for path in sys.argv[3:]):
     sys.exit("Controller files visible to the shell")
 try:
     probe = socket.socket()
@@ -217,7 +219,11 @@ with probe:
     if probe.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0:
         sys.exit("Direct host loopback reachable from the shell")
 """
-        subprocess.run(sandbox + ["/usr/bin/python3", "-c", program, str(sentinel.getsockname()[1]), *hidden],
+        if not installed:
+            hidden.extend([str(binary), str(root / "home/.config/sessiondb/config.toml"),
+                           str(root / "home/.agents/skills/sessiondb/SKILL.md")])
+        subprocess.run(sandbox + ["/usr/bin/python3", "-c", program, str(sentinel.getsockname()[1]),
+                                  "installed" if installed else "off", *hidden],
                        env=env, cwd=cwd, check=True)
     if installed:
         local = subprocess.check_output(sandbox + [str(binary), "sessions", "list", "--local",
