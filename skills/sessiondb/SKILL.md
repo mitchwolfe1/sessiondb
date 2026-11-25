@@ -1,11 +1,11 @@
 ---
 name: sessiondb
-description: Look up and cite earlier coding-agent sessions when prior work could be useful, including team procedures, workstation setup, decisions and preferences.
+description: Search and cite earlier coding-agent sessions when knowing what has already been tried, learned, or decided could guide your next step or save repeated investigation.
 ---
 
 # Search past work with SessionDB
 
-When prior work could be useful, look it up with the configured SessionDB CLI. Use the same CLI for follow-up questions.
+Would someone who has done related work here have a head start? If so, start one focused lookup with the configured SessionDB CLI alongside your first independent read-only check. Proceed directly when the current context settles the task. Revisit history if a new uncertainty comes up.
 
 ## Choose the scope for this question
 

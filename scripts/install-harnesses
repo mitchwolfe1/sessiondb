@@ -16,9 +16,10 @@ PREVIOUS = "sessiondb-history"
 BEGIN = b"<!-- sessiondb:start -->"
 END = b"<!-- sessiondb:end -->"
 GUIDANCE = (
-    b"Use the `sessiondb` skill when prior work could be useful. "
-    b"Search across the team for shared procedures. For a person's decisions, use `--member HANDLE` or "
-    b"`--mine`. For this workstation's setup, start with `--local`. Open the original exchange and cite its message URL."
+    b"If earlier work could help you choose an approach, explain a decision, or avoid redoing an investigation, "
+    b"use the `sessiondb` skill to make one focused search alongside your first independent read-only check. "
+    b"If the task is already settled by the information in front of you, proceed directly. "
+    b"Revisit history if a new uncertainty comes up."
 )
 
 

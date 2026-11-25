@@ -44,7 +44,7 @@ Run the [harness installer](../scripts/install-harnesses) from an unpacked clien
 ./scripts/install-harnesses
 ```
 
-The installer copies the [`sessiondb` skill](../skills/sessiondb/SKILL.md) and adds a short instruction to use it on demand. Start a fresh session to pick up the changes. In Codex, you can also invoke it explicitly with `$sessiondb`. The skill uses the teammate’s configured CLI connection. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
+The installer copies the [`sessiondb` skill](../skills/sessiondb/SKILL.md) and adds a short instruction to search alongside the first independent read-only check when earlier work could guide a choice or save repeated investigation. An agent can proceed directly on a self-contained task and reconsider history if a new uncertainty arises. Start a fresh session to pick up the changes. In Codex, you can also invoke the skill explicitly with `$sessiondb`. It uses the teammate’s configured CLI connection. [Team setup](cli.md#set-up-a-teammate) covers connecting and syncing.
 
 | Detected harness | User skill directory | Global instructions |
 | --- | --- | --- |
