@@ -1,12 +1,12 @@
 # SessionDB
 
-SessionDB is a database that gives coding agents a shared, searchable memory of past work.
+A frontier coding agent can spend hours ruling out an approach and propose it again in its next session. Its harness may have saved every command and test result. The model still has to find the few messages that would change its answer, even if a teammate ran the experiment months ago in a different tool. SessionDB gives agents a shared, searchable record of that work.
 
-Frontier models work within a finite context window. What an agent can recall about your work depends on what its harness saves and brings back into that window. When a team’s history is spread across sessions, tools, and machines, agents can repeat investigations and people end up explaining decisions they’ve already made.
+A `MEMORY.md` file works well for standing conventions. Keeping it short enough to load on every task means leaving out most of what happened. A Markdown knowledge graph can organize far more notes, at the cost of extracting facts and maintaining the links between them. It can point an agent to a decision and still omit the failed experiment that explains it. Both approaches ask whoever writes the notes to predict which details a future task will need.[^memory]
 
-Session summaries help an agent pick up a long-running task. A `MEMORY.md` file records lessons and preferences or points to more detailed notes. Markdown knowledge graphs link notes so an agent can trace the connections between a project and its decisions. In each case, a person or an agent chooses what to capture before the next question is known. See [Claude Code’s memory files](https://code.claude.com/docs/en/memory#auto-memory) and [Basic Memory’s linked notes](https://docs.basicmemory.com/concepts/observations-and-relations).
+SessionDB automatically syncs the original sessions from Codex, Claude Code, and Pi into one database. With the current task in hand, an agent can search that history for a teammate’s procedure, the reason behind a design choice, or the test that ruled out a fix. Each result points back to the exchange, where the agent can judge whether the evidence applies and cite the original message or tool result.
 
-SessionDB automatically syncs the original sessions from Codex, Claude Code, and Pi. With the history skill installed, an agent can search across your team’s conversations for a detail that only became important later, read the surrounding exchange, and cite the message or tool result behind its answer.
+[^memory]: See [Claude Code’s memory files](https://code.claude.com/docs/en/memory#auto-memory) and [Basic Memory’s linked notes](https://docs.basicmemory.com/concepts/observations-and-relations).
 
 ## Search past work
 
