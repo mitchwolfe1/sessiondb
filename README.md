@@ -1,52 +1,54 @@
 # SessionDB
 
-SessionDB is a database for coding-agent sessions. It automatically syncs sessions from Codex, Claude Code, and Pi, stores their original files, and makes their contents accessible through a common interface.
+SessionDB is a database that gives coding agents a shared, searchable memory of past work. It automatically syncs sessions from Codex, Claude Code, and Pi across the machines you connect.
 
-Use SessionDB to browse conversations and tool calls, export native history, or build applications on session history. It provides a CLI, an HTTP API, and a client SDK. Search by keyword and open the matching exchange on its recorded branch.
+A teammate might spend an afternoon tracing duplicate invoices to a webhook retry. If the reproduction steps live in a conversation on their laptop, the next agent to see the bug may repeat those experiments or ask you to reconstruct them. With the SessionDB history skill installed, the agent can look up that conversation as it works, see how the team tested the fix, and cite the original message.
 
-Sessions contain messages, structural events, and artifacts. Sources record native-store provenance; projects are optional labels. Originals and rewrite generations remain preserved. Sync uploads one file through the API and checkpoints its receipt independently—there is no all-or-nothing multi-file batch or background acceptance job.
+## Search past work
 
-[ADR 0015](docs/decisions/0015-strict-native-records-and-simple-reads.md) requires strict whole-file native validation before storage/publication. Only accepted valid originals are preserved; unsupported/malformed records reject with HTTP 400. Reads carry no revision, parser-status, or warning metadata and no snapshot guarantees. Upload write-CAS remains separate; per-file recovery is unchanged.
+Keyword search is the default. An enabled embedding profile adds semantic search, which can find an exchange even when you describe the problem in different words. Hybrid search combines the keyword and semantic rankings. See [search and embedding setup](docs/search-and-embeddings.md#configure-semantic-and-hybrid-search).
 
-**Status: initial implementation.** Authenticated sync, original storage, session reads, and native exports work across Codex, Claude Code, and Pi. See [implementation status](docs/implementation.md) for available features and remaining milestones.
+```sh
+sessiondb search --open-first -- "webhook retry"
+sessiondb search --mode hybrid --open-first -- "Why did one payment create two invoices?"
+```
 
-Client downloads are distributed through [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases). Once installed, sync keeps the CLI, agent skill and managed harness instructions up to date. See [workstation setup](docs/cli.md#set-up-a-teammate) for binary and source installation, or [build and run SessionDB](docs/development.md) for local development.
+Each result includes an excerpt and a link to the original message. `--open-first` shows the surrounding messages on the first match’s recorded conversation branch. Add `--include-tools` to search tool calls and results, such as the test output that confirmed a fix.
+
+Search covers the whole synced collection by default. Use `--member ada` for sessions collected under one teammate’s handle, `--mine` for your sessions across devices, or `--local` for your history on this machine. For a worked example, see [how an agent used workstation history to find a browser connection](dev/evals/browser/README.md#native-sessiondb-pilot).
 
 ## Sync and query sessions
 
-Connect to a server, select native session stores, and enable automatic sync. Sessions are collected regardless of their starting directory. Project associations can be added or changed separately.
+Install the CLI from [GitHub Releases](https://github.com/mitchwolfe1/sessiondb/releases) or follow the [source installation instructions](docs/cli.md#set-up-a-teammate). From the unpacked client archive or checkout, install the history skill for detected agents and connect to your server. Use your own member handle in place of `ada`.
 
 ```sh
-sessiondb connect https://sessions.example.com
+./scripts/install-harnesses
+sessiondb connect https://sessions.example.com --member ada
 sessiondb sources add --detect
 sessiondb sync install
 sessiondb sync status
+```
 
+`connect` prompts for the instance API key. On Linux and macOS, the background service syncs new and updated sessions from the selected stores regardless of their starting directory. It also keeps the CLI and agent integration up to date. Start a fresh agent session to use the skill. See [background sync](docs/sync.md#background-service) for logs and service management.
+
+You can also browse conversations, read their messages, and export the original files directly.
+
+```sh
 sessiondb sessions list --harness claude
-sessiondb search "payment retries"
-sessiondb messages show MESSAGE_ID -C 2
 sessiondb sessions show SESSION_ID
 sessiondb sessions messages SESSION_ID --json
 sessiondb sessions export SESSION_ID --format native --output session.zip
 ```
 
-`connect` prompts for the instance API key and saves it for that server. On Linux and macOS, `sync install` starts a login service that reads the same client config. Use `sessiondb sync logs --follow` to see activity and `sessiondb sync uninstall` to turn off background collection. [Background sync](docs/sync.md#background-service) covers setup and retries.
-
-Run `./scripts/install-harnesses` from the client archive or checkout to add the history skill to detected installations of Codex, Claude Code and Pi. For a shared team archive, [connect each teammate with a member handle](docs/cli.md#set-up-a-teammate). Search everyone’s work by default, use `--member mark` for a particular person or `--local` for procedures tied to this workstation.
-
 ## Features
 
-- **Automatic sync:** collect new and updated sessions from multiple harnesses and machines.
-- **Session access:** list conversations, read messages and tool activity, inspect relationships, and export sessions.
-- **Filtering:** browse sessions by harness, date, or optional project associations. Search exchange text with the same filters and expand the matching original.
-- **Native storage:** keep original files alongside a consistent, queryable session model.
-- **Optional grouping:** sessions can have zero or more project associations, independently of starting directory and collection source. Project administration is planned.
-- **Conventional interfaces:** a scriptable CLI, REST/OpenAPI, a client SDK, PostgreSQL, and S3-compatible object storage.
-- **Extensibility:** enable an embedding profile for exact semantic and hybrid search alongside keywords.
+- **Native history.** SessionDB preserves original files and their earlier versions alongside searchable messages, tool activity, branches, and artifacts. See [native file handling](docs/decisions/0015-strict-native-records-and-simple-reads.md).
+- **Filters.** Narrow a search by project, harness, date, or message role. Sessions can belong to multiple projects independently of where they started. See [project associations](docs/project-associations.md).
+- **Application access.** Scripts and applications can search, read messages in context, and export native sessions through the same HTTP API that powers the CLI and client SDK. See the [API reference](docs/api.md).
 
-Each instance is one shared collection protected by the required `SESSIONDB_API_KEY`. All clients with the key have identical full access; use separate instances for isolated collections. See [project associations](docs/project-associations.md) and [access control](docs/access-control.md).
+Each instance has one shared collection. Every client with the instance API key has full access. See [access control](docs/access-control.md).
 
-The initial release targets a single server deployment and Linux/macOS sync clients.
+The initial release targets a single server with PostgreSQL and S3-compatible object storage, with sync clients for Linux and macOS. See [implementation status](docs/implementation.md) for available features and remaining milestones.
 
 ## Documentation
 
